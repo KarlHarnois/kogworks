@@ -1,5 +1,39 @@
-(export greeting)
+(use rmap-pilot pilot)
+(use synth factory->json)
+
+(export cli-error command command-of error->message
+        greeting)
 
 (defn greeting () "hello")
 
-(defn main () (println (greeting)))
+(defenum command
+  greeting
+  synth)
+
+(defenum cli-error (unknown-argument string))
+
+(defn error->message (failure)
+  (match failure
+    ((unknown-argument argument)
+     (str "unknown argument: " argument))))
+
+(defn named-command (argument)
+  (match (as-str argument)
+    ("synth" (ok command/synth))
+    (_ (err (cli-error/unknown-argument argument)))))
+
+(defn command-of (arguments)
+  (match (len arguments)
+    (0 (ok command/greeting))
+    (1 (named-command (clone (at arguments 0))))
+    (_ (err (cli-error/unknown-argument (join arguments " "))))))
+
+(defn run (request)
+  (match request
+    (greeting (println (greeting)))
+    (synth (println (factory->json pilot)))))
+
+(defn main ()
+  (match (command-of (command-line-args))
+    ((ok request) (run request))
+    ((err failure) (eprintln (error->message failure)) (exit 1))))

@@ -1,0 +1,19 @@
+(use main cli-error command command-of)
+(use rmap-pilot pilot)
+(use synth factory->json)
+
+(deftest synth-output-matches-snapshot
+  (assert (= (str (factory->json pilot) "\n")
+             (unwrap-ok (slurp "tests/snapshots/rmap-pilot.json")))))
+
+(deftest no-arguments-selects-greeting
+  (assert (= (command-of (vec))
+             (ok command/greeting))))
+
+(deftest synth-argument-selects-synth
+  (assert (= (command-of (vec (str "synth")))
+             (ok command/synth))))
+
+(deftest unknown-argument-is-an-error
+  (assert (= (command-of (vec (str "nope")))
+             (err (cli-error/unknown-argument (str "nope"))))))

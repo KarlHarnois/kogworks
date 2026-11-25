@@ -1,0 +1,1 @@
+{"schema":0,"name":"rmap-pilot","manager":"pilot-manager","roadmap":"pilot","max_active":3,"merge":"gh-auto","roles":{"worker":{"agent":"claude-personal","skill":"features:building-features","brief":"briefs/worker.md"},"reviewer":{"agent":"claude-personal","skill":"prs:reviewing-prs","brief":"briefs/reviewer.md"}}}

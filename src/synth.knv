@@ -1,0 +1,91 @@
+(use factory merge-method role)
+
+(export factory->json)
+
+(defn factory->json (factory)
+  (str "{\"schema\":"
+       (:schema factory)
+       ",\"name\":"
+       (text->json (:name factory))
+       ",\"manager\":"
+       (text->json (:manager factory))
+       ",\"roadmap\":"
+       (text->json (:roadmap factory))
+       ",\"max_active\":"
+       (:max-active factory)
+       ",\"merge\":"
+       (text->json (merge-method->text (:merge factory)))
+       ",\"roles\":"
+       (roles->json (:roles factory))
+       "}"))
+
+(type roles->json
+  (fn ((iterator (ref role))) string))
+
+(defn roles->json (roles)
+  (str "{"
+       (-> roles (map role-entry->json) collect (join ","))
+       "}"))
+
+(type role-entry->json
+  (fn ((ref role)) string))
+
+(defn role-entry->json (role)
+  (str (text->json (:name role))
+       ":"
+       (role->json role)))
+
+(type role->json
+  (fn ((ref role)) string))
+
+(defn role->json (role)
+  (str "{\"agent\":"
+       (text->json (:agent role))
+       ",\"skill\":"
+       (text->json (:skill role))
+       ",\"brief\":"
+       (text->json (:brief role))
+       "}"))
+
+(defn merge-method->text (method)
+  (match method (gh-auto (str "gh-auto"))))
+
+(defn text->json (text)
+  (str "\""
+       (-> text as-str chars
+           (map character->json)
+           collect
+           (join ""))
+       "\""))
+
+(defn character->json (character)
+  (cond
+    ((quote-char? character) (str "\\\""))
+    ((backslash-char? character) (str "\\\\"))
+    ((newline-char? character) (str "\\n"))
+    ((return-char? character) (str "\\r"))
+    ((tab-char? character) (str "\\t"))
+    ((backspace-char? character) (str "\\b"))
+    ((form-feed-char? character) (str "\\f"))
+    (else (str character))))
+
+(defn quote-char? (character)
+  (= character (char "\"")))
+
+(defn backslash-char? (character)
+  (= character (char "\\")))
+
+(defn newline-char? (character)
+  (= character (char "\n")))
+
+(defn return-char? (character)
+  (= character (char "\r")))
+
+(defn tab-char? (character)
+  (= character (char "\t")))
+
+(defn backspace-char? (character)
+  (= character (char "\u{8}")))
+
+(defn form-feed-char? (character)
+  (= character (char "\u{c}")))
