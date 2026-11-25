@@ -3,11 +3,9 @@
 
 (export greeting)
 
-(defcommand synth "Writes <dir>/factory.json from <dir>/factory.knv."
-  (dir string :about "The directory that holds factory.knv"))
+(defcommand synth "Writes <dir>/factory.json." (dir string))
 
-(defcli kogworks "Builds kogworks factories."
-  (commands synth))
+(defcli kogworks "Builds the factory." (commands synth))
 
 (defn greeting () "hello")
 
