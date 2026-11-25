@@ -1,5 +1,25 @@
+(use knave-commandant defcli defcommand run-command)
+(use synth error->message synth-factory)
+
 (export greeting)
+
+(defcommand synth "Writes <dir>/factory.json from <dir>/factory.knv."
+  (dir string :about "The directory that holds factory.knv"))
+
+(defcli kogworks "Builds kogworks factories."
+  (commands synth))
 
 (defn greeting () "hello")
 
-(defn main () (println (greeting)))
+(defn main ()
+  (match (:command (run-command kogworks))
+    ((kogworks-command/synth options)
+     (synth-and-exit (:dir options)))))
+
+(type synth-and-exit
+  (fn ((ref str)) unit))
+
+(defn synth-and-exit (directory)
+  (match (synth-factory directory)
+    ((ok _) (do))
+    ((err failure) (eprintln (error->message failure)) (exit 1))))
