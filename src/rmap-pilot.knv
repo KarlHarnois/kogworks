@@ -1,0 +1,19 @@
+(use factory ->factory ->role merge-method)
+
+(export pilot)
+
+(def pilot
+  (->factory :schema 0
+             :name (str "rmap-pilot")
+             :manager (str "pilot-manager")
+             :roadmap (str "pilot")
+             :max-active 3
+             :merge merge-method/gh-auto
+             :roles (vec (->role :name (str "worker")
+                                 :agent (str "claude-personal")
+                                 :skill (str "features:building-features")
+                                 :brief (str "briefs/worker.md"))
+                         (->role :name (str "reviewer")
+                                 :agent (str "claude-personal")
+                                 :skill (str "prs:reviewing-prs")
+                                 :brief (str "briefs/reviewer.md")))))
