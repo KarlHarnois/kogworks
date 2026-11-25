@@ -1,1 +1,5 @@
-(defproject kogworks :knave "0.22.0")
+(defproject kogworks
+  :knave "0.22.0"
+  (libraries
+    (knave-commandant :git "https://github.com/KarlHarnois/knave-commandant"
+                      :rev "811d6dc4558cfdabd10d895e26d3087df1ad03e5")))
