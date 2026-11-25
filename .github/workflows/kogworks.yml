@@ -1,0 +1,36 @@
+# `knave upgrade` rewrites `knave.yml`. This workflow holds the kogworks factory check.
+name: Kogworks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  factory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-knave
+      - name: Check
+        run: knave check
+      - name: Format
+        run: knave fmt --check
+      - name: Format the factory
+        run: knave fmt --check .kogworks/factory.knv
+      - name: Lint
+        run: knave lint
+      - name: Lint the factory
+        run: knave lint .kogworks/factory.knv
+      - name: Check the factory
+        run: knave check .kogworks/factory.knv
+      - name: Build
+        run: knave build
+      - name: Test
+        run: knave test
+      - name: Synthesize the factory
+        run: ./target/knave/kogworks/kogworks synth .kogworks
+      - name: Diff the synthesized factory
+        run: git diff --exit-code .kogworks/factory.json
