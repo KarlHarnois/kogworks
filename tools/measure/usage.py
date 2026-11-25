@@ -1,29 +1,135 @@
-import json, sys
-path, out = sys.argv[1], sys.argv[2]
-turns=[]; cur=None; seen=set()
-def text_of(c):
-    if isinstance(c,str): return c
-    return " ".join(b.get("text","") for b in c if isinstance(b,dict) and b.get("type")=="text")
-with open(path) as f:
-    for line in f:
-        try: e=json.loads(line)
-        except: continue
-        t=e.get("type")
-        if t=="user" and not e.get("isMeta") and not e.get("isSidechain"):
-            c=e.get("message",{}).get("content")
-            if isinstance(c,list) and any(isinstance(b,dict) and b.get("type")=="tool_result" for b in c): continue
-            if not text_of(c).strip(): continue
-            cur={"calls":0,"in":0,"cache_read":0,"cache_write":0,"out":0,"ctx_first":None,"ctx_last":None}; turns.append(cur)
-        elif (t=="summary" or (t=="system" and e.get("subtype")=="compact_boundary")):
-            turns.append({"compaction":True})
-        elif t=="assistant" and cur is not None and not e.get("isSidechain"):
-            m=e.get("message",{}); mid=m.get("id"); u=m.get("usage")
-            if not u or mid in seen: continue
-            seen.add(mid)
-            ctx=u.get("input_tokens",0)+u.get("cache_read_input_tokens",0)+u.get("cache_creation_input_tokens",0)
-            cur["calls"]+=1; cur["in"]+=u.get("input_tokens",0); cur["cache_read"]+=u.get("cache_read_input_tokens",0)
-            cur["cache_write"]+=u.get("cache_creation_input_tokens",0); cur["out"]+=u.get("output_tokens",0)
-            if cur["ctx_first"] is None: cur["ctx_first"]=ctx
-            cur["ctx_last"]=ctx+u.get("output_tokens",0)
-with open(out,"w") as o:
-    for i,tn in enumerate(turns): o.write(json.dumps({"n":i,**tn})+"\n")
+import json
+import sys
+
+
+class TranscriptReader:
+    def __init__(self, path):
+        self.path = path
+
+    def events(self):
+        with open(self.path) as transcript:
+            for line in transcript:
+                event = self.parse(line)
+                if event is not None:
+                    yield event
+
+    def parse(self, line):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            return None
+
+
+class UsageExtractor:
+    def __init__(self):
+        self.turns = []
+        self.current = None
+        self.seen_message_ids = set()
+
+    def extract(self, events):
+        for event in events:
+            self.add(event)
+        return self.turns
+
+    def add(self, event):
+        kind = event.get("type")
+        if self.is_user_trigger(kind, event):
+            self.add_turn()
+        elif self.is_compaction(kind, event):
+            self.add_compaction()
+        elif kind == "assistant" and self.current is not None and not event.get("isSidechain"):
+            self.add_usage(event)
+
+    def is_user_trigger(self, kind, event):
+        if kind != "user" or event.get("isMeta") or event.get("isSidechain"):
+            return False
+        content = self.content_of(event)
+        if self.has_tool_result(content):
+            return False
+        return bool(self.text_of(content).strip())
+
+    def add_turn(self):
+        self.current = {
+            "calls": 0,
+            "in": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "out": 0,
+            "ctx_first": None,
+            "ctx_last": None,
+        }
+        self.turns.append(self.current)
+
+    def is_compaction(self, kind, event):
+        return kind == "summary" or (
+            kind == "system" and event.get("subtype") == "compact_boundary"
+        )
+
+    def add_compaction(self):
+        self.turns.append({"compaction": True})
+
+    def add_usage(self, event):
+        message = event.get("message", {})
+        message_id = message.get("id")
+        usage = message.get("usage")
+        if not usage or message_id in self.seen_message_ids:
+            return
+        self.seen_message_ids.add(message_id)
+        context = self.context_size(usage)
+        self.current["calls"] += 1
+        self.current["in"] += usage.get("input_tokens", 0)
+        self.current["cache_read"] += usage.get("cache_read_input_tokens", 0)
+        self.current["cache_write"] += usage.get("cache_creation_input_tokens", 0)
+        self.current["out"] += usage.get("output_tokens", 0)
+        if self.current["ctx_first"] is None:
+            self.current["ctx_first"] = context
+        self.current["ctx_last"] = context + usage.get("output_tokens", 0)
+
+    def context_size(self, usage):
+        return (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+        )
+
+    def content_of(self, event):
+        return event.get("message", {}).get("content")
+
+    def has_tool_result(self, content):
+        return isinstance(content, list) and any(
+            isinstance(block, dict) and block.get("type") == "tool_result"
+            for block in content
+        )
+
+    def text_of(self, content):
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        return " ".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+
+
+class JsonlWriter:
+    def __init__(self, path):
+        self.path = path
+
+    def write(self, records):
+        with open(self.path, "w") as output:
+            for number, record in enumerate(records):
+                output.write(json.dumps({"n": number, **record}) + "\n")
+
+
+def main():
+    transcript_path, output_path = sys.argv[1], sys.argv[2]
+    events = TranscriptReader(transcript_path).events()
+    turns = UsageExtractor().extract(events)
+    JsonlWriter(output_path).write(turns)
+    print(len(turns))
+
+
+if __name__ == "__main__":
+    main()

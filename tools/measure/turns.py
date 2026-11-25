@@ -1,33 +1,144 @@
-import json, sys
-path, out = sys.argv[1], sys.argv[2]
-turns = []; cur = None
-def text_of(c):
-    if isinstance(c, str): return c
-    return " ".join(b.get("text","") for b in c if isinstance(b, dict) and b.get("type")=="text")
-with open(path) as f:
-    for line in f:
-        try: e = json.loads(line)
-        except: continue
-        t = e.get("type")
-        if t == "user" and not e.get("isMeta") and not e.get("isSidechain"):
-            c = e.get("message",{}).get("content")
-            if isinstance(c, list) and any(isinstance(b,dict) and b.get("type")=="tool_result" for b in c):
-                continue
-            txt = text_of(c).strip()
-            if not txt: continue
-            cur = {"ts": e.get("timestamp"), "trigger": txt[:600], "tools": [], "reply": ""}
-            turns.append(cur)
-        elif t == "assistant" and cur is not None and not e.get("isSidechain"):
-            for b in e.get("message",{}).get("content",[]) or []:
-                if b.get("type")=="tool_use":
-                    inp = b.get("input",{})
-                    s = inp.get("command") or inp.get("prompt") or inp.get("skill") or inp.get("file_path") or json.dumps(inp)
-                    cur["tools"].append(f'{b["name"]}: {str(s)[:200]}')
-                elif b.get("type")=="text":
-                    cur["reply"] = b["text"][:500]
-        elif t == "summary" or (t=="system" and e.get("subtype")=="compact_boundary"):
-            turns.append({"ts": e.get("timestamp"), "trigger": "[COMPACTION]", "tools": [], "reply": ""})
-with open(out,"w") as o:
-    for i,tn in enumerate(turns):
-        o.write(json.dumps({"n":i, **tn})+"\n")
-print(len(turns))
+import json
+import sys
+
+
+class TranscriptReader:
+    def __init__(self, path):
+        self.path = path
+
+    def events(self):
+        with open(self.path) as transcript:
+            for line in transcript:
+                event = self.parse(line)
+                if event is not None:
+                    yield event
+
+    def parse(self, line):
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            return None
+
+
+class TurnExtractor:
+    TRIGGER_LIMIT = 600
+    TOOL_LIMIT = 200
+    REPLY_LIMIT = 500
+    COMPACTION_TRIGGER = "[COMPACTION]"
+
+    def __init__(self):
+        self.turns = []
+        self.current = None
+
+    def extract(self, events):
+        for event in events:
+            self.add(event)
+        return self.turns
+
+    def add(self, event):
+        kind = event.get("type")
+        trigger = self.trigger_text(kind, event)
+        if trigger is not None:
+            self.add_user_turn(event, trigger)
+        elif kind == "assistant" and self.current is not None and not event.get("isSidechain"):
+            self.add_assistant_event(event)
+        elif self.is_compaction(kind, event):
+            self.add_compaction(event)
+
+    def trigger_text(self, kind, event):
+        if kind != "user" or event.get("isMeta") or event.get("isSidechain"):
+            return None
+        content = self.content_of(event)
+        if self.has_tool_result(content):
+            return None
+        text = self.text_of(content).strip()
+        if not text:
+            return None
+        return text
+
+    def add_user_turn(self, event, trigger):
+        self.current = {
+            "ts": event.get("timestamp"),
+            "trigger": trigger[: self.TRIGGER_LIMIT],
+            "tools": [],
+            "reply": "",
+        }
+        self.turns.append(self.current)
+
+    def add_assistant_event(self, event):
+        for block in self.content_of(event) or []:
+            if block.get("type") == "tool_use":
+                self.current["tools"].append(self.describe_tool(block))
+            elif block.get("type") == "text":
+                self.current["reply"] = block["text"][: self.REPLY_LIMIT]
+
+    def describe_tool(self, block):
+        inputs = block.get("input", {})
+        detail = self.tool_detail(inputs)
+        return f'{block["name"]}: {str(detail)[: self.TOOL_LIMIT]}'
+
+    def tool_detail(self, inputs):
+        return (
+            inputs.get("command")
+            or inputs.get("prompt")
+            or inputs.get("skill")
+            or inputs.get("file_path")
+            or json.dumps(inputs)
+        )
+
+    def is_compaction(self, kind, event):
+        return kind == "summary" or (
+            kind == "system" and event.get("subtype") == "compact_boundary"
+        )
+
+    def add_compaction(self, event):
+        self.turns.append(
+            {
+                "ts": event.get("timestamp"),
+                "trigger": self.COMPACTION_TRIGGER,
+                "tools": [],
+                "reply": "",
+            }
+        )
+
+    def content_of(self, event):
+        return event.get("message", {}).get("content")
+
+    def has_tool_result(self, content):
+        return isinstance(content, list) and any(
+            isinstance(block, dict) and block.get("type") == "tool_result"
+            for block in content
+        )
+
+    def text_of(self, content):
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+        return " ".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+
+
+class JsonlWriter:
+    def __init__(self, path):
+        self.path = path
+
+    def write(self, records):
+        with open(self.path, "w") as output:
+            for number, record in enumerate(records):
+                output.write(json.dumps({"n": number, **record}) + "\n")
+
+
+def main():
+    transcript_path, output_path = sys.argv[1], sys.argv[2]
+    events = TranscriptReader(transcript_path).events()
+    turns = TurnExtractor().extract(events)
+    JsonlWriter(output_path).write(turns)
+    print(len(turns))
+
+
+if __name__ == "__main__":
+    main()
