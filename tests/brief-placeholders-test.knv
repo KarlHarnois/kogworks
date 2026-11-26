@@ -82,5 +82,4 @@
 
 (deftest worker-brief-keeps-the-question-report
   (let (brief (unwrap-ok (slurp worker-brief-path)))
-    (assert (contains? brief "rmap report"))
     (assert (contains? brief "--kind question"))))

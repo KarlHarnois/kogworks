@@ -1,6 +1,6 @@
 # Kogworks reviewer brief
 
-- The controller is the session that sends this brief.
+- The controller is the manager session `{{manager}}` that sends this brief.
 - You are the reviewer session `{{session}}` on item `{{item}}` of roadmap `{{roadmap}}`.
 - The pull request number is `{{pr}}`.
 - The head commit is `{{head}}`.
@@ -42,7 +42,7 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 ## Non-blocking findings
 
-**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. Then record the verdict.
+**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, record the verdict and include in your final manager line that the findings did not arrive. Otherwise, record the verdict.
 
 ## Review verdict
 
@@ -64,6 +64,6 @@ rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{hea
 - NEVER decide an open question.
 - NEVER ask the user a question.
 
-**Contact the manager with one `ringleader send {{manager}}` for a question or a block.** Send one message and stop.
+**Contact the manager with one `ringleader send {{manager}}` for a question or a block.** Send one message and stop. If `ringleader send` exits nonzero, retry it once. If it still fails, stop.
 
 **When you finish, send no chat message.** The controller reads rmap.
