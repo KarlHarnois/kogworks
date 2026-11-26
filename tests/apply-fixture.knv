@@ -1,0 +1,276 @@
+(module
+  "Builds a temporary governed repository and runs the apply command against it.")
+
+(use controller/json json json-array json-error->message
+                     json-field json-text parse-json)
+
+(use controller/process ->command canonical-path
+                        command-detail execute successful?)
+
+(export calls exit-code export-document factory-json
+        prepare-repo prepare-repo-without-factory
+        prepare-repo-without-roadmap roadmap-max-active
+        run-apply stderr-text stdout-text)
+
+(def factory-json
+  (str "{\"schema\": 0,\n" " \"name\": \"apply-fixture\",\n"
+       " \"manager\": \"apply-manager\",\n"
+       " \"roadmap\": \"factory-mvp\",\n"
+       " \"max_active\": 3,\n" " \"merge\": \"gh-auto\",\n"
+       " \"roles\": {}}\n"))
+
+(def reset-directory
+  (rust "{{
+    match std::fs::remove_dir_all({0}) {{
+      Ok(_) => Ok(()),
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+      Err(error) => Err(error.to_string()),
+    }}
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(def make-directory
+  (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
+(def write-text
+  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def read-text
+  (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
+(def make-executable
+  (rust "{{
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata({0})
+      .map_err(|error| error.to_string())?
+      .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions({0}, permissions)
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(def rmap-path
+  (rust "std::process::Command::new(\"sh\").args([\"-c\", \"command -v rmap\"]).output().ok().and_then(|output| if output.status.success() {{ String::from_utf8(output.stdout).ok().map(|text| text.trim().to_string()) }} else {{ None }})"
+    (fn () (option string))))
+
+(type prepare-repo
+  (fn ((ref str) (ref str) (ref str))
+    (result unit string)))
+
+(defn prepare-repo (root factory-text roadmap)
+  (let-try (_ (prepare-apply-repo root factory-text))
+    (rmap-new root roadmap)))
+
+(type prepare-repo-without-roadmap
+  (fn ((ref str) (ref str))
+    (result unit string)))
+
+(defn prepare-repo-without-roadmap (root factory-text)
+  (prepare-apply-repo root factory-text))
+
+(type prepare-repo-without-factory
+  (fn ((ref str)) (result unit string)))
+
+(defn prepare-repo-without-factory (root)
+  (let-try (_ (reset-directory root))
+    (let-try (_ (make-directory (as-str (str root "/bin"))))
+      (make-directory (as-str (str root "/repo"))))))
+
+(type prepare-apply-repo
+  (fn ((ref str) (ref str))
+    (result unit string)))
+
+(defn prepare-apply-repo (root factory-text)
+  (let-try (_ (reset-directory root))
+    (let-try (_ (make-directory (as-str (str root "/repo/.kogworks"))))
+      (let-try (_ (make-directory (as-str (str root "/bin"))))
+        (let-try (_ (write-factory root factory-text))
+          (let-try (_ (write-wrapper root))
+            (prepare-repository root)))))))
+
+(type write-factory
+  (fn ((ref str) (ref str))
+    (result unit string)))
+
+(defn write-factory (root factory-text)
+  (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+              factory-text))
+
+(type write-wrapper
+  (fn ((ref str)) (result unit string)))
+
+(defn write-wrapper (root)
+  (match (rmap-path)
+    ((some real)
+     (let-try (absolute (canonical-path root))
+       (let-try (_ (write-text (as-str (str root "/bin/rmap"))
+                               (as-str (wrapper-script (as-str absolute)
+                                                       (as-str real)))))
+         (make-executable (as-str (str root "/bin/rmap"))))))
+    (none (err (str "rmap is not on PATH")))))
+
+(type wrapper-script
+  (fn ((ref str) (ref str)) string))
+
+(defn wrapper-script (root real)
+  (str "#!/bin/sh\n" "printf '%s\\n' \"$*\" >> \"" root
+       "/rmap-calls\"\n" "exec \"" real "\" \"$@\"\n"))
+
+(type prepare-repository
+  (fn ((ref str)) (result unit string)))
+
+(defn prepare-repository (root)
+  (let-try (_ (run-in root "git"
+                      (vec (str "init") (str "-q"))
+                      "git init"))
+    (run-in root "rmap" (vec (str "init")) "rmap init")))
+
+(type rmap-new
+  (fn ((ref str) (ref str))
+    (result unit string)))
+
+(defn rmap-new (root roadmap)
+  (run-in root "rmap"
+          (vec (str "new")
+               (str roadmap)
+               (str "--manager")
+               (str "apply-test"))
+          (as-str (str "rmap new " roadmap))))
+
+(type run-in
+  (fn ((ref str)
+       (ref str)
+       (vec string)
+       (ref str))
+    (result unit string)))
+
+(defn run-in (root program arguments label)
+  (let (outcome (execute (as-str (str root "/repo"))
+                         (->command :program (str program)
+                                    :arguments arguments
+                                    :label (str label))))
+    (if (successful? outcome)
+      (ok (do))
+      (err (command-detail outcome)))))
+
+(deftype process-output (rust "std::process::Output"))
+
+(def run-apply-process
+  (rust "{{
+    let bin = std::fs::canonicalize({0}).map_err(|error| error.to_string())?;
+    let path = format!(\"{{}}:{{}}\",
+                       bin.display(),
+                       std::env::var(\"PATH\").unwrap_or_default());
+    std::process::Command::new(\"./target/knave/kogworks/kogworks\")
+      .args([\"apply\", \"--repo\", {1}])
+      .env(\"PATH\", path)
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref str))
+      (result process-output string))))
+
+(type run-apply
+  (fn ((ref str) (ref str))
+    (result process-output string)))
+
+(defn run-apply (bin repo) (run-apply-process bin repo))
+
+(def exit-code
+  (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
+    (fn ((ref process-output)) int)))
+
+(def stdout-text
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def stderr-text
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(type calls
+  (fn ((ref str)) (vec string)))
+
+(defn calls (root)
+  (match (read-text (as-str (str root "/rmap-calls")))
+    ((ok text)
+     (collect (map (filter (lines (as-str text)) non-blank?)
+                (fn (line) (str (trim line))))))
+    ((err _) (vec))))
+
+(defn non-blank? (line)
+  (not (empty? (trim line))))
+
+(type export-document
+  (fn ((ref str)) (result json string)))
+
+(defn export-document (root)
+  (let (outcome (execute (as-str (str root "/repo"))
+                         (->command :program (str "rmap")
+                                    :arguments (vec (str "export"))
+                                    :label (str "rmap export"))))
+    (if (successful? outcome)
+      (map-err (parse-json (as-str (:stdout outcome)))
+        (fn (failure) (json-error->message failure)))
+      (err (command-detail outcome)))))
+
+(type roadmap-max-active
+  (fn ((ref json) (ref str))
+    (option string)))
+
+(defn roadmap-max-active (document name)
+  (match (named-roadmap document name)
+    ((some object) (max-active-text object))
+    (none none)))
+
+(type named-roadmap
+  (fn ((ref json) (ref str))
+    (option json)))
+
+(defn named-roadmap (document name)
+  (let (items (unwrap-or (roadmaps document) (vec)))
+    (map-some (find (iter items)
+                (fn (item) (named? item name)))
+              (fn (item) (clone item)))))
+
+(type roadmaps
+  (fn ((ref json)) (option (vec json))))
+
+(defn roadmaps (document)
+  (match (json-field document "roadmaps")
+    ((some value) (json-array value))
+    (none none)))
+
+(type named?
+  (fn ((ref json) (ref str)) bool))
+
+(defn named? (object name)
+  (match (json-field object "name")
+    ((some value) (text-is? value name))
+    (none false)))
+
+(type text-is?
+  (fn ((ref json) (ref str)) bool))
+
+(defn text-is? (value expected)
+  (match (json-text value)
+    ((some text) (= (as-str text) expected))
+    (none false)))
+
+(type max-active-text
+  (fn ((ref json)) (option string)))
+
+(defn max-active-text (object)
+  (match (json-field object "max_active")
+    ((some value) (number-text value))
+    (none none)))
+
+(defn number-text (value)
+  (match value
+    ((number text) (some (clone text)))
+    (_ none)))
