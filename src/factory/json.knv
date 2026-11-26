@@ -43,9 +43,11 @@
   (fn ((ref (vec role))) string))
 
 (defn roles->json (roles)
-  (str "{\n"
-       (-> roles (map role-entry->json) collect (join ",\n"))
-       "\n  }"))
+  (if (empty? roles)
+    (str "{}")
+    (str "{\n"
+         (-> roles (map role-entry->json) collect (join ",\n"))
+         "\n  }")))
 
 (type role-entry->json
   (fn ((ref role)) string))

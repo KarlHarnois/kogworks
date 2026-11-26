@@ -52,8 +52,7 @@
 (defn malformed-role-clause (clause)
   (fail "a role clause is `(name :agent ... :skill ... :brief ...)`"
     clause
-    "write the role name, then `:agent`, `:skill` and `:brief`, each before its value"
-    (quote (:code malformed-role-clause))))
+    "write the role name, then `:agent`, `:skill` and `:brief`, each before its value"))
 
 (defn role-name-symbol (name)
   (symbol (quote role-name) "role-name/" (symbol-name name)))

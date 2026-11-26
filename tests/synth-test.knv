@@ -18,4 +18,4 @@
 
 (deftest factory-module-text-imports-deffactory
   (assert (= (factory-module-text (str "(deffactory sample)"))
-             (str "(use kogworks/factory/deffactory deffactory)\n\n(deffactory sample)"))))
+             (str "(use kogworks/factory/deffactory deffactory) (deffactory sample)"))))

@@ -51,8 +51,7 @@
 (defn missing-setting (parts key)
   (fail (string "deffactory needs `:" key "`")
     parts
-    (string "write `:" key " value` after the factory name")
-    (quote (:code missing-deffactory-setting))))
+    (string "write `:" key " value` after the factory name")))
 
 (defn roles-form (parts)
   (cond
@@ -63,16 +62,14 @@
 (defn missing-roles (parts)
   (fail "deffactory needs a `roles` form"
     parts
-    "write `(roles (worker ...) (reviewer ...))` after the settings"
-    (quote (:code missing-deffactory-roles))))
+    "write `(roles (worker ...) (reviewer ...))` after the settings"))
 
 (defn role-vector-form (form)
   (if (named? form "roles")
     (template (roles (splice (rest form))))
     (fail "deffactory needs a `roles` form"
       form
-      "write `(roles (worker ...) (reviewer ...))` after the settings"
-      (quote (:code missing-deffactory-roles)))))
+      "write `(roles (worker ...) (reviewer ...))` after the settings")))
 
 (defn named? (form word)
   (and (bool-not (empty? form))

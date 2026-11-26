@@ -1,0 +1,18 @@
+(use factory/deffactory deffactory)
+
+(deffactory empty-sample
+            :manager "sample-manager"
+            :roadmap "sample-roadmap"
+            :max-active 1
+            :merge gh-auto
+            (roles))
+
+(deftest empty-roles-json-has-no-blank-line
+  (assert (= (factory-json)
+             (str "{\n" "  \"schema\": 0,\n"
+                  "  \"name\": \"empty-sample\",\n"
+                  "  \"manager\": \"sample-manager\",\n"
+                  "  \"roadmap\": \"sample-roadmap\",\n"
+                  "  \"max_active\": 1,\n"
+                  "  \"merge\": \"gh-auto\",\n"
+                  "  \"roles\": {}\n" "}\n"))))

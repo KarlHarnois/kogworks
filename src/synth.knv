@@ -15,7 +15,7 @@
      (str "cannot write " path ": " reason))))
 
 (def deffactory-import
-  (str "(use kogworks/factory/deffactory deffactory)\n\n"))
+  (str "(use kogworks/factory/deffactory deffactory) "))
 
 (defn factory-module-text (factory-text)
   (str deffactory-import factory-text))
