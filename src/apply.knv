@@ -1,24 +1,25 @@
 (module
   "Applies the factory's max active to the governed repository's roadmap.")
 
-(use controller/json json json-error->message json-field
-                     parse-json)
+(use controller/factory read-factory-document)
+
+(use controller/failure factory-error
+                        factory-error->message)
+
+(use controller/json json json-field)
 
 (use controller/process ->command canonical-path command
-                        execute join-path read-text-file
-                        text-file?)
+                        execute)
 
 (export apply-and-exit apply-error apply-error->message
-        cap-from-text roadmap-cap)
+        cap-from-document roadmap-cap)
 
 (defstruct roadmap-cap
   :roadmap string
   :max-active int)
 
 (defenum apply-error
-  (missing-factory string)
-  (unreadable-factory string string)
-  (malformed-factory string string)
+  (factory factory-error)
   (missing-field string)
   (non-text-field string)
   (non-number-field string)
@@ -27,11 +28,7 @@
 
 (defn apply-error->message (failure)
   (match failure
-    ((missing-factory path) (str "no factory at " path))
-    ((unreadable-factory path reason)
-     (str "cannot read " path ": " reason))
-    ((malformed-factory path reason)
-     (str "cannot parse " path ": " reason))
+    ((factory cause) (factory-error->message cause))
     ((missing-field path) (str "the factory has no `" path "`"))
     ((non-text-field path)
      (str "the factory field `" path "` is not text"))
@@ -80,38 +77,16 @@
     (result roadmap-cap apply-error)))
 
 (defn read-cap (repo)
-  (let (path (factory-path repo))
-    (if (text-file? (as-str path))
-      (read-cap-file path)
-      (err (apply-error/missing-factory path)))))
+  (let-try (document (factory-document repo))
+    (cap-from-document document)))
 
-(type factory-path
-  (fn ((ref str)) string))
+(type factory-document
+  (fn ((ref str))
+    (result json apply-error)))
 
-(defn factory-path (repo)
-  (let (directory (join-path repo ".kogworks"))
-    (join-path (as-str directory) "factory.json")))
-
-(type read-cap-file
-  (fn ((ref string))
-    (result roadmap-cap apply-error)))
-
-(defn read-cap-file (path)
-  (match (read-text-file (as-str path))
-    ((ok text) (cap-from-text path (as-str text)))
-    ((err reason)
-     (err (apply-error/unreadable-factory (str path) reason)))))
-
-(type cap-from-text
-  (fn ((ref str) (ref str))
-    (result roadmap-cap apply-error)))
-
-(defn cap-from-text (path text)
-  (match (parse-json text)
-    ((ok document) (cap-from-document document))
-    ((err failure)
-     (err (apply-error/malformed-factory (str path)
-                                         (json-error->message failure))))))
+(defn factory-document (repo)
+  (map-err (read-factory-document repo)
+    (fn (failure) (apply-error/factory failure))))
 
 (type cap-from-document
   (fn ((ref json))

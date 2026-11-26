@@ -1,5 +1,5 @@
 (use fixtures/factory-fixture prepare-factory)
-(use synth synth-error synth-factory)
+(use synth error->message synth-factory)
 
 (deftype process-output (rust "std::process::Output"))
 
@@ -16,13 +16,29 @@
   (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
 
+(def stdout-text
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
 (defn failure-reason (outcome)
   (match outcome
     ((ok _) (str "unexpected success"))
-    ((err (unreadable-factory _ reason)) reason)
-    ((err (missing-factory path)) (str "missing " path))
-    ((err (unwritable-factory-json path reason))
-     (str "cannot write " path ": " reason))))
+    ((err failure) (error->message failure))))
+
+(deftest factory-without-factory-json-reports-the-eval-failure
+  (let (directory (str "target/knave/test-factories/no-factory-json"))
+    (unwrap-ok (prepare-factory directory (str "(def not-a-factory 1)\n")))
+    (let (reason (failure-reason (synth-factory (as-str directory)))
+          output (unwrap-ok (run-synth (as-str directory))))
+      (assert (contains? reason "cannot evaluate"))
+      (assert (contains? reason "factory.knv"))
+      (assert (contains? reason "factory-json"))
+      (assert (not (contains? reason "cannot read")))
+      (assert (= (exit-code output) 1))
+      (assert (= (stdout-text output) ""))
+      (assert (contains? (stderr-text output) "cannot evaluate"))
+      (assert (contains? (stderr-text output) "factory-json"))
+      (assert (not (contains? (stderr-text output) "cannot read"))))))
 
 (deftest missing-setting-reports-its-message
   (let (directory (str "target/knave/test-factories/missing-setting"))

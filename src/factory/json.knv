@@ -86,9 +86,47 @@
            (join ""))
        "\""))
 
+(def hex-digits
+  (vec (char "0")
+       (char "1")
+       (char "2")
+       (char "3")
+       (char "4")
+       (char "5")
+       (char "6")
+       (char "7")
+       (char "8")
+       (char "9")
+       (char "a")
+       (char "b")
+       (char "c")
+       (char "d")
+       (char "e")
+       (char "f")))
+
+(def character->code
+  (rust "{0} as i64" (fn (char) int)))
+
+(defn control-character? (character)
+  (< (character->code character) 32))
+
+(defn hex-digit->text (digit)
+  (str (deref (at hex-digits digit))))
+
+(defn control-character->json (character)
+  (let (code (character->code character))
+    (str "\\u00"
+         (hex-digit->text (/ code 16))
+         (hex-digit->text (rem code 16)))))
+
 (defn character->json (character)
   (match (find character-escapes
            (fn (escape)
              (= (:character escape) character)))
     ((some escape) (clone (:text escape)))
-    (none (str character))))
+    (none (unnamed-character->json character))))
+
+(defn unnamed-character->json (character)
+  (if (control-character? character)
+    (control-character->json character)
+    (str character)))

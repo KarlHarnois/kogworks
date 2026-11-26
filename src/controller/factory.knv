@@ -11,8 +11,9 @@
 
 (use controller/process join-path read-text-file text-file?)
 
-(export ->factory-config ->role factory-config merge-method
-        read-factory read-manager role)
+(export ->factory-config ->role factory-config factory-path
+        merge-method read-factory read-factory-document
+        read-manager role)
 
 (defenum merge-method gh-auto)
 
@@ -35,29 +36,49 @@
   (let (directory (join-path repo ".kogworks"))
     (join-path (as-str directory) "factory.json")))
 
+(type read-factory-document
+  (fn ((ref str))
+    (result json factory-error)))
+
+(defn read-factory-document (repo)
+  (let (path (factory-path repo))
+    (if (text-file? (as-str path))
+      (document-from-file path)
+      (err (factory-error/missing-factory path)))))
+
+(type document-from-file
+  (fn ((ref string))
+    (result json factory-error)))
+
+(defn document-from-file (path)
+  (match (read-text-file (as-str path))
+    ((ok text) (document-from-text path text))
+    ((err reason)
+     (err (factory-error/unreadable-factory (clone path) reason)))))
+
+(type document-from-text
+  (fn ((ref string) (ref string))
+    (result json factory-error)))
+
+(defn document-from-text (path text)
+  (map-err (parse-json (as-str text))
+    (fn (failure)
+      (factory-error/malformed-factory (clone path)
+                                       (json-error->message failure)))))
+
 (type read-factory
   (fn ((ref str))
     (result factory-config factory-error)))
 
 (defn read-factory (repo)
-  (let (path (factory-path repo))
-    (if (text-file? (as-str path))
-      (read-config path)
-      (err (factory-error/missing-factory path)))))
+  (let-try (document (read-factory-document repo))
+    (config-from-json document)))
 
 (type read-manager
   (fn ((ref str)) (option string)))
 
 (defn read-manager (repo)
-  (match (read-text-file (as-str (factory-path repo)))
-    ((ok text) (manager-from-text text))
-    ((err _) none)))
-
-(type manager-from-text
-  (fn ((ref string)) (option string)))
-
-(defn manager-from-text (text)
-  (match (parse-json (as-str text))
+  (match (read-factory-document repo)
     ((ok document) (manager-from-document document))
     ((err _) none)))
 
@@ -65,27 +86,6 @@
   (match (json-field document "manager")
     ((some value) (json-text value))
     (none none)))
-
-(type read-config
-  (fn ((ref string))
-    (result factory-config factory-error)))
-
-(defn read-config (path)
-  (match (read-text-file (as-str path))
-    ((ok text) (parse-config path text))
-    ((err reason)
-     (err (factory-error/unreadable-factory (clone path) reason)))))
-
-(type parse-config
-  (fn ((ref string) (ref string))
-    (result factory-config factory-error)))
-
-(defn parse-config (path text)
-  (match (parse-json (as-str text))
-    ((ok document) (config-from-json document))
-    ((err failure)
-     (err (factory-error/malformed-factory (clone path)
-                                           (json-error->message failure))))))
 
 (type config-from-json
   (fn ((ref json))

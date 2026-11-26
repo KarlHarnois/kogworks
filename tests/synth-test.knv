@@ -11,6 +11,12 @@
                                                                "no such file")))
              "cannot read factory.knv: no such file")))
 
+(deftest factory-eval-failure-becomes-a-message
+  (assert (= (error->message (synth-error/factory-eval-failed (str
+                                                                "factory.knv")
+                                                              (str "cannot find `factory-json`")))
+             "cannot evaluate factory.knv: cannot find `factory-json`")))
+
 (deftest unwritable-factory-json-becomes-a-message
   (assert (= (error->message (synth-error/unwritable-factory-json (str "factory.json")
                                                                   (str

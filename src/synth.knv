@@ -5,6 +5,7 @@
 (defenum synth-error
   (missing-factory string)
   (unreadable-factory string string)
+  (factory-eval-failed string string)
   (unwritable-factory-json string string))
 
 (defn error->message (failure)
@@ -12,6 +13,8 @@
     ((missing-factory path) (str "no factory at " path))
     ((unreadable-factory path reason)
      (str "cannot read " path ": " reason))
+    ((factory-eval-failed path reason)
+     (str "cannot evaluate " path ": " reason))
     ((unwritable-factory-json path reason)
      (str "cannot write " path ": " reason))))
 
@@ -100,8 +103,8 @@
 (defn checked-factory-json (factory-file output)
   (match (succeeded? output)
     (true (ok (output-text output)))
-    (false (err (synth-error/unreadable-factory (str factory-file)
-                                                (output-failure output))))))
+    (false (err (synth-error/factory-eval-failed (str factory-file)
+                                                 (output-failure output))))))
 
 (type eval-factory-json
   (fn ((ref str) (ref str))
@@ -113,7 +116,7 @@
       ((ok output)
        (checked-factory-json (as-str factory-file) output))
       ((err reason)
-       (err (synth-error/unreadable-factory (str factory-file) reason))))))
+       (err (synth-error/factory-eval-failed (str factory-file) reason))))))
 
 (type write-factory-json
   (fn ((ref str) (ref str))
