@@ -1,5 +1,6 @@
 (use knave-commandant defcli defcommand run-command)
 (use prelude/macros header-shape)
+(use apply apply-and-exit)
 (use controller/controller controller-and-exit)
 
 (use synth error->message factory-format-module
@@ -25,8 +26,14 @@
          :about "Seconds to wait between passes")
   (:once switch :about "Runs one pass and exits"))
 
+(defcommand apply "Sets a governed repository's roadmap max active from its factory."
+  (:repo string
+         :required true
+         :value-name path
+         :about "The governed repository"))
+
 (defcli kogworks "Factory."
-  (commands synth module format controller))
+  (commands synth module format controller apply))
 
 (defn main ()
   (match (:command (run-command kogworks))
@@ -39,7 +46,9 @@
     ((kogworks-command/controller options)
      (controller-and-exit (as-str (:repo options))
                           (:poll options)
-                          (:once options)))))
+                          (:once options)))
+    ((kogworks-command/apply options)
+     (apply-and-exit (as-str (:repo options))))))
 
 (type synth-and-exit
   (fn ((ref str)) unit))
