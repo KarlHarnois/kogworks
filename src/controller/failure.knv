@@ -6,53 +6,9 @@
         factory-error->message failure-report merge-error
         merge-error->message)
 
-(defenum factory-error
-  (missing-factory string)
-  (unreadable-factory string string)
-  (malformed-factory string string)
-  (missing-field string)
-  (non-text-field string)
-  (non-object-field string)
-  (unsupported-merge-method string))
-
-(defn factory-error->message (failure)
-  (match failure
-    ((missing-factory path) (str "no factory at " path))
-    ((unreadable-factory path reason)
-     (str "cannot read " path ": " reason))
-    ((malformed-factory path reason)
-     (str "cannot parse " path ": " reason))
-    ((missing-field path) (str "the factory has no `" path "`"))
-    ((non-text-field path)
-     (str "the factory field `" path "` is not text"))
-    ((non-object-field path)
-     (str "the factory field `" path "` is not an object"))
-    ((unsupported-merge-method method)
-     (str "the factory merge method `" method
-          "` is not supported"))))
-
-(defenum merge-error
-  (settings-refused string string)
-  (head-changed string string string string)
-  (timed-out string string int))
-
-(defn merge-error->message (failure)
-  (match failure
-    ((settings-refused item detail)
-     (str "merge: " item ": " detail))
-    ((head-changed item pull-request approved observed)
-     (str "merge: " item ": PR " pull-request " head is "
-          observed ", not the approved " approved))
-    ((timed-out item pull-request seconds)
-     (str "merge: " item ": PR " pull-request
-          " did not merge within " seconds " seconds"))))
-
-(defstruct action-failure
-  :action string
-  :item string
-  :command string
-  :code int
-  :detail string)
+(defstruct failure-report
+  :manager (option string)
+  :error controller-error)
 
 (defenum controller-error
   (command-failed action-failure)
@@ -63,24 +19,26 @@
   (unreadable-repository string string)
   (placeholder-left string string))
 
-(defn command-failure->message (failure)
-  (let (detail (:detail failure))
-    (if (empty? detail)
-      (str (:action failure)
-           ": "
-           (:item failure)
-           ": `"
-           (:command failure)
-           "` exited "
-           (:code failure))
-      (str (:action failure)
-           ": "
-           (:item failure)
-           ": `"
-           (:command failure)
-           "` exited "
-           (:code failure)
-           ": " detail))))
+(defenum factory-error
+  (missing-factory string)
+  (unreadable-factory string string)
+  (malformed-factory string string)
+  (missing-field string)
+  (non-text-field string)
+  (non-object-field string)
+  (unsupported-merge-method string))
+
+(defenum merge-error
+  (settings-refused string string)
+  (head-changed string string string string)
+  (timed-out string string int))
+
+(defstruct action-failure
+  :action string
+  :item string
+  :command string
+  :code int
+  :detail string)
 
 (defn error->message (failure)
   (match failure
@@ -107,6 +65,48 @@
      (str "controller: " item ": the brief still holds `"
           token "` after filling"))))
 
-(defstruct failure-report
-  :manager (option string)
-  :error controller-error)
+(defn factory-error->message (failure)
+  (match failure
+    ((missing-factory path) (str "no factory at " path))
+    ((unreadable-factory path reason)
+     (str "cannot read " path ": " reason))
+    ((malformed-factory path reason)
+     (str "cannot parse " path ": " reason))
+    ((missing-field path) (str "the factory has no `" path "`"))
+    ((non-text-field path)
+     (str "the factory field `" path "` is not text"))
+    ((non-object-field path)
+     (str "the factory field `" path "` is not an object"))
+    ((unsupported-merge-method method)
+     (str "the factory merge method `" method
+          "` is not supported"))))
+
+(defn merge-error->message (failure)
+  (match failure
+    ((settings-refused item detail)
+     (str "merge: " item ": " detail))
+    ((head-changed item pull-request approved observed)
+     (str "merge: " item ": PR " pull-request " head is "
+          observed ", not the approved " approved))
+    ((timed-out item pull-request seconds)
+     (str "merge: " item ": PR " pull-request
+          " did not merge within " seconds " seconds"))))
+
+(defn command-failure->message (failure)
+  (let (detail (:detail failure))
+    (if (empty? detail)
+      (str (:action failure)
+           ": "
+           (:item failure)
+           ": `"
+           (:command failure)
+           "` exited "
+           (:code failure))
+      (str (:action failure)
+           ": "
+           (:item failure)
+           ": `"
+           (:command failure)
+           "` exited "
+           (:code failure)
+           ": " detail))))

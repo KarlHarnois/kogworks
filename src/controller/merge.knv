@@ -24,13 +24,13 @@
 
 (export ->merge-settings merge-settings start-merge)
 
-(defstruct merge-state
-  :state string
-  :head string)
-
 (defstruct merge-settings
   :poll-seconds int
   :timeout-seconds int)
+
+(defstruct merge-state
+  :state string
+  :head string)
 
 (defenum poll-verdict
   merged

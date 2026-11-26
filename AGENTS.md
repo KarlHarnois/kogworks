@@ -17,6 +17,7 @@ knave check
 knave fmt --check
 knave lint
 knave build
+knave task ledelint
 ./target/knave/kogworks/kogworks module .kogworks > target/factory-module.knv
 knave lint target/factory-module.knv
 knave check target/factory-module.knv

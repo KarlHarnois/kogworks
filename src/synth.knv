@@ -2,44 +2,11 @@
         factory-format-module-text factory-module
         factory-module-text synth-error synth-factory)
 
-(defenum synth-error
-  (missing-factory string)
-  (unreadable-factory string string)
-  (factory-eval-failed string string)
-  (unwritable-factory-json string string))
-
-(defn error->message (failure)
-  (match failure
-    ((missing-factory path) (str "no factory at " path))
-    ((unreadable-factory path reason)
-     (str "cannot read " path ": " reason))
-    ((factory-eval-failed path reason)
-     (str "cannot evaluate " path ": " reason))
-    ((unwritable-factory-json path reason)
-     (str "cannot write " path ": " reason))))
-
-(defenum factory-module-layout
-  inline
-  separated)
-
 (def deffactory-import
   (str "(use kogworks/factory/deffactory deffactory) "))
 
 (def deffactory-format-import
   (str "(use kogworks/factory/deffactory deffactory)\n\n"))
-
-(defn factory-module-text (factory-text)
-  (str deffactory-import factory-text))
-
-(defn factory-format-module-text (factory-text)
-  (str deffactory-format-import factory-text))
-
-(defn module-text (layout factory-text)
-  (match layout
-    (inline (factory-module-text factory-text))
-    (separated (factory-format-module-text factory-text))))
-
-(deftype process-output (rust "std::process::Output"))
 
 (def join-path
   (rust "std::path::Path::new({0}).join({1}).to_string_lossy().into_owned()"
@@ -95,62 +62,33 @@
   (rust "String::from_utf8_lossy({0}.stderr.as_slice()).trim().to_owned()"
     (fn ((ref process-output)) string)))
 
-(type checked-factory-json
-  (fn ((ref str) (ref process-output))
-    (result string synth-error)))
+(defenum synth-error
+  (missing-factory string)
+  (unreadable-factory string string)
+  (factory-eval-failed string string)
+  (unwritable-factory-json string string))
 
-(defn checked-factory-json (factory-file output)
-  (match (succeeded? output)
-    (true (ok (output-text output)))
-    (false (err (synth-error/factory-eval-failed (str factory-file)
-                                                 (output-failure output))))))
+(defenum factory-module-layout
+  inline
+  separated)
 
-(type eval-factory-json
-  (fn ((ref str) (ref str))
-    (result string synth-error)))
+(deftype process-output (rust "std::process::Output"))
 
-(defn eval-factory-json (factory-file module-text)
-  (match (run-knave-eval factory-file module-text)
-    ((ok output) (checked-factory-json factory-file output))
-    ((err reason)
-     (err (synth-error/factory-eval-failed (str factory-file) reason)))))
+(defn error->message (failure)
+  (match failure
+    ((missing-factory path) (str "no factory at " path))
+    ((unreadable-factory path reason)
+     (str "cannot read " path ": " reason))
+    ((factory-eval-failed path reason)
+     (str "cannot evaluate " path ": " reason))
+    ((unwritable-factory-json path reason)
+     (str "cannot write " path ": " reason))))
 
-(type write-factory-json
-  (fn ((ref str) (ref str))
-    (result string synth-error)))
+(defn factory-module-text (factory-text)
+  (str deffactory-import factory-text))
 
-(defn write-factory-json (json-file json)
-  (match (write-text json-file json)
-    ((ok _) (ok (str json-file)))
-    ((err reason)
-     (err (synth-error/unwritable-factory-json (str json-file) reason)))))
-
-(type factory-module
-  (fn ((ref str))
-    (result string synth-error)))
-
-(type factory-file->module
-  (fn ((ref str) factory-module-layout)
-    (result string synth-error)))
-
-(defn factory-file->module (factory-file layout)
-  (match (read-text factory-file)
-    ((ok factory-text) (ok (module-text layout factory-text)))
-    ((err reason)
-     (err (synth-error/unreadable-factory (str factory-file) reason)))))
-
-(type factory-module-in
-  (fn ((ref str) factory-module-layout)
-    (result string synth-error)))
-
-(defn factory-module-in (directory layout)
-  (let (factory-file (join-path directory "factory.knv"))
-    (if (holds-file? (as-str factory-file))
-      (factory-file->module (as-str factory-file) layout)
-      (err (synth-error/missing-factory (str factory-file))))))
-
-(defn factory-module (directory)
-  (factory-module-in directory factory-module-layout/inline))
+(defn factory-format-module-text (factory-text)
+  (str deffactory-format-import factory-text))
 
 (defn factory-format-module (directory)
   (factory-module-in directory
@@ -167,3 +105,65 @@
                                         (as-str module-text)))
         (write-factory-json (as-str (join-path directory "factory.json"))
                             (as-str json))))))
+
+(type factory-module
+  (fn ((ref str))
+    (result string synth-error)))
+
+(defn factory-module (directory)
+  (factory-module-in directory factory-module-layout/inline))
+
+(type eval-factory-json
+  (fn ((ref str) (ref str))
+    (result string synth-error)))
+
+(defn eval-factory-json (factory-file module-text)
+  (match (run-knave-eval factory-file module-text)
+    ((ok output) (checked-factory-json factory-file output))
+    ((err reason)
+     (err (synth-error/factory-eval-failed (str factory-file) reason)))))
+
+(type checked-factory-json
+  (fn ((ref str) (ref process-output))
+    (result string synth-error)))
+
+(defn checked-factory-json (factory-file output)
+  (match (succeeded? output)
+    (true (ok (output-text output)))
+    (false (err (synth-error/factory-eval-failed (str factory-file)
+                                                 (output-failure output))))))
+
+(type write-factory-json
+  (fn ((ref str) (ref str))
+    (result string synth-error)))
+
+(defn write-factory-json (json-file json)
+  (match (write-text json-file json)
+    ((ok _) (ok (str json-file)))
+    ((err reason)
+     (err (synth-error/unwritable-factory-json (str json-file) reason)))))
+
+(type factory-module-in
+  (fn ((ref str) factory-module-layout)
+    (result string synth-error)))
+
+(defn factory-module-in (directory layout)
+  (let (factory-file (join-path directory "factory.knv"))
+    (if (holds-file? (as-str factory-file))
+      (factory-file->module (as-str factory-file) layout)
+      (err (synth-error/missing-factory (str factory-file))))))
+
+(type factory-file->module
+  (fn ((ref str) factory-module-layout)
+    (result string synth-error)))
+
+(defn factory-file->module (factory-file layout)
+  (match (read-text factory-file)
+    ((ok factory-text) (ok (module-text layout factory-text)))
+    ((err reason)
+     (err (synth-error/unreadable-factory (str factory-file) reason)))))
+
+(defn module-text (layout factory-text)
+  (match layout
+    (inline (factory-module-text factory-text))
+    (separated (factory-format-module-text factory-text))))

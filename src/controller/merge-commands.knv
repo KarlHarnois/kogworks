@@ -93,6 +93,19 @@
                  :arguments arguments
                  :label label))))
 
+(type view-command
+  (fn ((ref string)) command))
+
+(defn view-command (pull-request)
+  (->command :program (str "gh")
+             :arguments (vec (str "pr")
+                             (str "view")
+                             (clone pull-request)
+                             (str "--json")
+                             (str "state,mergedAt,headRefOid"))
+             :label (str "gh pr view " pull-request
+                         " --json state,mergedAt,headRefOid")))
+
 (type merge-arguments
   (fn ((ref merge-method) (ref merge-target))
     (vec string)))
@@ -106,16 +119,3 @@
                   (str "--merge")
                   (str "--match-head-commit")
                   (clone (:head target))))))
-
-(type view-command
-  (fn ((ref string)) command))
-
-(defn view-command (pull-request)
-  (->command :program (str "gh")
-             :arguments (vec (str "pr")
-                             (str "view")
-                             (clone pull-request)
-                             (str "--json")
-                             (str "state,mergedAt,headRefOid"))
-             :label (str "gh pr view " pull-request
-                         " --json state,mergedAt,headRefOid")))

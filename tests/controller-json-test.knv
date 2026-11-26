@@ -2,11 +2,6 @@
                      json-error->message json-field
                      json-object? json-text parse-json)
 
-(defn assert-text-value (value expected)
-  (match (json-text value)
-    ((some text) (assert (= (as-str text) (as-str expected))))
-    (none (assert false))))
-
 (defn assert-text-field (document key expected)
   (match (json-field document key)
     ((some value) (assert-text-value value expected))
@@ -16,6 +11,11 @@
   (match (parse-json (as-str source))
     ((ok document) (assert-text-value document expected))
     ((err _) (assert false))))
+
+(defn assert-text-value (value expected)
+  (match (json-text value)
+    ((some text) (assert (= (as-str text) (as-str expected))))
+    (none (assert false))))
 
 (deftest parse-json-reads-an-object
   (let (document (unwrap-ok (parse-json (as-str (str "{\"a\": \"b\"}")))))

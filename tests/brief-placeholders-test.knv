@@ -1,7 +1,3 @@
-(defstruct placeholder
-  :token string
-  :sample string)
-
 (def worker-brief-path (str ".kogworks/briefs/worker.md"))
 
 (def reviewer-brief-path
@@ -37,6 +33,10 @@
                       :sample (str "prs:reviewing-prs"))
        (->placeholder :token (str "{{manager}}")
                       :sample (str "sample-manager"))))
+
+(defstruct placeholder
+  :token string
+  :sample string)
 
 (type substitute
   (fn (string (ref placeholder)) string))

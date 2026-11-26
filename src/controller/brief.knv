@@ -27,13 +27,39 @@
   :skill string
   :manager string)
 
+(defstruct brief
+  :item string
+  :placeholders (vec placeholder))
+
 (defstruct placeholder
   :token string
   :value string)
 
-(defstruct brief
-  :item string
-  :placeholders (vec placeholder))
+(type worker-brief
+  (fn ((ref worker-values)) brief))
+
+(defn worker-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (worker-placeholders values)))
+
+(type reviewer-brief
+  (fn ((ref reviewer-values)) brief))
+
+(defn reviewer-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (reviewer-placeholders values)))
+
+(type fill-brief
+  (fn ((ref str) (ref brief))
+    (result string controller-error)))
+
+(defn fill-brief (path values)
+  (match (read-text-file path)
+    ((err reason)
+     (err (controller-error/unreadable-brief (str path) reason)))
+    ((ok text)
+     (filled-brief (fill (as-str text) (:placeholders values))
+                   (:item values)))))
 
 (type worker-placeholders
   (fn ((ref worker-values))
@@ -76,20 +102,6 @@
                       :value (clone (:skill values)))
        (->placeholder :token (str "{{manager}}")
                       :value (clone (:manager values)))))
-
-(type worker-brief
-  (fn ((ref worker-values)) brief))
-
-(defn worker-brief (values)
-  (->brief :item (clone (:item values))
-           :placeholders (worker-placeholders values)))
-
-(type reviewer-brief
-  (fn ((ref reviewer-values)) brief))
-
-(defn reviewer-brief (values)
-  (->brief :item (clone (:item values))
-           :placeholders (reviewer-placeholders values)))
 
 (type fill
   (fn ((ref str) (ref (vec placeholder)))
@@ -176,18 +188,6 @@
           (char "{"))
        (= (deref (at characters (inc index)))
           (char "{"))))
-
-(type fill-brief
-  (fn ((ref str) (ref brief))
-    (result string controller-error)))
-
-(defn fill-brief (path values)
-  (match (read-text-file path)
-    ((err reason)
-     (err (controller-error/unreadable-brief (str path) reason)))
-    ((ok text)
-     (filled-brief (fill (as-str text) (:placeholders values))
-                   (:item values)))))
 
 (type filled-brief
   (fn ((result string string) (ref string))

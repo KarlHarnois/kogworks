@@ -1,4 +1,4 @@
-# `knave upgrade` rewrites `knave.yml`. This workflow holds the kogworks factory check.
+# `knave upgrade` rewrites `knave.yml`. This workflow holds the kogworks checks.
 name: Kogworks
 
 on:
@@ -9,6 +9,14 @@ permissions:
   contents: read
 
 jobs:
+  ledelint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-knave
+      - name: Check the declaration order
+        run: knave task ledelint
+
   factory:
     runs-on: ubuntu-latest
     steps:
