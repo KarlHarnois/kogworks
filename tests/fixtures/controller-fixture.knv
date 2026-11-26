@@ -17,10 +17,24 @@
   :stop-after int
   :claim-exit int
   :claim-error string
+  :advance-exit int
+  :advance-error string
   :review-exit int
   :review-error string
   :new-exit int
-  :new-error string)
+  :new-error string
+  :merge-exit int
+  :merge-error string
+  :close-exit int
+  :close-error string
+  :repo-view-exit int
+  :repo-view-error string
+  :api-exit int
+  :api-error string
+  :slug string
+  :allow-auto-merge string
+  :required-checks string
+  :view-json string)
 
 (defn default-settings (next-json ready-json)
   (->fake-settings :next-json next-json
@@ -29,10 +43,24 @@
                    :stop-after 0
                    :claim-exit 0
                    :claim-error (str)
+                   :advance-exit 0
+                   :advance-error (str)
                    :review-exit 0
                    :review-error (str)
                    :new-exit 0
-                   :new-error (str)))
+                   :new-error (str)
+                   :merge-exit 0
+                   :merge-error (str)
+                   :close-exit 0
+                   :close-error (str)
+                   :repo-view-exit 0
+                   :repo-view-error (str)
+                   :api-exit 0
+                   :api-error (str)
+                   :slug (str "fake-owner/fake-repo")
+                   :allow-auto-merge (str "true")
+                   :required-checks (str "1")
+                   :view-json (str "{}")))
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -118,7 +146,15 @@
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
     "    case \"$2\" in\n"
     "      show) cat \"$root/item.json\" ;;\n"
-    "      claim)\n"
+    "      advance)\n"
+    "        if [ [ADVANCE_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[ADVANCE_ERROR]' >&2\n"
+    "          exit [ADVANCE_EXIT]\n" "        fi\n"
+    "        ;;\n" "      close)\n"
+    "        if [ [CLOSE_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[CLOSE_ERROR]' >&2\n"
+    "          exit [CLOSE_EXIT]\n" "        fi\n"
+    "        ;;\n" "      claim)\n"
     "        if [ [CLAIM_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[CLAIM_ERROR]' >&2\n"
     "          exit [CLAIM_EXIT]\n" "        fi\n"
@@ -165,6 +201,33 @@
        "printf 'git %s\\n' \"$*\" >> \"$root/git.log\"\n"
        "printf 'origin/main\\n'"))
 
+(def gh-script
+  (str "#!/bin/sh\n"
+       "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+       "printf 'gh %s\\n' \"$*\" >> \"$root/sequence\"\n"
+       "case \"$1 $2\" in\n" "  \"repo view\")\n"
+       "    if [ [REPO_VIEW_EXIT] -ne 0 ]; then\n"
+       "      printf '%s\\n' '[REPO_VIEW_ERROR]' >&2\n"
+       "      exit [REPO_VIEW_EXIT]\n" "    fi\n"
+       "    printf '%s\\n' '[SLUG]'\n" "    ;;\n"
+       "  \"api repos/[SLUG]\")\n"
+       "    if [ [API_EXIT] -ne 0 ]; then\n"
+       "      printf '%s\\n' '[API_ERROR]' >&2\n"
+       "      exit [API_EXIT]\n" "    fi\n"
+       "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n"
+       "    ;;\n"
+       "  \"api repos/[SLUG]/branches/main/protection\")\n"
+       "    if [ [API_EXIT] -ne 0 ]; then\n"
+       "      printf '%s\\n' '[API_ERROR]' >&2\n"
+       "      exit [API_EXIT]\n" "    fi\n"
+       "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
+       "  \"pr merge\")\n"
+       "    if [ [MERGE_EXIT] -ne 0 ]; then\n"
+       "      printf '%s\\n' '[MERGE_ERROR]' >&2\n"
+       "      exit [MERGE_EXIT]\n" "    fi\n" "    ;;\n"
+       "  \"pr view\") cat \"$root/view.json\" ;;\n"
+       "esac\n" "exit 0\n"))
+
 (defn replace-token (text token value)
   (-> text as-str
       (split (as-str token))
@@ -179,13 +242,38 @@
                      (str (:claim-exit settings)))
       (replace-token (str "[CLAIM_ERROR]")
                      (clone (:claim-error settings)))
+      (replace-token (str "[ADVANCE_EXIT]")
+                     (str (:advance-exit settings)))
+      (replace-token (str "[ADVANCE_ERROR]")
+                     (clone (:advance-error settings)))
       (replace-token (str "[REVIEW_EXIT]")
                      (str (:review-exit settings)))
       (replace-token (str "[REVIEW_ERROR]")
                      (clone (:review-error settings)))
       (replace-token (str "[NEW_EXIT]")
                      (str (:new-exit settings)))
-      (replace-token (str "[NEW_ERROR]") (:new-error settings))))
+      (replace-token (str "[NEW_ERROR]") (:new-error settings))
+      (replace-token (str "[MERGE_EXIT]")
+                     (str (:merge-exit settings)))
+      (replace-token (str "[MERGE_ERROR]")
+                     (clone (:merge-error settings)))
+      (replace-token (str "[CLOSE_EXIT]")
+                     (str (:close-exit settings)))
+      (replace-token (str "[CLOSE_ERROR]")
+                     (clone (:close-error settings)))
+      (replace-token (str "[REPO_VIEW_EXIT]")
+                     (str (:repo-view-exit settings)))
+      (replace-token (str "[REPO_VIEW_ERROR]")
+                     (clone (:repo-view-error settings)))
+      (replace-token (str "[API_EXIT]")
+                     (str (:api-exit settings)))
+      (replace-token (str "[API_ERROR]")
+                     (clone (:api-error settings)))
+      (replace-token (str "[SLUG]") (:slug settings))
+      (replace-token (str "[ALLOW_AUTO_MERGE]")
+                     (:allow-auto-merge settings))
+      (replace-token (str "[REQUIRED_CHECKS]")
+                     (:required-checks settings))))
 
 (defn write-script (path text)
   (let-try (_ (write-text (as-str path) (as-str text)))
@@ -193,19 +281,25 @@
 
 (defn write-fakes (root settings)
   (let-try (_ (make-directory (as-str (str root "/bin"))))
-    (let-try (_ (write-text (as-str (str root "/next.json"))
-                            (as-str (:next-json settings))))
-      (let-try (_ (write-text (as-str (str root "/ready.json"))
-                              (as-str (:ready-json settings))))
-        (let-try (_ (write-text (as-str (str root "/item.json"))
-                                (as-str (:item-json settings))))
-          (let-try (_ (write-script (str root "/bin/rmap")
-                                    (replaced-script rmap-script settings)))
-            (let-try (_ (write-script (str root "/bin/ringleader")
-                                      (replaced-script ringleader-script
-                                                       settings)))
-              (write-script (str root "/bin/git")
-                            (replaced-script git-script settings)))))))))
+    (let-try (_ (write-value-files root settings))
+      (let-try (_ (write-script (str root "/bin/rmap")
+                                (replaced-script rmap-script settings)))
+        (let-try (_ (write-script (str root "/bin/ringleader")
+                                  (replaced-script ringleader-script settings)))
+          (let-try (_ (write-script (str root "/bin/git")
+                                    (replaced-script git-script settings)))
+            (write-script (str root "/bin/gh")
+                          (replaced-script gh-script settings))))))))
+
+(defn write-value-files (root settings)
+  (let-try (_ (write-text (as-str (str root "/next.json"))
+                          (as-str (:next-json settings))))
+    (let-try (_ (write-text (as-str (str root "/ready.json"))
+                            (as-str (:ready-json settings))))
+      (let-try (_ (write-text (as-str (str root "/item.json"))
+                              (as-str (:item-json settings))))
+        (write-text (as-str (str root "/view.json"))
+                    (as-str (:view-json settings)))))))
 
 (deftype process-output (rust "std::process::Output"))
 

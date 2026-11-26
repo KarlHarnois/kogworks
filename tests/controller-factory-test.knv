@@ -1,4 +1,4 @@
-(use controller/factory read-factory)
+(use controller/factory merge-method read-factory)
 (use controller/failure factory-error)
 
 (use fixtures/controller-fixture prepare-repo
@@ -11,6 +11,7 @@
       ((ok config)
        (assert (= (:manager config) (str "fake-manager")))
        (assert (= (:roadmap config) (str "fake-roadmap")))
+       (assert (= (:merge config) merge-method/gh-auto))
        (assert (= (:agent (:worker config))
                   (str "fake-agent")))
        (assert (= (:skill (:worker config))
@@ -42,4 +43,16 @@
       ((err (malformed-factory path reason))
        (assert (contains? path "factory.json"))
        (assert (contains? reason "unexpected end")))
+      (_ (assert false)))))
+
+(deftest read-factory-rejects-an-unsupported-merge-method
+  (let (root (str "target/knave/controller-tests/factory-merge-method"))
+    (unwrap-ok (prepare-repo (as-str root)))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{\"manager\":\"fake-manager\","
+                                        "\"roadmap\":\"fake-roadmap\","
+                                        "\"merge\":\"gh-api\"}"))))
+    (match (read-factory (as-str (str root "/repo")))
+      ((err (unsupported-merge-method method))
+       (assert (= method (str "gh-api"))))
       (_ (assert false)))))
