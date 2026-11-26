@@ -34,11 +34,13 @@
 git push -u origin {{branch}}
 ```
 
-**Open the pull request with `gh pr create`.** Run:
+**Open the pull request with the `describing-prs` skill and `gh pr create`.** Invoke the `describing-prs` skill to draft the title and body for `{{branch}}`. Then run:
 
 ```sh
-gh pr create --base {{base}} --assignee @me --fill
+gh pr create --base {{base}} --assignee @me --title "<title>" --body "<body>"
 ```
+
+Use the drafted title and body in place of `<title>` and `<body>`. If `gh pr create` fails, fix the cause and rerun it at most twice, then record a question report and stop.
 
 **Record the done report with `rmap report`.** Run:
 
