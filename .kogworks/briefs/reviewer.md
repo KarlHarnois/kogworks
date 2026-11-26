@@ -34,15 +34,15 @@ The worktree is already at the pull request head.
 **Record one verdict for each acceptance criterion.** Use `rmap item verify` with `--met` or `--failed`. Run:
 
 ```sh
-rmap item verify {{item}} <position> --met --head {{head}} --reviewer {{session}}
-rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{session}}
+rmap item verify {{item}} <position> --met --head {{head}} --reviewer {{session}} --note '<evidence>'
+rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{session}} --note '<evidence>'
 ```
 
 **Choose the verdict by the criterion.** If the criterion holds, use `--met`. If the criterion fails, use `--failed`.
 
 ## Non-blocking findings
 
-**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, put the findings and the send failure in the `--note` of the last criterion verdict. Record the review verdict either way.
+**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
 
 ## Review verdict
 
