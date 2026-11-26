@@ -1,0 +1,77 @@
+(defstruct placeholder
+  :token string
+  :sample string)
+
+(def worker-brief-path (str ".kogworks/briefs/worker.md"))
+
+(def reviewer-brief-path
+  (str ".kogworks/briefs/reviewer.md"))
+
+(def worker-placeholders
+  (vec (->placeholder :token (str "{{item}}")
+                      :sample (str "rm-0000"))
+       (->placeholder :token (str "{{roadmap}}")
+                      :sample (str "factory-mvp"))
+       (->placeholder :token (str "{{session}}")
+                      :sample (str "sample-session"))
+       (->placeholder :token (str "{{branch}}")
+                      :sample (str "sample-branch"))
+       (->placeholder :token (str "{{base}}") :sample (str "main"))
+       (->placeholder :token (str "{{skill}}")
+                      :sample (str "features:building-features"))))
+
+(def reviewer-placeholders
+  (vec (->placeholder :token (str "{{item}}")
+                      :sample (str "rm-0000"))
+       (->placeholder :token (str "{{roadmap}}")
+                      :sample (str "factory-mvp"))
+       (->placeholder :token (str "{{session}}")
+                      :sample (str "sample-session"))
+       (->placeholder :token (str "{{pr}}") :sample (str "1"))
+       (->placeholder :token (str "{{head}}")
+                      :sample (str "0000000000000000000000000000000000000000"))
+       (->placeholder :token (str "{{criteria}}")
+                      :sample (str "the item works"))
+       (->placeholder :token (str "{{base}}") :sample (str "main"))
+       (->placeholder :token (str "{{skill}}")
+                      :sample (str "prs:reviewing-prs"))
+       (->placeholder :token (str "{{manager}}")
+                      :sample (str "sample-manager"))))
+
+(type substitute
+  (fn (string (ref placeholder)) string))
+
+(defn substitute (text placeholder)
+  (-> text as-str
+      (split (as-str (:token placeholder)))
+      collect
+      (join (as-str (:sample placeholder)))))
+
+(defn placeholder-present? (brief placeholder)
+  (contains? brief (as-str (:token placeholder))))
+
+(defn leftover-braces? (text)
+  (or (contains? text "{{") (contains? text "}}")))
+
+(deftest worker-brief-fills-every-placeholder
+  (let (brief (unwrap-ok (slurp worker-brief-path)))
+    (assert (every? worker-placeholders
+              (fn (placeholder) (placeholder-present? brief placeholder))))
+    (assert (not (leftover-braces?
+                   (reduce worker-placeholders (clone brief) substitute))))))
+
+(deftest reviewer-brief-fills-every-placeholder
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (every? reviewer-placeholders
+              (fn (placeholder) (placeholder-present? brief placeholder))))
+    (assert (not (leftover-braces?
+                   (reduce reviewer-placeholders (clone brief) substitute))))))
+
+(deftest reviewer-brief-states-the-owner-review-protocol
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief "1. Invoke the `{{skill}}` skill first."))
+    (assert (not (contains? brief "gh pr checkout")))
+    (assert (contains? brief "git fetch origin"))
+    (assert (contains? brief "git diff origin/{{base}}...HEAD"))
+    (assert (contains? brief "ringleader send {{manager}}"))
+    (assert (contains? brief "writing-clean-code"))))
