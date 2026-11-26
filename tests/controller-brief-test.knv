@@ -1,0 +1,31 @@
+(use controller/brief ->worker-values fill-brief
+                      worker-brief)
+
+(use controller/failure controller-error error->message)
+
+(use fixtures/controller-fixture make-directory
+                                 reset-directory write-text)
+
+(def worker-values
+  (->worker-values :item (str "rm-0001")
+                   :roadmap (str "fake-roadmap")
+                   :session (str "build-rm-0001")
+                   :branch (str "build-rm-0001")
+                   :base (str "main")
+                   :skill (str "fake-skill")))
+
+(deftest names-the-token-that-the-brief-leaves
+  (let (root (str "target/knave/controller-tests/brief-placeholder-left"))
+    (unwrap-ok (reset-directory (as-str root)))
+    (unwrap-ok (make-directory (as-str root)))
+    (unwrap-ok (write-text (as-str (str root "/brief.md"))
+                           (as-str (str "item={{item}} token={{nope}}"))))
+    (let (failure (unwrap-err (fill-brief (as-str (str root "/brief.md"))
+                                          (worker-brief (clone worker-values))))
+          message (error->message (clone failure)))
+      (match failure
+        ((placeholder-left item token)
+         (assert (= item (str "rm-0001")))
+         (assert (= token (str "{{")))
+         (assert (contains? message "{{")))
+        (_ (assert false))))))
