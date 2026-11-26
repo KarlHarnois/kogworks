@@ -42,7 +42,7 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 ## Non-blocking findings
 
-**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, record the verdict and include in your final manager line that the findings did not arrive. Otherwise, record the verdict.
+**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, put the findings and the send failure in the `--note` of the last criterion verdict. Record the review verdict either way.
 
 ## Review verdict
 
