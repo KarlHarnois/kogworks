@@ -28,21 +28,6 @@ The controller can merge pull requests that change the controller. The running b
 
 Run the gate in [`AGENTS.md`](AGENTS.md) before you push. If a command fails, fix the cause and rerun it at most twice. If it still fails, stop.
 
-```sh
-knave check
-knave fmt --check
-knave lint
-knave build
-./target/knave/kogworks/kogworks module .kogworks > target/factory-module.knv
-knave lint target/factory-module.knv
-knave check target/factory-module.knv
-./target/knave/kogworks/kogworks format .kogworks > target/factory-format.knv
-knave fmt --check target/factory-format.knv
-knave test
-./target/knave/kogworks/kogworks synth .kogworks
-git diff --exit-code .kogworks/factory.json
-```
-
 The `Kogworks` workflow runs the gate on every push and pull request.
 
 ## GitHub settings
