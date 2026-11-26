@@ -2,8 +2,8 @@
   "Defines the roles form of a factory.")
 
 (use code bool-not empty? fail first keyword-name keyword?
-          len list nth prepend rest symbol symbol-name
-          value-eq)
+          len list list? nth prepend rest symbol symbol-name
+          symbol? value-eq)
 
 (use factory/types ->role role-name)
 (use prelude/macros template)
@@ -34,7 +34,10 @@
 
 (defn check-role-clause (clause)
   (cond
+    ((bool-not (list? clause)) (malformed-role-clause clause))
     ((bool-not (value-eq (len clause) 7))
+     (malformed-role-clause clause))
+    ((bool-not (symbol? (first clause)))
      (malformed-role-clause clause))
     ((bool-not (key-named? (nth clause 1) "agent"))
      (malformed-role-clause clause))

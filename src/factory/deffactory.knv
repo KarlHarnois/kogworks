@@ -44,9 +44,10 @@
     false))
 
 (defn setting-value (parts key)
-  (if (empty? (rest parts))
-    (missing-setting parts key)
-    (nth parts 1)))
+  (cond
+    ((empty? (rest parts)) (missing-setting parts key))
+    ((keyword? (nth parts 1)) (missing-setting parts key))
+    (else (nth parts 1))))
 
 (defn missing-setting (parts key)
   (fail (string "deffactory needs `:" key "`")
