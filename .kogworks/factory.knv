@@ -1,11 +1,11 @@
 (deffactory kogworks
-            :manager "kw-manager"
-            :roadmap "factory-mvp"
-            :max-active 3
-            :merge gh-auto
-            (roles (worker :agent "opencode"
-                           :skill "writing-knave"
-                           :brief ".kogworks/briefs/worker.md")
-                   (reviewer :agent "opencode"
-                             :skill "reviewing-prs"
-                             :brief ".kogworks/briefs/reviewer.md")))
+  :manager "kw-manager"
+  :roadmap "factory-mvp"
+  :max-active 3
+  :merge gh-auto
+  (roles (worker :agent "opencode"
+                 :skill "writing-knave"
+                 :brief ".kogworks/briefs/worker.md")
+         (reviewer :agent "opencode"
+                   :skill "reviewing-prs"
+                   :brief ".kogworks/briefs/reviewer.md")))

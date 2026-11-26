@@ -1,5 +1,6 @@
-(export error->message factory-module factory-module-text
-        synth-error synth-factory)
+(export error->message factory-format-module
+        factory-format-module-text factory-module
+        factory-module-text synth-error synth-factory)
 
 (defenum synth-error
   (missing-factory string)
@@ -14,11 +15,26 @@
     ((unwritable-factory-json path reason)
      (str "cannot write " path ": " reason))))
 
+(defenum factory-module-layout
+  inline
+  separated)
+
 (def deffactory-import
   (str "(use kogworks/factory/deffactory deffactory) "))
 
+(def deffactory-format-import
+  (str "(use kogworks/factory/deffactory deffactory)\n\n"))
+
 (defn factory-module-text (factory-text)
   (str deffactory-import factory-text))
+
+(defn factory-format-module-text (factory-text)
+  (str deffactory-format-import factory-text))
+
+(defn module-text (layout factory-text)
+  (match layout
+    (inline (factory-module-text factory-text))
+    (separated (factory-format-module-text factory-text))))
 
 (deftype process-output (rust "std::process::Output"))
 
@@ -111,20 +127,31 @@
     (result string synth-error)))
 
 (type factory-file->module
-  (fn ((ref str))
+  (fn ((ref str) factory-module-layout)
     (result string synth-error)))
 
-(defn factory-file->module (factory-file)
+(defn factory-file->module (factory-file layout)
   (match (read-text factory-file)
-    ((ok factory-text) (ok (factory-module-text factory-text)))
+    ((ok factory-text) (ok (module-text layout factory-text)))
     ((err reason)
      (err (synth-error/unreadable-factory (str factory-file) reason)))))
 
-(defn factory-module (directory)
+(type factory-module-in
+  (fn ((ref str) factory-module-layout)
+    (result string synth-error)))
+
+(defn factory-module-in (directory layout)
   (let (factory-file (join-path directory "factory.knv"))
     (if (holds-file? (as-str factory-file))
-      (factory-file->module (as-str factory-file))
+      (factory-file->module (as-str factory-file) layout)
       (err (synth-error/missing-factory (str factory-file))))))
+
+(defn factory-module (directory)
+  (factory-module-in directory factory-module-layout/inline))
+
+(defn factory-format-module (directory)
+  (factory-module-in directory
+                     factory-module-layout/separated))
 
 (type synth-factory
   (fn ((ref str))

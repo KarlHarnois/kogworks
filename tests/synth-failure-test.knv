@@ -1,22 +1,7 @@
+(use fixtures/factory-fixture prepare-factory)
 (use synth synth-error synth-factory)
 
 (deftype process-output (rust "std::process::Output"))
-
-(def create-directory
-  (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
-    (fn ((ref str)) (result unit string))))
-
-(def write-text
-  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
-    (fn ((ref str) (ref str))
-      (result unit string))))
-
-(defn prepare-factory (directory factory-text)
-  (match (create-directory (as-str directory))
-    ((ok _)
-     (write-text (as-str (str directory "/factory.knv"))
-                 (as-str factory-text)))
-    ((err reason) (err reason))))
 
 (def run-synth
   (rust "std::process::Command::new(\"./target/knave/kogworks/kogworks\").args([\"synth\", {0}]).output().map_err(|error| error.to_string())"

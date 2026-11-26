@@ -1,50 +1,35 @@
-(use factory/deffactory deffactory)
-(use factory/types ->factory ->role merge-method role-name)
+(use fixtures/factory-fixture prepare-factory)
+(use synth synth-factory)
 
-(deffactory sample
-            :manager "sample-manager"
-            :roadmap "sample-roadmap"
-            :max-active 2
-            :merge gh-auto
-            (roles (worker :agent "sample-worker"
-                           :skill "sample:worker-skill"
-                           :brief "sample/briefs/worker.md")
-                   (reviewer :agent "sample-reviewer"
-                             :skill "sample:reviewer-skill"
-                             :brief "sample/briefs/reviewer.md")))
-
-(deftest deffactory-builds-the-factory-value
-  (assert (= factory-value
-             (->factory :schema 0
-                        :name (str "sample")
-                        :manager (str "sample-manager")
-                        :roadmap (str "sample-roadmap")
-                        :max-active 2
-                        :merge merge-method/gh-auto
-                        :roles (vec (->role :name role-name/worker
-                                            :agent (str "sample-worker")
-                                            :skill (str "sample:worker-skill")
-                                            :brief (str
-                                                     "sample/briefs/worker.md"))
-                                    (->role :name role-name/reviewer
-                                            :agent (str "sample-reviewer")
-                                            :skill (str "sample:reviewer-skill")
-                                            :brief (str "sample/briefs/reviewer.md")))))))
-
-(deftest deffactory-builds-the-factory-json
-  (assert (= (factory-json)
-             (str "{\n" "  \"schema\": 0,\n"
-                  "  \"name\": \"sample\",\n"
-                  "  \"manager\": \"sample-manager\",\n"
-                  "  \"roadmap\": \"sample-roadmap\",\n"
-                  "  \"max_active\": 2,\n"
-                  "  \"merge\": \"gh-auto\",\n"
-                  "  \"roles\": {\n" "    \"worker\": {\n"
-                  "      \"agent\": \"sample-worker\",\n"
-                  "      \"skill\": \"sample:worker-skill\",\n"
-                  "      \"brief\": \"sample/briefs/worker.md\"\n"
-                  "    },\n" "    \"reviewer\": {\n"
-                  "      \"agent\": \"sample-reviewer\",\n"
-                  "      \"skill\": \"sample:reviewer-skill\",\n"
-                  "      \"brief\": \"sample/briefs/reviewer.md\"\n"
-                  "    }\n" "  }\n" "}\n"))))
+(deftest deffactory-writes-the-factory-json
+  (let (directory (str "target/knave/test-factories/deffactory-sample"))
+    (unwrap-ok (prepare-factory directory
+                                (str
+                                  "(deffactory sample\n"
+                                  "  :manager \"sample-manager\"\n"
+                                  "  :roadmap \"sample-roadmap\"\n"
+                                  "  :max-active 2\n"
+                                  "  :merge gh-auto\n"
+                                  "  (roles (worker :agent \"sample-worker\"\n"
+                                  "                  :skill \"sample:worker-skill\"\n"
+                                  "                  :brief \"sample/briefs/worker.md\")\n"
+                                  "          (reviewer :agent \"sample-reviewer\"\n"
+                                  "                    :skill \"sample:reviewer-skill\"\n"
+                                  "                    :brief \"sample/briefs/reviewer.md\")))\n")))
+    (unwrap-ok (synth-factory (as-str directory)))
+    (assert (= (unwrap-ok (slurp (as-str (str directory "/factory.json"))))
+               (str "{\n" "  \"schema\": 0,\n"
+                    "  \"name\": \"sample\",\n"
+                    "  \"manager\": \"sample-manager\",\n"
+                    "  \"roadmap\": \"sample-roadmap\",\n"
+                    "  \"max_active\": 2,\n"
+                    "  \"merge\": \"gh-auto\",\n"
+                    "  \"roles\": {\n" "    \"worker\": {\n"
+                    "      \"agent\": \"sample-worker\",\n"
+                    "      \"skill\": \"sample:worker-skill\",\n"
+                    "      \"brief\": \"sample/briefs/worker.md\"\n"
+                    "    },\n" "    \"reviewer\": {\n"
+                    "      \"agent\": \"sample-reviewer\",\n"
+                    "      \"skill\": \"sample:reviewer-skill\",\n"
+                    "      \"brief\": \"sample/briefs/reviewer.md\"\n"
+                    "    }\n" "  }\n" "}\n")))))
