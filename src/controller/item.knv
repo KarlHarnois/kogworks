@@ -1,11 +1,14 @@
 (module
   "Reads the item detail that rmap prints for a review.")
 
-(use controller/json json json-array json-field json-object?
-                     json-text)
+(use controller/fields field-error field-error->message
+                       required-field required-number
+                       required-object required-text)
 
-(export ->item-detail criteria->text item-detail
-        parse-item-detail)
+(use controller/json json json-array json-text)
+
+(export ->item-detail criteria->text item-detail item-error
+        item-error->message parse-item-detail)
 
 (defstruct item-detail
   :pr string
@@ -13,58 +16,34 @@
   :branch string
   :criteria (vec string))
 
-(type required-field
-  (fn ((ref json) (ref str) (ref str))
-    (result json string)))
+(defenum item-error
+  (field field-error)
+  (non-array-criteria string)
+  (empty-criteria string)
+  (non-text-criterion int))
 
-(defn required-field (value key path)
-  (match (json-field value key)
-    (none (err (str "missing `" (str path) "`")))
-    ((some found) (ok found))))
-
-(type required-object
-  (fn ((ref json) (ref str) (ref str))
-    (result json string)))
-
-(defn required-object (value key path)
-  (let-try (found (required-field value key path))
-    (if (json-object? found)
-      (ok found)
-      (err (str "`" (str path) "` is not an object")))))
-
-(type required-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string string)))
-
-(defn required-text (value key path)
-  (let-try (found (required-field value key path))
-    (match (json-text found)
-      ((some text) (ok text))
-      (none (err (str "`" (str path) "` is not text"))))))
-
-(type required-number
-  (fn ((ref json) (ref str) (ref str))
-    (result string string)))
-
-(defn required-number (value key path)
-  (let-try (found (required-field value key path))
-    (match found
-      ((number text) (ok (clone text)))
-      (_ (err (str "`" (str path) "` is not a number"))))))
+(defn item-error->message (failure)
+  (match failure
+    ((field cause) (field-error->message cause))
+    ((non-array-criteria path)
+     (str "`" path "` is not an array"))
+    ((empty-criteria path) (str "`" path "` is empty"))
+    ((non-text-criterion index)
+     (str "`item.criteria[" index "]` is not text"))))
 
 (type required-criteria
   (fn ((ref json))
-    (result (vec string) string)))
+    (result (vec string) item-error)))
 
 (defn required-criteria (item)
   (let-try (found (required-field item "criteria" "item.criteria"))
     (match (json-array found)
       ((some items) (criterion-texts items 0 (vec)))
-      (none (err (str "`item.criteria` is not an array"))))))
+      (none (err (item-error/non-array-criteria (str "item.criteria")))))))
 
 (type criterion-texts
   (fn ((ref (vec json)) int (vec string))
-    (result (vec string) string)))
+    (result (vec string) item-error)))
 
 (defn criterion-texts (items index texts)
   (if (>= index (len items))
@@ -74,21 +53,21 @@
 
 (type checked-criteria
   (fn ((vec string))
-    (result (vec string) string)))
+    (result (vec string) item-error)))
 
 (defn checked-criteria (texts)
   (if (empty? texts)
-    (err (str "`item.criteria` is empty"))
+    (err (item-error/empty-criteria (str "item.criteria")))
     (ok texts)))
 
 (type criterion-text
   (fn ((ref json) int)
-    (result string string)))
+    (result string item-error)))
 
 (defn criterion-text (value index)
   (match (json-text value)
     ((some text) (ok text))
-    (none (err (str "`item.criteria[" index "]` is not text")))))
+    (none (err (item-error/non-text-criterion index)))))
 
 (type with-text!
   (fn ((vec string) string) (vec string)))
@@ -98,7 +77,7 @@
 
 (type parse-item-detail
   (fn ((ref json))
-    (result item-detail string)))
+    (result item-detail item-error)))
 
 (defn parse-item-detail (document)
   (let-try (item (required-object document "item" "item"))

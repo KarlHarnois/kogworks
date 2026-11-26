@@ -183,6 +183,23 @@
        "criterion has no verdict on it. Record every missing "
        "`rmap item verify` verdict before `rmap pr review`.\n\n"))
 
+(def criterion-with-manager
+  (str "Every placeholder, including the reviewer's {{manager}}, "
+       "SHALL still be covered."))
+
+(def substituted-criterion
+  (str "Every placeholder, including the reviewer's fake-manager, "
+       "SHALL still be covered."))
+
+(def criterion-item-json
+  (str "{\"item\":{" "\"criteria\":[\""
+       criterion-with-manager "\"],"
+       "\"session\":{\"branch\":\"" review-branch
+       "\",\"kind\":\"work\"," "\"name\":\"" review-branch
+       "\"}," "\"status\":\"in_review\"},"
+       "\"pull_request\":{\"number\":12,\"head\":\""
+       review-head "\"}}"))
+
 (deftest starts-a-reviewer-for-a-controller-review
   (let (root (unwrap-ok (setup "review"
                                (review-settings (next-with (str "review")
@@ -194,6 +211,20 @@
       (assert (= (prompt-text root) (review-prompt)))
       (assert (not (contains? (prompt-text root) "{{")))
       (assert (not (contains? (sequence-text root) "design"))))))
+
+(deftest keeps-a-placeholder-inside-a-criterion
+  (let (root (unwrap-ok (setup "review-criterion-token"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :item-json (clone criterion-item-json)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root) (review-sequence root)))
+      (assert (contains? (prompt-text root)
+                         (as-str criterion-with-manager)))
+      (assert (not (contains? (prompt-text root)
+                              (as-str substituted-criterion))))
+      (assert (contains? (prompt-text root) "manager=fake-manager")))))
 
 (deftest starts-a-reviewer-for-a-controller-verify
   (let (root (unwrap-ok (setup "verify"

@@ -4,7 +4,7 @@
 (use fixtures/controller-fixture prepare-repo
                                  reset-directory write-text)
 
-(deftest read-factory-reads-the-manager-roadmap-and-worker
+(deftest read-factory-reads-the-manager-roadmap-and-roles
   (let (root (str "target/knave/controller-tests/factory-read"))
     (unwrap-ok (prepare-repo (as-str root)))
     (match (read-factory (as-str (str root "/repo")))

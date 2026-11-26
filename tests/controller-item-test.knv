@@ -1,4 +1,6 @@
-(use controller/item criteria->text parse-item-detail)
+(use controller/item criteria->text item-error->message
+                     parse-item-detail)
+
 (use controller/json parse-json)
 
 (def item-json
@@ -6,13 +8,16 @@
        "\"session\":{\"branch\":\"build-rm-1\"}},"
        "\"pull_request\":{\"number\":7,\"head\":\"0123456789abcdef\"}}"))
 
-(defn detail-from (text)
-  (match (parse-json (as-str text))
-    ((ok document) (parse-item-detail document))
-    ((err _) (err (str "invalid JSON")))))
+(defn document-from (text)
+  (unwrap-ok (parse-json (as-str text))))
+
+(defn reason-for (text)
+  (match (parse-item-detail (document-from text))
+    ((err failure) (item-error->message failure))
+    ((ok _) (str "no failure"))))
 
 (deftest parse-item-detail-reads-the-review-fields
-  (match (detail-from (clone item-json))
+  (match (parse-item-detail (document-from (clone item-json)))
     ((ok detail)
      (assert (= (:pr detail) (str "7")))
      (assert (= (:head detail) (str "0123456789abcdef")))
@@ -23,18 +28,41 @@
     ((err _) (assert false))))
 
 (deftest parse-item-detail-rejects-a-missing-pull-request
-  (match (detail-from (str "{\"item\":{\"criteria\":[\"a criterion\"],"
-                           "\"session\":{\"branch\":\"build-rm-1\"}}}"))
-    ((err reason) (assert (contains? reason "pull_request")))
-    ((ok _) (assert false))))
+  (assert (contains? (reason-for (str
+                                   "{\"item\":{\"criteria\":[\"a criterion\"],"
+                                   "\"session\":{\"branch\":\"build-rm-1\"}}}"))
+                     "pull_request")))
+
+(deftest parse-item-detail-rejects-a-missing-head
+  (assert (contains? (reason-for (str
+                                   "{\"item\":{\"criteria\":[\"a criterion\"],"
+                                   "\"session\":{\"branch\":\"build-rm-1\"}},"
+                                   "\"pull_request\":{\"number\":7}}"))
+                     "pull_request.head")))
+
+(deftest parse-item-detail-rejects-a-missing-session-branch
+  (assert (contains? (reason-for (str
+                                   "{\"item\":{\"criteria\":[\"a criterion\"],"
+                                   "\"session\":{}},"
+                                   "\"pull_request\":{\"number\":7,"
+                                   "\"head\":\"0123456789abcdef\"}}"))
+                     "item.session.branch")))
+
+(deftest parse-item-detail-rejects-a-non-number-pull-request
+  (assert (contains? (reason-for (str
+                                   "{\"item\":{\"criteria\":[\"a criterion\"],"
+                                   "\"session\":{\"branch\":\"build-rm-1\"}},"
+                                   "\"pull_request\":{\"number\":\"seven\","
+                                   "\"head\":\"0123456789abcdef\"}}"))
+                     "pull_request.number")))
 
 (deftest parse-item-detail-rejects-empty-criteria
-  (match (detail-from (str "{\"item\":{\"criteria\":[],"
-                           "\"session\":{\"branch\":\"build-rm-1\"}},"
-                           "\"pull_request\":{\"number\":7,"
-                           "\"head\":\"0123456789abcdef\"}}"))
-    ((err reason) (assert (contains? reason "item.criteria")))
-    ((ok _) (assert false))))
+  (assert (contains? (reason-for (str
+                                   "{\"item\":{\"criteria\":[],"
+                                   "\"session\":{\"branch\":\"build-rm-1\"}},"
+                                   "\"pull_request\":{\"number\":7,"
+                                   "\"head\":\"0123456789abcdef\"}}"))
+                     "item.criteria")))
 
 (deftest criteria->text-names-every-criterion
   (assert (= (criteria->text (vec (str "one") (str "two")))

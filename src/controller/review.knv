@@ -8,7 +8,8 @@
 (use controller/factory factory-config)
 
 (use controller/item ->item-detail criteria->text
-                     item-detail parse-item-detail)
+                     item-detail item-error->message
+                     parse-item-detail)
 
 (use controller/json json json-error->message parse-json)
 
@@ -84,8 +85,9 @@
 (defn item-detail-result (mode item command document)
   (match (parse-item-detail document)
     ((ok detail) (ok detail))
-    ((err reason)
-     (err (invalid-item-output mode item command reason)))))
+    ((err failure)
+     (err (invalid-item-output mode item command
+                               (item-error->message failure))))))
 
 (type review-with-item
   (fn ((ref str)

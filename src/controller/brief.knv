@@ -91,24 +91,91 @@
   (->brief :item (clone (:item values))
            :placeholders (reviewer-placeholders values)))
 
-(type fill-placeholder
-  (fn (string (ref placeholder)) string))
-
-(defn fill-placeholder (text placeholder)
-  (-> text as-str
-      (split (as-str (:token placeholder)))
-      collect
-      (join (as-str (:value placeholder)))))
-
 (type fill
-  (fn (string (ref (vec placeholder)))
-    string))
+  (fn ((ref str) (ref (vec placeholder)))
+    (result string string)))
 
-(defn fill (text values)
-  (reduce values text fill-placeholder))
+(defn fill (text placeholders)
+  (let (characters (collect (chars text)))
+    (fill-from placeholders characters 0 (str))))
 
-(defn leftover? (text)
-  (or (contains? text "{{") (contains? text "}}")))
+(type fill-from
+  (fn ((ref (vec placeholder))
+       (ref (vec char))
+       int string)
+    (result string string)))
+
+(defn fill-from (placeholders characters index result)
+  (if (>= index (len characters))
+    (ok result)
+    (fill-step placeholders characters index result)))
+
+(type fill-step
+  (fn ((ref (vec placeholder))
+       (ref (vec char))
+       int string)
+    (result string string)))
+
+(defn fill-step (placeholders characters index result)
+  (match (placeholder-at placeholders characters index)
+    ((some placeholder)
+     (fill-from placeholders characters
+                (+ index (token-length placeholder))
+                (str result (:value placeholder))))
+    (none (fill-unmatched placeholders characters index result))))
+
+(type fill-unmatched
+  (fn ((ref (vec placeholder))
+       (ref (vec char))
+       int string)
+    (result string string)))
+
+(defn fill-unmatched (placeholders characters index result)
+  (match (opening-braces-at? characters index)
+    (true (err (str "{{")))
+    (false (fill-from placeholders characters
+                      (inc index)
+                      (str result (deref (at characters index)))))))
+
+(type placeholder-at
+  (fn ((ref (vec placeholder))
+       (ref (vec char))
+       int)
+    (option (ref placeholder))))
+
+(defn placeholder-at (placeholders characters index)
+  (find placeholders
+    (fn (placeholder)
+      (token-at? characters index (:token placeholder)))))
+
+(type token-at?
+  (fn ((ref (vec char)) int (ref str))
+    bool))
+
+(defn token-at? (characters index token)
+  (let (expected (collect (chars token)))
+    (and (<= (+ index (len expected))
+             (len characters))
+         (every? (range 0 (len expected))
+           (fn (offset)
+             (= (deref (at characters (+ index offset)))
+                (deref (at expected offset))))))))
+
+(type token-length
+  (fn ((ref placeholder)) int))
+
+(defn token-length (placeholder)
+  (count (chars (:token placeholder))))
+
+(type opening-braces-at?
+  (fn ((ref (vec char)) int) bool))
+
+(defn opening-braces-at? (characters index)
+  (and (< (inc index) (len characters))
+       (= (deref (at characters index))
+          (char "{"))
+       (= (deref (at characters (inc index)))
+          (char "{"))))
 
 (type fill-brief
   (fn ((ref str) (ref brief))
@@ -119,10 +186,15 @@
     ((err reason)
      (err (controller-error/unreadable-brief (str path) reason)))
     ((ok text)
-     (checked-brief (fill text (:placeholders values))
-                    (:item values)))))
+     (filled-brief (fill (as-str text) (:placeholders values))
+                   (:item values)))))
 
-(defn checked-brief (filled item)
-  (if (leftover? filled)
-    (err (controller-error/placeholder-left (clone item) (str "{{")))
-    (ok filled)))
+(type filled-brief
+  (fn ((result string string) (ref string))
+    (result string controller-error)))
+
+(defn filled-brief (filled item)
+  (match filled
+    ((ok text) (ok text))
+    ((err token)
+     (err (controller-error/placeholder-left (clone item) token)))))
