@@ -15,7 +15,7 @@
          :required true
          :value-name path
          :about "The governed repository")
-  (:poll u64
+  (:poll u32
          :default 30
          :about "Seconds to wait between passes")
   (:once switch :about "Runs one pass and exits"))

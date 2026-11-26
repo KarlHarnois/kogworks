@@ -17,8 +17,8 @@
 
 (def build-ready
   (str "{\"ready\":["
-       "{\"id\":\"rm-research\",\"kind\":\"research\"},"
-       "{\"id\":\"rm-0001\",\"kind\":\"build\"},"
+       "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
+       "{\"id\":\"rm-0001\",\"kind\":\"build\",\"weight\":1.5},"
        "{\"id\":\"rm-0002\",\"kind\":\"build\"}" "]}"))
 
 (def wait-next
@@ -27,7 +27,7 @@
 
 (def research-ready
   (str "{\"ready\":["
-       "{\"id\":\"rm-research\",\"kind\":\"research\"},"
+       "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
        "{\"id\":\"rm-design\",\"kind\":\"design\"}" "]}"))
 
 (defn next-with (action item)

@@ -30,7 +30,7 @@
   idle)
 
 (type controller-and-exit
-  (fn ((ref str) u64 switch-state) unit))
+  (fn ((ref str) u32 switch-state) unit))
 
 (defn controller-and-exit (repo poll once)
   (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
@@ -39,7 +39,7 @@
       ((err report) (fail-stop repo report)))))
 
 (type run-controller
-  (fn ((ref str) u64 run-mode)
+  (fn ((ref str) u32 run-mode)
     (result unit failure-report)))
 
 (defn run-controller (repo poll mode)
@@ -55,7 +55,7 @@
          (polling (do (sleep (seconds (poll-seconds poll))) (recur)))))
       ((err report) (err report)))))
 
-(type poll-seconds (fn (u64) int))
+(type poll-seconds (fn (u32) int))
 
 (defn poll-seconds (poll)
   (the int (convert poll)))

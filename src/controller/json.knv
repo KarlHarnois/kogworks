@@ -12,7 +12,7 @@
   (object (vec field))
   (array (vec json))
   (text string)
-  (number int)
+  (number string)
   (boolean bool)
   null)
 
@@ -58,10 +58,6 @@
         (recur (inc index))
         index))))
 
-(def decimal-digit
-  (rust "{0}.to_digit(10).map(|digit| digit as i64)"
-    (fn (char) (option int))))
-
 (def hex-digit
   (rust "{0}.to_digit(16).map(|digit| digit as i64)"
     (fn (char) (option int))))
@@ -69,10 +65,6 @@
 (def char-from-code
   (rust "char::from_u32({0} as u32).unwrap_or('?')"
     (fn (int) char)))
-
-(defenum sign
-  positive
-  negative)
 
 (type parse-json
   (fn ((ref str))
@@ -129,35 +121,43 @@
              (= (deref (at characters (+ position offset)))
                 (deref (at expected offset))))))))
 
+(defn delimiter? (character)
+  (or (whitespace? character)
+      (= character (char ","))
+      (= character (char "]"))
+      (= character (char "}"))))
+
+(defn number-character? (character)
+  (or (digit? character)
+      (= character (char "-"))
+      (= character (char "+"))
+      (= character (char "."))
+      (= character (char "e"))
+      (= character (char "E"))))
+
+(defn valid-number? (text)
+  (let (characters (collect (chars text)))
+    (and (not (empty? text))
+         (or (digit? (deref (at characters 0)))
+             (= (deref (at characters 0)) (char "-")))
+         (every? characters number-character?)
+         (any? characters digit?))))
+
 (defn parse-number (characters position)
-  (if (= (deref (at characters position))
-         (char "-"))
-    (parse-digits characters (inc position) sign/negative)
-    (parse-digits characters position sign/positive)))
+  (loop (index position)
+    (if (or (>= index (len characters))
+            (delimiter? (deref (at characters index))))
+      (finish-number characters position index)
+      (recur (inc index)))))
 
-(defn parse-digits (characters position sign)
-  (loop (index position
-         value 0
-         digits 0)
-    (if (>= index (len characters))
-      (finish-number sign value digits index)
-      (match (decimal-digit (deref (at characters index)))
-        ((some digit)
-         (recur (inc index)
-                (+ (* value 10) digit)
-                (inc digits)))
-        (none (finish-number sign value digits index))))))
-
-(defn finish-number (sign value digits position)
-  (if (= digits 0)
-    (err (json-error/invalid-token position (str "number")))
-    (ok (->parsed :value (json/number (signed-value sign value))
-                  :position position))))
-
-(defn signed-value (sign value)
-  (match sign
-    (positive value)
-    (negative (- 0 value))))
+(defn finish-number (characters position end)
+  (let (text (join (collect (map (range position end)
+                              (fn (index)
+                                (str (deref (at characters index))))))
+                   ""))
+    (if (valid-number? (as-str text))
+      (ok (->parsed :value (json/number text) :position end))
+      (err (json-error/invalid-token position text)))))
 
 (defn parse-object (characters position)
   (let (start (skip-space characters (inc position)))
