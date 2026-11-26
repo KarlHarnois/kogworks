@@ -23,49 +23,50 @@
                            :text (str "\\f"))))
 
 (defn factory->json (factory)
-  (str "{\"schema\":"
+  (str "{\n  \"schema\": "
        (:schema factory)
-       ",\"name\":"
+       ",\n  \"name\": "
        (text->json (:name factory))
-       ",\"manager\":"
+       ",\n  \"manager\": "
        (text->json (:manager factory))
-       ",\"roadmap\":"
+       ",\n  \"roadmap\": "
        (text->json (:roadmap factory))
-       ",\"max_active\":"
+       ",\n  \"max_active\": "
        (:max-active factory)
-       ",\"merge\":"
+       ",\n  \"merge\": "
        (text->json (merge-method->text (:merge factory)))
-       ",\"roles\":"
+       ",\n  \"roles\": "
        (roles->json (:roles factory))
-       "}"))
+       "\n}\n"))
 
 (type roles->json
   (fn ((ref (vec role))) string))
 
 (defn roles->json (roles)
-  (str "{"
-       (-> roles (map role-entry->json) collect (join ","))
-       "}"))
+  (str "{\n"
+       (-> roles (map role-entry->json) collect (join ",\n"))
+       "\n  }"))
 
 (type role-entry->json
   (fn ((ref role)) string))
 
 (defn role-entry->json (role)
-  (str (text->json (role-name->text (:name role)))
-       ":"
+  (str "    "
+       (text->json (role-name->text (:name role)))
+       ": "
        (role->json role)))
 
 (type role->json
   (fn ((ref role)) string))
 
 (defn role->json (role)
-  (str "{\"agent\":"
+  (str "{\n      \"agent\": "
        (text->json (:agent role))
-       ",\"skill\":"
+       ",\n      \"skill\": "
        (text->json (:skill role))
-       ",\"brief\":"
+       ",\n      \"brief\": "
        (text->json (:brief role))
-       "}"))
+       "\n    }"))
 
 (defn merge-method->text (method)
   (match method (gh-auto (str "gh-auto"))))

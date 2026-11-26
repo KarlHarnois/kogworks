@@ -1,4 +1,4 @@
-(use synth error->message synth-error)
+(use synth error->message factory-module-text synth-error)
 
 (deftest missing-factory-becomes-a-message
   (assert (= (error->message (synth-error/missing-factory (str "gone/factory.knv")))
@@ -15,3 +15,7 @@
                                                                   (str
                                                                     "denied")))
              "cannot write factory.json: denied")))
+
+(deftest factory-module-text-imports-deffactory
+  (assert (= (factory-module-text (str "(deffactory sample)"))
+             (str "(use kogworks/factory/deffactory deffactory)\n\n(deffactory sample)"))))

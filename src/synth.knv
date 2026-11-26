@@ -1,4 +1,5 @@
-(export error->message synth-error synth-factory)
+(export error->message factory-module factory-module-text
+        synth-error synth-factory)
 
 (defenum synth-error
   (missing-factory string)
@@ -13,6 +14,12 @@
     ((unwritable-factory-json path reason)
      (str "cannot write " path ": " reason))))
 
+(def deffactory-import
+  (str "(use kogworks/factory/deffactory deffactory)\n\n"))
+
+(defn factory-module-text (factory-text)
+  (str deffactory-import factory-text))
+
 (deftype process-output (rust "std::process::Output"))
 
 (def join-path
@@ -23,14 +30,38 @@
   (rust "std::path::Path::new({0}).is_file()"
     (fn ((ref str)) bool)))
 
+(def read-text
+  (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
 (def write-text
   (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
     (fn ((ref str) (ref str))
       (result unit string))))
 
 (def run-knave-eval
-  (rust "std::process::Command::new(\"knave\").args([\"eval\", {0}, \"(do (println (factory-json)) (exit 0))\"]).output().map_err(|error| error.to_string())"
-    (fn ((ref str))
+  (rust "{{
+    use std::io::Write;
+    std::process::Command::new(\"knave\")
+      .args([\"eval\", \"--stdin\", {0}, \"(do (print (factory-json)) (exit 0))\"])
+      .stdin(std::process::Stdio::piped())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::piped())
+      .spawn()
+      .map_err(|error| error.to_string())
+      .and_then(|mut child| {{
+        let mut input = child
+          .stdin
+          .take()
+          .ok_or_else(|| \"knave did not open standard input\".to_string())?;
+        input
+          .write_all({1}.as_bytes())
+          .map_err(|error| error.to_string())?;
+        drop(input);
+        child.wait_with_output().map_err(|error| error.to_string())
+      }})
+  }}"
+    (fn ((ref str) (ref str))
       (result process-output string))))
 
 (def succeeded?
@@ -56,11 +87,11 @@
                                                 (output-failure output))))))
 
 (type eval-factory-json
-  (fn ((ref str))
+  (fn ((ref str) (ref str))
     (result string synth-error)))
 
-(defn eval-factory-json (factory-file)
-  (match (run-knave-eval factory-file)
+(defn eval-factory-json (factory-file module-text)
+  (match (run-knave-eval factory-file module-text)
     ((ok output) (checked-factory-json factory-file output))
     ((err reason)
      (err (synth-error/unreadable-factory (str factory-file) reason)))))
@@ -75,14 +106,27 @@
     ((err reason)
      (err (synth-error/unwritable-factory-json (str json-file) reason)))))
 
+(type factory-module
+  (fn ((ref str))
+    (result string synth-error)))
+
+(defn factory-module (directory)
+  (let (factory-file (join-path directory "factory.knv"))
+    (if (holds-file? (as-str factory-file))
+      (match (read-text (as-str factory-file))
+        ((ok factory-text) (ok (factory-module-text factory-text)))
+        ((err reason)
+         (err (synth-error/unreadable-factory (str factory-file) reason))))
+      (err (synth-error/missing-factory (str factory-file))))))
+
 (type synth-factory
   (fn ((ref str))
     (result string synth-error)))
 
 (defn synth-factory (directory)
   (let (factory-file (join-path directory "factory.knv"))
-    (if (holds-file? (as-str factory-file))
-      (let-try (json (eval-factory-json (as-str factory-file)))
+    (let-try (module-text (factory-module directory))
+      (let-try (json (eval-factory-json (as-str factory-file)
+                                        (as-str module-text)))
         (write-factory-json (as-str (join-path directory "factory.json"))
-                            (as-str json)))
-      (err (synth-error/missing-factory (str factory-file))))))
+                            (as-str json))))))
