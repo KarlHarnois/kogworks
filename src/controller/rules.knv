@@ -162,14 +162,6 @@
       (let-try (actions (parse-next-actions action-values))
         (ok (->next-line :item item :actions actions))))))
 
-(type required-field-value
-  (fn ((ref json) (ref str))
-    (result json string)))
-
-(defn required-field-value (value key)
-  (map-err (required-field value key key)
-           field-error->message))
-
 (type required-array
   (fn ((ref json) (ref str))
     (result (vec json) string)))
@@ -177,6 +169,14 @@
 (defn required-array (value key)
   (let-try (found (required-field-value value key))
     (field-array found key)))
+
+(type required-field-value
+  (fn ((ref json) (ref str))
+    (result json string)))
+
+(defn required-field-value (value key)
+  (map-err (required-field value key key)
+           field-error->message))
 
 (defn field-array (found key)
   (match (json-array found)
