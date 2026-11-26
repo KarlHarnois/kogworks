@@ -76,15 +76,13 @@
     ((factory-failed cause)
      (str "controller: " (factory-error->message cause)))
     ((unreadable-brief path reason)
-     (str "dispatch: cannot read the worker brief " path
-          ": " reason))
+     (str "controller: cannot read the brief " path ": " reason))
     ((unreadable-repository path reason)
      (str "controller: cannot resolve the repository " path
           ": " reason))
     ((placeholder-left item token)
-     (str "dispatch: " item
-          ": the worker brief still holds `" token
-          "` after filling"))))
+     (str "controller: " item ": the brief still holds `"
+          token "` after filling"))))
 
 (defstruct failure-report
   :manager (option string)

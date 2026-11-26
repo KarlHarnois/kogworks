@@ -8,10 +8,10 @@
 
 (use controller/process join-path read-text-file text-file?)
 
-(export ->factory-config ->worker-role factory-config
-        read-factory read-manager worker-role)
+(export ->factory-config ->role factory-config read-factory
+        read-manager role)
 
-(defstruct worker-role
+(defstruct role
   :agent string
   :skill string
   :brief string)
@@ -19,7 +19,8 @@
 (defstruct factory-config
   :manager string
   :roadmap string
-  :worker worker-role)
+  :worker role
+  :reviewer role)
 
 (type factory-path
   (fn ((ref str)) string))
@@ -88,17 +89,25 @@
   (let-try (manager (required-text document "manager" "manager"))
     (let-try (roadmap (required-text document "roadmap" "roadmap"))
       (let-try (roles (required-object document "roles" "roles"))
-        (let-try (worker (required-object roles "worker" "roles.worker"))
-          (let-try (agent (required-text worker "agent" "roles.worker.agent"))
-            (let-try (skill (required-text worker "skill" "roles.worker.skill"))
-              (let-try (brief (required-text worker "brief"
-                                             "roles.worker.brief"))
-                (ok (->factory-config :manager manager
-                                      :roadmap roadmap
-                                      :worker (->worker-role
-                                                :agent agent
-                                                :skill skill
-                                                :brief brief)))))))))))
+        (let-try (worker (required-role roles "worker" "roles.worker"))
+          (let-try (reviewer (required-role roles "reviewer" "roles.reviewer"))
+            (ok (->factory-config :manager manager
+                                  :roadmap roadmap
+                                  :worker worker
+                                  :reviewer reviewer))))))))
+
+(type required-role
+  (fn ((ref json) (ref str) (ref str))
+    (result role factory-error)))
+
+(defn required-role (roles name path)
+  (let-try (value (required-object roles name path))
+    (let-try (agent (required-text value "agent" (as-str (str path ".agent"))))
+      (let-try (skill (required-text value "skill"
+                                     (as-str (str path ".skill"))))
+        (let-try (brief (required-text value "brief"
+                                       (as-str (str path ".brief"))))
+          (ok (->role :agent agent :skill skill :brief brief)))))))
 
 (type required-text
   (fn ((ref json) (ref str) (ref str))

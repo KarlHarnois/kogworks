@@ -1,12 +1,14 @@
 (module
-  "Fills the worker brief that the factory points at.")
+  "Builds and fills the briefs that the factory points at.")
 
 (use controller/failure controller-error)
 (use controller/process read-text-file)
 
-(export ->brief-values brief-values fill-brief)
+(export ->brief ->reviewer-values ->worker-values brief
+        fill-brief reviewer-brief reviewer-values
+        worker-brief worker-values)
 
-(defstruct brief-values
+(defstruct worker-values
   :item string
   :roadmap string
   :session string
@@ -14,15 +16,30 @@
   :base string
   :skill string)
 
+(defstruct reviewer-values
+  :item string
+  :roadmap string
+  :session string
+  :pr string
+  :head string
+  :criteria string
+  :base string
+  :skill string
+  :manager string)
+
 (defstruct placeholder
   :token string
   :value string)
 
-(type placeholders
-  (fn ((ref brief-values))
+(defstruct brief
+  :item string
+  :placeholders (vec placeholder))
+
+(type worker-placeholders
+  (fn ((ref worker-values))
     (vec placeholder)))
 
-(defn placeholders (values)
+(defn worker-placeholders (values)
   (vec (->placeholder :token (str "{{item}}")
                       :value (clone (:item values)))
        (->placeholder :token (str "{{roadmap}}")
@@ -35,6 +52,44 @@
                       :value (clone (:base values)))
        (->placeholder :token (str "{{skill}}")
                       :value (clone (:skill values)))))
+
+(type reviewer-placeholders
+  (fn ((ref reviewer-values))
+    (vec placeholder)))
+
+(defn reviewer-placeholders (values)
+  (vec (->placeholder :token (str "{{item}}")
+                      :value (clone (:item values)))
+       (->placeholder :token (str "{{roadmap}}")
+                      :value (clone (:roadmap values)))
+       (->placeholder :token (str "{{session}}")
+                      :value (clone (:session values)))
+       (->placeholder :token (str "{{pr}}")
+                      :value (clone (:pr values)))
+       (->placeholder :token (str "{{head}}")
+                      :value (clone (:head values)))
+       (->placeholder :token (str "{{criteria}}")
+                      :value (clone (:criteria values)))
+       (->placeholder :token (str "{{base}}")
+                      :value (clone (:base values)))
+       (->placeholder :token (str "{{skill}}")
+                      :value (clone (:skill values)))
+       (->placeholder :token (str "{{manager}}")
+                      :value (clone (:manager values)))))
+
+(type worker-brief
+  (fn ((ref worker-values)) brief))
+
+(defn worker-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (worker-placeholders values)))
+
+(type reviewer-brief
+  (fn ((ref reviewer-values)) brief))
+
+(defn reviewer-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (reviewer-placeholders values)))
 
 (type fill-placeholder
   (fn (string (ref placeholder)) string))
@@ -56,7 +111,7 @@
   (or (contains? text "{{") (contains? text "}}")))
 
 (type fill-brief
-  (fn ((ref str) (ref brief-values))
+  (fn ((ref str) (ref brief))
     (result string controller-error)))
 
 (defn fill-brief (path values)
@@ -64,10 +119,10 @@
     ((err reason)
      (err (controller-error/unreadable-brief (str path) reason)))
     ((ok text)
-     (checked-brief (fill text (placeholders values)) values))))
+     (checked-brief (fill text (:placeholders values))
+                    (:item values)))))
 
-(defn checked-brief (filled values)
+(defn checked-brief (filled item)
   (if (leftover? filled)
-    (err (controller-error/placeholder-left (clone (:item values))
-                                            (str "{{")))
+    (err (controller-error/placeholder-left (clone item) (str "{{")))
     (ok filled)))
