@@ -306,29 +306,6 @@
       (assert (not (contains? (sequence-text root) "review start")))
       (assert (not (contains? (sequence-text root) "ringleader new"))))))
 
-(defn out-of-scope-sequence (action item)
-  (str (next-line (str "fake-roadmap"))
-       (send-line (str "controller: " action " action for "
-                       item
-                       " is out of scope in this build; "
-                       "`rmap next --roadmap fake-roadmap "
-                       "--taken-by controller --json` exited 0 "
-                       "and no session started"))))
-
-(defn assert-out-of-scope (name action item)
-  (let (root (unwrap-ok (setup name
-                               (default-settings (next-with action item)
-                                                 (clone build-ready)))))
-    (let (output (unwrap-ok (run root (vec (str "--once")))))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root) (out-of-scope-sequence action item)))
-      (assert (contains? (stderr-text output) "out of scope")))))
-
-(deftest stops-on-a-controller-merge
-  (assert-out-of-scope "merge-out-of-scope"
-                       (str "merge")
-                       (str "rm-0009")))
-
 (defn claim-refusal-sequence ()
   (str
     (next-line (str "fake-roadmap"))
@@ -396,7 +373,8 @@
                                                  (clone research-ready)))))
     (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
                            (as-str (str "{\"manager\":\"fake-manager\","
-                                        "\"roadmap\":\"fake-roadmap\"}"))))
+                                        "\"roadmap\":\"fake-roadmap\","
+                                        "\"merge\":\"gh-auto\"}"))))
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)

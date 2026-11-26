@@ -12,6 +12,7 @@
                         read-manager)
 
 (use controller/json json json-error->message parse-json)
+(use controller/merge start-merge)
 
 (use controller/process ->command canonical-path command
                         command-detail execute outcome
@@ -134,7 +135,21 @@
                                  review-mode/review))
     (verify (start-review-report repo config manager action
                                  review-mode/verify))
+    (merge (start-merge-report repo config manager action))
     (_ (out-of-scope-report config manager action))))
+
+(type start-merge-report
+  (fn ((ref str)
+       (ref factory-config)
+       (option string)
+       (ref item-action))
+    (result pass-outcome failure-report)))
+
+(defn start-merge-report (repo config manager action)
+  (match (start-merge repo config (:item action))
+    ((ok _) (ok pass-outcome/dispatched))
+    ((err failure)
+     (err (->failure-report :manager manager :error failure)))))
 
 (type start-review-report
   (fn ((ref str)

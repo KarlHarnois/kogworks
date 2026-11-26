@@ -1,0 +1,8 @@
+(module
+  "Names the pull request and the approved head that a merge acts on.")
+
+(export ->merge-target merge-target)
+
+(defstruct merge-target
+  :pull-request string
+  :head string)
