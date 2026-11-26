@@ -40,9 +40,13 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 **Choose the verdict by the criterion.** If the criterion holds, use `--met`. If the criterion fails, use `--failed`.
 
-## Non-blocking findings
+## Findings
 
-**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. If `ringleader send` exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
+**A minor finding on a changed line makes the verdict `changes`.** A changed line is a line the pull request under review changed. The same pull request fixes the finding before merge.
+
+**A finding about code the pull request did not touch is a follow-up suggestion.** Send the follow-up suggestion to the manager with one `ringleader send {{manager}}` before the review verdict. A follow-up suggestion does not change the verdict. If `ringleader send` exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
+
+**Anything that makes the code or the brief under review not work as intended is blocking.** A blocking finding stands even when no acceptance criterion names it. NEVER notice a defect and approve anyway.
 
 ## Review verdict
 
@@ -52,7 +56,7 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{head}} --reviewer {{session}}
 ```
 
-**Choose the verdict by the criteria.** If every criterion holds, use `--verdict approve`. If any criterion fails, use `--verdict changes`.
+**Choose the verdict by the criteria and the findings.** If every criterion holds and no blocking finding or minor finding on a changed line stands, use `--verdict approve`. If any criterion fails, or a blocking finding or minor finding on a changed line stands, use `--verdict changes`.
 
 ## Limits
 

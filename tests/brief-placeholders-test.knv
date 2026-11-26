@@ -83,3 +83,31 @@
 (deftest worker-brief-keeps-the-question-report
   (let (brief (unwrap-ok (slurp worker-brief-path)))
     (assert (contains? brief "--kind question"))))
+
+(deftest reviewer-brief-turns-a-changed-line-finding-into-changes
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains?
+              brief
+              "A minor finding on a changed line makes the verdict `changes`."))
+    (assert (contains?
+              brief
+              "The same pull request fixes the finding before merge."))))
+
+(deftest reviewer-brief-sends-an-untouched-finding-as-a-follow-up
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief
+                       "A finding about code the pull request did not touch is a follow-up suggestion."))
+    (assert (contains? brief
+                       (as-str (str "Send the follow-up suggestion to the manager with one "
+                                    "`ringleader send {{manager}}` before the review verdict."))))
+    (assert (contains? brief
+                       "A follow-up suggestion does not change the verdict."))))
+
+(deftest reviewer-brief-blocks-a-defect-that-breaks-the-work
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief
+                       "Anything that makes the code or the brief under review not work as intended is blocking."))
+    (assert (contains? brief
+                       "A blocking finding stands even when no acceptance criterion names it."))
+    (assert (contains? brief
+                       "NEVER notice a defect and approve anyway."))))
