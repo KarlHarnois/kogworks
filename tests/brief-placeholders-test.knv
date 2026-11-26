@@ -3,43 +3,60 @@
 (def reviewer-brief-path
   (str ".kogworks/briefs/reviewer.md"))
 
-(def worker-placeholders
+(def all-placeholders
   (vec (->placeholder :token (str "{{item}}")
-                      :sample (str "rm-0000"))
+                      :sample (str "rm-0000")
+                      :briefs (vec brief-kind/worker brief-kind/reviewer))
        (->placeholder :token (str "{{roadmap}}")
-                      :sample (str "factory-mvp"))
+                      :sample (str "factory-mvp")
+                      :briefs (vec brief-kind/worker brief-kind/reviewer))
        (->placeholder :token (str "{{session}}")
-                      :sample (str "sample-session"))
+                      :sample (str "sample-session")
+                      :briefs (vec brief-kind/worker brief-kind/reviewer))
        (->placeholder :token (str "{{branch}}")
-                      :sample (str "sample-branch"))
-       (->placeholder :token (str "{{base}}") :sample (str "main"))
+                      :sample (str "sample-branch")
+                      :briefs (vec brief-kind/worker))
+       (->placeholder :token (str "{{base}}")
+                      :sample (str "main")
+                      :briefs (vec brief-kind/worker brief-kind/reviewer))
        (->placeholder :token (str "{{skill}}")
-                      :sample (str "features:building-features"))))
-
-(def reviewer-placeholders
-  (vec (->placeholder :token (str "{{item}}")
-                      :sample (str "rm-0000"))
-       (->placeholder :token (str "{{roadmap}}")
-                      :sample (str "factory-mvp"))
-       (->placeholder :token (str "{{session}}")
-                      :sample (str "sample-session"))
-       (->placeholder :token (str "{{pr}}") :sample (str "1"))
+                      :sample (str "features:building-features")
+                      :briefs (vec brief-kind/worker brief-kind/reviewer))
+       (->placeholder :token (str "{{pr}}")
+                      :sample (str "1")
+                      :briefs (vec brief-kind/reviewer))
        (->placeholder :token (str "{{head}}")
-                      :sample (str "0000000000000000000000000000000000000000"))
+                      :sample (str "0000000000000000000000000000000000000000")
+                      :briefs (vec brief-kind/reviewer))
        (->placeholder :token (str "{{criteria}}")
-                      :sample (str "the item works"))
-       (->placeholder :token (str "{{base}}") :sample (str "main"))
-       (->placeholder :token (str "{{skill}}")
-                      :sample (str "prs:reviewing-prs"))
+                      :sample (str "the item works")
+                      :briefs (vec brief-kind/reviewer))
        (->placeholder :token (str "{{manager}}")
-                      :sample (str "sample-manager"))))
+                      :sample (str "sample-manager")
+                      :briefs (vec brief-kind/reviewer))))
 
 (defstruct placeholder
   :token string
-  :sample string)
+  :sample string
+  :briefs (vec brief-kind))
 
-(type substitute
-  (fn (string (ref placeholder)) string))
+(defenum brief-kind
+  worker
+  reviewer)
+
+(defn in-worker-brief? (placeholder)
+  (contains? (:briefs placeholder) brief-kind/worker))
+
+(defn in-reviewer-brief? (placeholder)
+  (contains? (:briefs placeholder) brief-kind/reviewer))
+
+(defn filled-brief? (brief in-brief?)
+  (let (relevant (-> all-placeholders
+                     (filter (fn (placeholder) (in-brief? placeholder)))
+                     collect))
+    (and (every? relevant
+           (fn (placeholder) (placeholder-present? brief placeholder)))
+         (not (leftover-braces? (reduce relevant (clone brief) substitute))))))
 
 (defn substitute (text placeholder)
   (-> text as-str
@@ -54,18 +71,12 @@
   (or (contains? text "{{") (contains? text "}}")))
 
 (deftest worker-brief-fills-every-placeholder
-  (let (brief (unwrap-ok (slurp worker-brief-path)))
-    (assert (every? worker-placeholders
-              (fn (placeholder) (placeholder-present? brief placeholder))))
-    (assert (not (leftover-braces?
-                   (reduce worker-placeholders (clone brief) substitute))))))
+  (assert (filled-brief? (unwrap-ok (slurp worker-brief-path))
+                         in-worker-brief?)))
 
 (deftest reviewer-brief-fills-every-placeholder
-  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
-    (assert (every? reviewer-placeholders
-              (fn (placeholder) (placeholder-present? brief placeholder))))
-    (assert (not (leftover-braces?
-                   (reduce reviewer-placeholders (clone brief) substitute))))))
+  (assert (filled-brief? (unwrap-ok (slurp reviewer-brief-path))
+                         in-reviewer-brief?)))
 
 (deftest reviewer-brief-states-the-owner-review-protocol
   (let (brief (unwrap-ok (slurp reviewer-brief-path)))
