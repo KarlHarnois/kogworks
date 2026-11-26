@@ -2,7 +2,8 @@
                                  default-settings exit-code
                                  prepare-repo read-text
                                  run-controller stderr-text
-                                 stdout-text write-fakes)
+                                 stdout-text write-fakes
+                                 write-text)
 
 (def ignored-next
   (str "{\"next\":["
@@ -202,3 +203,18 @@
                 "running binary stays at the version it was built from"))
       (assert (contains? text "rebuilds and restarts it"))
       (assert (contains? text "no automatic restart")))))
+
+(deftest notifies-the-manager-when-the-factory-is-incomplete
+  (let (root (unwrap-ok (setup "factory-incomplete"
+                               (default-settings (clone wait-next)
+                                                 (clone research-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{\"manager\":\"fake-manager\","
+                                        "\"roadmap\":\"fake-roadmap\"}"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str "ringleader send fake-manager "
+                      "controller: the factory has no `roles`\n")))
+      (assert (contains? (stderr-text output)
+                         "the factory has no `roles`")))))

@@ -8,7 +8,9 @@
                         controller-error error->message
                         failure-report)
 
-(use controller/factory factory-config read-factory)
+(use controller/factory factory-config read-factory
+                        read-manager)
+
 (use controller/json json json-error->message parse-json)
 
 (use controller/process ->command command command-detail
@@ -67,7 +69,7 @@
 (defn run-pass (repo)
   (match (read-factory repo)
     ((err failure)
-     (err (->failure-report :manager none
+     (err (->failure-report :manager (read-manager repo)
                             :error (controller-error/factory-failed failure))))
     ((ok config) (run-pass-with repo config))))
 

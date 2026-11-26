@@ -9,7 +9,7 @@
 (use controller/process join-path read-text-file text-file?)
 
 (export ->factory-config ->worker-role factory-config
-        read-factory worker-role)
+        read-factory read-manager worker-role)
 
 (defstruct worker-role
   :agent string
@@ -21,16 +21,41 @@
   :roadmap string
   :worker worker-role)
 
+(type factory-path
+  (fn ((ref str)) string))
+
+(defn factory-path (repo)
+  (let (directory (join-path repo ".kogworks"))
+    (join-path (as-str directory) "factory.json")))
+
 (type read-factory
   (fn ((ref str))
     (result factory-config factory-error)))
 
 (defn read-factory (repo)
-  (let (directory (join-path repo ".kogworks"))
-    (let (path (join-path (as-str directory) "factory.json"))
-      (if (text-file? (as-str path))
-        (read-config path)
-        (err (factory-error/missing-factory path))))))
+  (let (path (factory-path repo))
+    (if (text-file? (as-str path))
+      (read-config path)
+      (err (factory-error/missing-factory path)))))
+
+(type read-manager
+  (fn ((ref str)) (option string)))
+
+(defn read-manager (repo)
+  (match (read-text-file (as-str (factory-path repo)))
+    ((ok text) (manager-from-text text))
+    ((err _) none)))
+
+(type manager-from-text
+  (fn ((ref string)) (option string)))
+
+(defn manager-from-text (text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (match (json-field document "manager")
+       ((some value) (json-text value))
+       (none none)))
+    ((err _) none)))
 
 (type read-config
   (fn ((ref string))
