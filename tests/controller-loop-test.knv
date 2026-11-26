@@ -1,4 +1,5 @@
 (use fixtures/controller-fixture ->fake-settings
+                                 absolute-path
                                  default-settings exit-code
                                  prepare-repo read-text
                                  run-controller stderr-text
@@ -68,14 +69,34 @@
 
 (defn repository-of (root) (str root "/repo"))
 
+(defn absolute-repository-of (root)
+  (unwrap-ok (absolute-path (as-str (repository-of root)))))
+
 (defn dispatch-sequence (root)
-  (let (repo (repository-of root))
+  (let (repo (absolute-repository-of root))
     (str
       (next-line (str "fake-roadmap"))
       (ready-line (str "fake-roadmap"))
       "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
       "ringleader new --name build-rm-0001 --repo " repo
       " --agent fake-agent --prompt <filled>\n")))
+
+(deftest dispatches-with-a-relative-repository
+  (let (root (unwrap-ok (setup "relative-repo"
+                               (default-settings (clone ignored-next)
+                                                 (clone build-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (let (repo (absolute-repository-of root)
+            relative-repo (repository-of root))
+        (assert (not= (as-str repo) (as-str relative-repo)))
+        (assert (starts-with? (as-str repo) "/"))
+        (assert (= (exit-code output) 0))
+        (assert (= (stdout-text output) (str "build-rm-0001\n")))
+        (assert (= (sequence-text root) (dispatch-sequence root))))
+      (assert (= (prompt-text root)
+                 (str "item=rm-0001 roadmap=fake-roadmap "
+                      "session=build-rm-0001 branch=build-rm-0001 "
+                      "base=main skill=fake-skill\n"))))))
 
 (deftest dispatches-the-first-ready-build
   (let (root (unwrap-ok (setup "dispatch"
@@ -91,7 +112,7 @@
                       "base=main skill=fake-skill\n"))))))
 
 (defn new-failure-sequence (root)
-  (let (repo (repository-of root))
+  (let (repo (absolute-repository-of root))
     (str (dispatch-sequence root)
          "rmap session end build-rm-0001 --reason abandoned\n"
          (send-line (str "dispatch: rm-0001: `ringleader new --name build-rm-0001 --repo "

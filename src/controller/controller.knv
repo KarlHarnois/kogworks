@@ -13,8 +13,9 @@
 
 (use controller/json json json-error->message parse-json)
 
-(use controller/process ->command command command-detail
-                        execute outcome successful?)
+(use controller/process ->command canonical-path command
+                        command-detail execute outcome
+                        successful?)
 
 (use controller/rules action-kind->text first-build
                       first-controller-action item-action
@@ -35,6 +36,21 @@
   (fn ((ref str) u32 switch-state) unit))
 
 (defn controller-and-exit (repo poll once)
+  (match (canonical-repo repo)
+    ((ok absolute)
+     (run-controller-and-exit (as-str absolute) poll once))
+    ((err failure) (eprintln (error->message failure)) (exit 1))))
+
+(type canonical-repo
+  (fn ((ref str))
+    (result string controller-error)))
+
+(defn canonical-repo (repo)
+  (map-err (canonical-path repo)
+    (fn (reason)
+      (controller-error/unreadable-repository (str repo) reason))))
+
+(defn run-controller-and-exit (repo poll once)
   (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
     (match (run-controller repo poll mode)
       ((ok _) (do))

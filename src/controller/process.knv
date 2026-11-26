@@ -1,9 +1,9 @@
 (module
   "Runs the programs the controller calls, and reads the files it needs.")
 
-(export ->command ->outcome command command-detail execute
-        join-path outcome read-text-file successful?
-        text-file?)
+(export ->command ->outcome canonical-path command
+        command-detail execute join-path outcome
+        read-text-file successful? text-file?)
 
 (defstruct command
   :program string
@@ -75,6 +75,10 @@
     (if (empty? stderr-line)
       (last-line (as-str (:stdout outcome)))
       stderr-line)))
+
+(def canonical-path
+  (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
 
 (def read-text-file
   (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
