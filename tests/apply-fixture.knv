@@ -7,10 +7,17 @@
 (use controller/process ->command canonical-path
                         command-detail execute successful?)
 
-(export calls exit-code export-document factory-json
-        prepare-repo prepare-repo-without-factory
-        prepare-repo-without-roadmap roadmap-max-active
-        run-apply stderr-text stdout-text)
+(export ->fake-rmap exit-code export-document factory-json
+        prepare-real-repo prepare-repo
+        prepare-repo-without-factory recorded-command
+        recorded-directory repo-directory rmap-path
+        roadmap-max-active run-apply stderr-text stdout-text
+        stored-max-active)
+
+(defstruct fake-rmap
+  :stdout string
+  :stderr string
+  :code int)
 
 (def factory-json
   (str "{\"schema\": 0,\n" " \"name\": \"apply-fixture\",\n"
@@ -58,20 +65,37 @@
   (rust "std::process::Command::new(\"sh\").args([\"-c\", \"command -v rmap\"]).output().ok().and_then(|output| if output.status.success() {{ String::from_utf8(output.stdout).ok().map(|text| text.trim().to_string()) }} else {{ None }})"
     (fn () (option string))))
 
+(def fake-rmap-script
+  (str "#!/bin/sh\n"
+       "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+       "printf '%s' \"$*\" > \"$root/rmap-command\"\n"
+       "printf '%s' \"$(pwd -P)\" > \"$root/rmap-directory\"\n"
+       "if [ [CODE] -eq 0 ] && [ \"$1 $2\" = \"roadmap set\" ]; then\n"
+       "  printf '%s' \"$5\" > \"$root/stored-max-active\"\n"
+       "fi\n" "printf '%s' '[STDOUT]'\n"
+       "printf '%s' '[STDERR]' >&2\n" "exit [CODE]\n"))
+
 (type prepare-repo
+  (fn ((ref str) (ref str) (ref fake-rmap))
+    (result unit string)))
+
+(defn prepare-repo (root factory-text settings)
+  (let-try (_ (prepare-directories root))
+    (let-try (_ (write-factory root factory-text))
+      (write-fake-rmap root settings))))
+
+(type prepare-real-repo
   (fn ((ref str) (ref str) (ref str))
     (result unit string)))
 
-(defn prepare-repo (root factory-text roadmap)
-  (let-try (_ (prepare-apply-repo root factory-text))
-    (rmap-new root roadmap)))
-
-(type prepare-repo-without-roadmap
-  (fn ((ref str) (ref str))
-    (result unit string)))
-
-(defn prepare-repo-without-roadmap (root factory-text)
-  (prepare-apply-repo root factory-text))
+(defn prepare-real-repo (root factory-text roadmap)
+  (let-try (_ (prepare-directories root))
+    (let-try (_ (write-factory root factory-text))
+      (let-try (_ (run-in root "git"
+                          (vec (str "init") (str "-q"))
+                          "git init"))
+        (let-try (_ (run-in root "rmap" (vec (str "init")) "rmap init"))
+          (rmap-new root roadmap))))))
 
 (type prepare-repo-without-factory
   (fn ((ref str)) (result unit string)))
@@ -81,17 +105,13 @@
     (let-try (_ (make-directory (as-str (str root "/bin"))))
       (make-directory (as-str (str root "/repo"))))))
 
-(type prepare-apply-repo
-  (fn ((ref str) (ref str))
-    (result unit string)))
+(type prepare-directories
+  (fn ((ref str)) (result unit string)))
 
-(defn prepare-apply-repo (root factory-text)
+(defn prepare-directories (root)
   (let-try (_ (reset-directory root))
     (let-try (_ (make-directory (as-str (str root "/repo/.kogworks"))))
-      (let-try (_ (make-directory (as-str (str root "/bin"))))
-        (let-try (_ (write-factory root factory-text))
-          (let-try (_ (write-wrapper root))
-            (prepare-repository root)))))))
+      (make-directory (as-str (str root "/bin"))))))
 
 (type write-factory
   (fn ((ref str) (ref str))
@@ -101,34 +121,32 @@
   (write-text (as-str (str root "/repo/.kogworks/factory.json"))
               factory-text))
 
-(type write-wrapper
-  (fn ((ref str)) (result unit string)))
+(type write-fake-rmap
+  (fn ((ref str) (ref fake-rmap))
+    (result unit string)))
 
-(defn write-wrapper (root)
-  (match (rmap-path)
-    ((some real)
-     (let-try (absolute (canonical-path root))
-       (let-try (_ (write-text (as-str (str root "/bin/rmap"))
-                               (as-str (wrapper-script (as-str absolute)
-                                                       (as-str real)))))
-         (make-executable (as-str (str root "/bin/rmap"))))))
-    (none (err (str "rmap is not on PATH")))))
+(defn write-fake-rmap (root settings)
+  (let-try (_ (write-text (as-str (str root "/bin/rmap"))
+                          (as-str (replaced-script settings))))
+    (make-executable (as-str (str root "/bin/rmap")))))
 
-(type wrapper-script
-  (fn ((ref str) (ref str)) string))
+(type replaced-script
+  (fn ((ref fake-rmap)) string))
 
-(defn wrapper-script (root real)
-  (str "#!/bin/sh\n" "printf '%s\\n' \"$*\" >> \"" root
-       "/rmap-calls\"\n" "exec \"" real "\" \"$@\"\n"))
+(defn replaced-script (settings)
+  (-> (clone fake-rmap-script)
+      (replace-token (str "[STDOUT]")
+                     (clone (:stdout settings)))
+      (replace-token (str "[STDERR]")
+                     (clone (:stderr settings)))
+      (replace-token (str "[CODE]")
+                     (str (:code settings)))))
 
-(type prepare-repository
-  (fn ((ref str)) (result unit string)))
-
-(defn prepare-repository (root)
-  (let-try (_ (run-in root "git"
-                      (vec (str "init") (str "-q"))
-                      "git init"))
-    (run-in root "rmap" (vec (str "init")) "rmap init")))
+(defn replace-token (text token value)
+  (-> text as-str
+      (split (as-str token))
+      collect
+      (join (as-str value))))
 
 (type rmap-new
   (fn ((ref str) (ref str))
@@ -193,18 +211,37 @@
   (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
 
-(type calls
-  (fn ((ref str)) (vec string)))
+(type recorded-command
+  (fn ((ref str)) (option string)))
 
-(defn calls (root)
-  (match (read-text (as-str (str root "/rmap-calls")))
-    ((ok text)
-     (collect (map (filter (lines (as-str text)) non-blank?)
-                (fn (line) (str (trim line))))))
-    ((err _) (vec))))
+(defn recorded-command (root)
+  (read-option (as-str (str root "/rmap-command"))))
 
-(defn non-blank? (line)
-  (not (empty? (trim line))))
+(type recorded-directory
+  (fn ((ref str)) (option string)))
+
+(defn recorded-directory (root)
+  (read-option (as-str (str root "/rmap-directory"))))
+
+(type stored-max-active
+  (fn ((ref str)) (option string)))
+
+(defn stored-max-active (root)
+  (read-option (as-str (str root "/stored-max-active"))))
+
+(type read-option
+  (fn ((ref str)) (option string)))
+
+(defn read-option (path)
+  (match (read-text path)
+    ((ok text) (some text))
+    ((err _) none)))
+
+(type repo-directory
+  (fn ((ref str)) (result string string)))
+
+(defn repo-directory (root)
+  (canonical-path (as-str (str root "/repo"))))
 
 (type export-document
   (fn ((ref str)) (result json string)))

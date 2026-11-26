@@ -1,11 +1,12 @@
 (use apply apply-error apply-error->message cap-from-text)
 
-(use apply-fixture calls exit-code export-document
-                   factory-json prepare-repo
-                   prepare-repo-without-factory
-                   prepare-repo-without-roadmap
+(use apply-fixture ->fake-rmap exit-code export-document
+                   factory-json prepare-real-repo
+                   prepare-repo prepare-repo-without-factory
+                   recorded-command recorded-directory
+                   repo-directory rmap-path
                    roadmap-max-active run-apply stderr-text
-                   stdout-text)
+                   stdout-text stored-max-active)
 
 (def refusal-factory-json
   (str "{\"roadmap\": \"missing-roadmap\", \"max_active\": 3}\n"))
@@ -91,29 +92,40 @@
   (let (root (str "target/knave/apply-tests/stores"))
     (unwrap-ok (prepare-repo (as-str root)
                              (as-str factory-json)
-                             "factory-mvp"))
+                             (->fake-rmap :stdout (str "Set the max active of roadmap factory-mvp to 3.")
+                                          :stderr (str)
+                                          :code 0)))
     (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
                                         (as-str (str root "/repo")))))
       (assert (= (exit-code outcome) 0))
-      (assert (empty? (stderr-text outcome)))
-      (assert (= (str (trim (as-str (stdout-text outcome))))
+      (assert (= (stdout-text outcome)
                  (str "Set the max active of roadmap factory-mvp to 3.")))
-      (assert (= (calls (as-str root))
-                 (vec (str "roadmap set factory-mvp --max-active 3"))))
-      (let (document (unwrap-ok (export-document (as-str root))))
-        (assert (= (roadmap-max-active document "factory-mvp")
-                   (some (str "3"))))))))
+      (assert (empty? (stderr-text outcome)))
+      (assert (= (recorded-command (as-str root))
+                 (some (str "roadmap set factory-mvp --max-active 3"))))
+      (assert (= (recorded-directory (as-str root))
+                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (stored-max-active (as-str root))
+                 (some (str "3")))))))
 
 (deftest apply-passes-through-an-rmap-refusal
   (let (root (str "target/knave/apply-tests/refusal"))
-    (unwrap-ok (prepare-repo-without-roadmap (as-str root)
-                                             (as-str refusal-factory-json)))
+    (unwrap-ok (prepare-repo (as-str root)
+                             (as-str refusal-factory-json)
+                             (->fake-rmap :stdout (str)
+                                          :stderr (str "error: no roadmap is named missing-roadmap (roadmap-not-found)")
+                                          :code 1)))
     (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
                                         (as-str (str root "/repo")))))
       (assert (= (exit-code outcome) 1))
-      (assert (contains? (stderr-text outcome) "roadmap-not-found"))
-      (assert (= (calls (as-str root))
-                 (vec (str "roadmap set missing-roadmap --max-active 3")))))))
+      (assert (= (stdout-text outcome) (str)))
+      (assert (= (stderr-text outcome)
+                 (str "error: no roadmap is named missing-roadmap (roadmap-not-found)")))
+      (assert (= (recorded-command (as-str root))
+                 (some (str "roadmap set missing-roadmap --max-active 3"))))
+      (assert (= (recorded-directory (as-str root))
+                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (stored-max-active (as-str root)) none)))))
 
 (deftest apply-reports-a-missing-factory
   (let (root (str "target/knave/apply-tests/missing-factory"))
@@ -123,3 +135,18 @@
       (assert (= (exit-code outcome) 1))
       (assert (contains? (stderr-text outcome) "no factory at"))
       (assert (contains? (stderr-text outcome) ".kogworks/factory.json")))))
+
+(deftest apply-stores-the-factory-max-active-with-real-rmap
+  (match (rmap-path)
+    ((some _)
+     (let (root (str "target/knave/apply-tests/real-store"))
+       (unwrap-ok (prepare-real-repo (as-str root)
+                                     (as-str factory-json)
+                                     "factory-mvp"))
+       (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
+                                           (as-str (str root "/repo")))))
+         (assert (= (exit-code outcome) 0))
+         (let (document (unwrap-ok (export-document (as-str root))))
+           (assert (= (roadmap-max-active document "factory-mvp")
+                      (some (str "3"))))))))
+    (none (println "rmap is not on PATH; skipping the real store check"))))
