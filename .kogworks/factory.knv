@@ -16,7 +16,7 @@
              :merge merge-method/gh-auto
              :roles (vec (->role :name role-name/worker
                                  :agent (str "opencode")
-                                 :skill (str "building-features")
+                                 :skill (str "writing-knave")
                                  :brief (str ".kogworks/briefs/worker.md"))
                          (->role :name role-name/reviewer
                                  :agent (str "opencode")
