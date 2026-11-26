@@ -1,8 +1,6 @@
 (use fixtures/factory-fixture prepare-factory)
 (use synth error->message synth-factory)
 
-(deftype process-output (rust "std::process::Output"))
-
 (def run-synth
   (rust "std::process::Command::new(\"./target/knave/kogworks/kogworks\").args([\"synth\", {0}]).output().map_err(|error| error.to_string())"
     (fn ((ref str))
@@ -19,6 +17,8 @@
 (def stdout-text
   (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
+
+(deftype process-output (rust "std::process::Output"))
 
 (defn failure-reason (outcome)
   (match outcome

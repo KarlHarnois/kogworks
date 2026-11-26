@@ -31,6 +31,36 @@
     ((non-text-criterion index)
      (str "`item.criteria[" index "]` is not text"))))
 
+(type parse-item-detail
+  (fn ((ref json))
+    (result item-detail item-error)))
+
+(defn parse-item-detail (document)
+  (let-try (item (required-object document "item" "item"))
+    (let-try (pull (required-object document "pull_request" "pull_request"))
+      (let-try (pr (required-number pull "number" "pull_request.number"))
+        (let-try (head (required-text pull "head" "pull_request.head"))
+          (let-try (session (required-object item "session" "item.session"))
+            (let-try (branch (required-text session "branch"
+                                            "item.session.branch"))
+              (let-try (criteria (required-criteria item))
+                (ok (->item-detail :pr pr
+                                   :head head
+                                   :branch branch
+                                   :criteria criteria))))))))))
+
+(type criteria->text
+  (fn ((ref (vec string))) string))
+
+(defn criteria->text (criteria)
+  (join (collect (map (range 0 (len criteria))
+                   (fn (index)
+                     (str "("
+                          (inc index)
+                          ") "
+                          (clone (at criteria index))))))
+        "; "))
+
 (type required-criteria
   (fn ((ref json))
     (result (vec string) item-error)))
@@ -74,33 +104,3 @@
 
 (defn with-text! (texts text)
   (do (push! texts text) texts))
-
-(type parse-item-detail
-  (fn ((ref json))
-    (result item-detail item-error)))
-
-(defn parse-item-detail (document)
-  (let-try (item (required-object document "item" "item"))
-    (let-try (pull (required-object document "pull_request" "pull_request"))
-      (let-try (pr (required-number pull "number" "pull_request.number"))
-        (let-try (head (required-text pull "head" "pull_request.head"))
-          (let-try (session (required-object item "session" "item.session"))
-            (let-try (branch (required-text session "branch"
-                                            "item.session.branch"))
-              (let-try (criteria (required-criteria item))
-                (ok (->item-detail :pr pr
-                                   :head head
-                                   :branch branch
-                                   :criteria criteria))))))))))
-
-(type criteria->text
-  (fn ((ref (vec string))) string))
-
-(defn criteria->text (criteria)
-  (join (collect (map (range 0 (len criteria))
-                   (fn (index)
-                     (str "("
-                          (inc index)
-                          ") "
-                          (clone (at criteria index))))))
-        "; "))

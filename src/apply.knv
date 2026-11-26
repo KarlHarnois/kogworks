@@ -26,6 +26,20 @@
   (invalid-max-active string (parse-error int))
   (unreadable-repository string string))
 
+(defstruct apply-target
+  :directory string
+  :cap roadmap-cap)
+
+(type apply-and-exit
+  (fn ((ref str)) unit))
+
+(defn apply-and-exit (repo)
+  (match (read-target repo)
+    ((ok target) (apply-cap target))
+    ((err failure)
+     (eprintln (apply-error->message failure))
+     (exit 1))))
+
 (defn apply-error->message (failure)
   (match failure
     ((factory cause) (factory-error->message cause))
@@ -40,19 +54,14 @@
     ((unreadable-repository path reason)
      (str "cannot resolve the repository " path ": " reason))))
 
-(defstruct apply-target
-  :directory string
-  :cap roadmap-cap)
+(type cap-from-document
+  (fn ((ref json))
+    (result roadmap-cap apply-error)))
 
-(type apply-and-exit
-  (fn ((ref str)) unit))
-
-(defn apply-and-exit (repo)
-  (match (read-target repo)
-    ((ok target) (apply-cap target))
-    ((err failure)
-     (eprintln (apply-error->message failure))
-     (exit 1))))
+(defn cap-from-document (document)
+  (let-try (roadmap (required-text document "roadmap" "roadmap"))
+    (let-try (max-active (required-number document "max_active" "max_active"))
+      (ok (->roadmap-cap :roadmap roadmap :max-active max-active)))))
 
 (type read-target
   (fn ((ref str))
@@ -87,15 +96,6 @@
 (defn factory-document (repo)
   (map-err (read-factory-document repo)
     (fn (failure) (apply-error/factory failure))))
-
-(type cap-from-document
-  (fn ((ref json))
-    (result roadmap-cap apply-error)))
-
-(defn cap-from-document (document)
-  (let-try (roadmap (required-text document "roadmap" "roadmap"))
-    (let-try (max-active (required-number document "max_active" "max_active"))
-      (ok (->roadmap-cap :roadmap roadmap :max-active max-active)))))
 
 (type required-text
   (fn ((ref json) (ref str) (ref str))

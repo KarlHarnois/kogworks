@@ -15,13 +15,6 @@
         merge-method read-factory read-factory-document
         read-manager role)
 
-(defenum merge-method gh-auto)
-
-(defstruct role
-  :agent string
-  :skill string
-  :brief string)
-
 (defstruct factory-config
   :manager string
   :roadmap string
@@ -29,12 +22,28 @@
   :worker role
   :reviewer role)
 
-(type factory-path
-  (fn ((ref str)) string))
+(defenum merge-method gh-auto)
 
-(defn factory-path (repo)
-  (let (directory (join-path repo ".kogworks"))
-    (join-path (as-str directory) "factory.json")))
+(defstruct role
+  :agent string
+  :skill string
+  :brief string)
+
+(type read-factory
+  (fn ((ref str))
+    (result factory-config factory-error)))
+
+(defn read-factory (repo)
+  (let-try (document (read-factory-document repo))
+    (config-from-json document)))
+
+(type read-manager
+  (fn ((ref str)) (option string)))
+
+(defn read-manager (repo)
+  (match (read-factory-document repo)
+    ((ok document) (manager-from-document document))
+    ((err _) none)))
 
 (type read-factory-document
   (fn ((ref str))
@@ -45,6 +54,13 @@
     (if (text-file? (as-str path))
       (document-from-file path)
       (err (factory-error/missing-factory path)))))
+
+(type factory-path
+  (fn ((ref str)) string))
+
+(defn factory-path (repo)
+  (let (directory (join-path repo ".kogworks"))
+    (join-path (as-str directory) "factory.json")))
 
 (type document-from-file
   (fn ((ref string))
@@ -65,22 +81,6 @@
     (fn (failure)
       (factory-error/malformed-factory (clone path)
                                        (json-error->message failure)))))
-
-(type read-factory
-  (fn ((ref str))
-    (result factory-config factory-error)))
-
-(defn read-factory (repo)
-  (let-try (document (read-factory-document repo))
-    (config-from-json document)))
-
-(type read-manager
-  (fn ((ref str)) (option string)))
-
-(defn read-manager (repo)
-  (match (read-factory-document repo)
-    ((ok document) (manager-from-document document))
-    ((err _) none)))
 
 (defn manager-from-document (document)
   (match (json-field document "manager")

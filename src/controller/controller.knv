@@ -304,20 +304,6 @@
                                      :code (:code outcome)
                                      :detail (command-detail outcome))))
 
-(type next-command
-  (fn ((ref string)) command))
-
-(defn next-command (roadmap)
-  (->command :program (str "rmap")
-             :arguments (vec (str "next")
-                             (str "--roadmap")
-                             (clone roadmap)
-                             (str "--taken-by")
-                             (str "controller")
-                             (str "--json"))
-             :label (str "rmap next --roadmap " roadmap
-                         " --taken-by controller --json")))
-
 (type ready-command
   (fn ((ref string)) command))
 
@@ -341,6 +327,20 @@
                                      :command (clone (:label command))
                                      :code 0
                                      :detail (str)))))
+
+(type next-command
+  (fn ((ref string)) command))
+
+(defn next-command (roadmap)
+  (->command :program (str "rmap")
+             :arguments (vec (str "next")
+                             (str "--roadmap")
+                             (clone roadmap)
+                             (str "--taken-by")
+                             (str "controller")
+                             (str "--json"))
+             :label (str "rmap next --roadmap " roadmap
+                         " --taken-by controller --json")))
 
 (type fail-stop
   (fn ((ref str) (ref failure-report))

@@ -21,25 +21,10 @@
        "{\"item\":\"rm-4\",\"actions\":[{\"action\":\"dispatch\","
        "\"actor\":\"controller\"}]}" "]}"))
 
-(defn next-lines-from (text)
-  (match (parse-json (as-str text))
-    ((ok document) (parse-next-response document))
-    ((err _) (err (str "invalid JSON")))))
-
 (defn ready-items-from (text)
   (match (parse-json (as-str text))
     ((ok document) (parse-ready-response document))
     ((err _) (err (str "invalid JSON")))))
-
-(defn assert-action (found action item)
-  (assert (= (as-str (action-kind->text (:kind found)))
-             (as-str action)))
-  (assert (= (as-str (:item found)) (as-str item))))
-
-(defn assert-found-action (found action item)
-  (match found
-    ((some value) (assert-action value action item))
-    (none (assert false))))
 
 (defn assert-controller-action (next-text action item)
   (match (next-lines-from next-text)
@@ -48,16 +33,31 @@
                           action item))
     ((err _) (assert false))))
 
-(defn assert-no-action (found)
+(defn assert-found-action (found action item)
   (match found
-    (none (assert true))
-    (_ (assert false))))
+    ((some value) (assert-action value action item))
+    (none (assert false))))
+
+(defn assert-action (found action item)
+  (assert (= (as-str (action-kind->text (:kind found)))
+             (as-str action)))
+  (assert (= (as-str (:item found)) (as-str item))))
 
 (defn assert-no-controller-action (next-text)
   (match (next-lines-from next-text)
     ((ok lines)
      (assert-no-action (first-controller-action lines)))
     ((err _) (assert false))))
+
+(defn next-lines-from (text)
+  (match (parse-json (as-str text))
+    ((ok document) (parse-next-response document))
+    ((err _) (err (str "invalid JSON")))))
+
+(defn assert-no-action (found)
+  (match found
+    (none (assert true))
+    (_ (assert false))))
 
 (defn assert-controller-actor (actor-value)
   (match actor-value

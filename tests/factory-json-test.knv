@@ -2,15 +2,15 @@
 (use factory/json factory->json)
 (use fixtures/fake-factory fake-factory)
 
-(def char-from-code
-  (rust "char::from_u32({0} as u32).unwrap_or('?')"
-    (fn (int) char)))
-
 (def control-characters
   (-> (range 0 32)
       (map (fn (code) (str (char-from-code code))))
       collect
       (join "")))
+
+(def char-from-code
+  (rust "char::from_u32({0} as u32).unwrap_or('?')"
+    (fn (int) char)))
 
 (def control-characters-json
   (str "\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007"
@@ -19,14 +19,14 @@
        "\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d"
        "\\u001e\\u001f"))
 
-(defn assert-text-value (value expected)
-  (match (json-text value)
-    ((some text) (assert (= (as-str text) (as-str expected))))
-    (none (assert false))))
-
 (defn assert-text-field (document key expected)
   (match (json-field document key)
     ((some value) (assert-text-value value expected))
+    (none (assert false))))
+
+(defn assert-text-value (value expected)
+  (match (json-text value)
+    ((some text) (assert (= (as-str text) (as-str expected))))
     (none (assert false))))
 
 (deftest fake-factory-becomes-json

@@ -5,14 +5,7 @@
                                  run-controller stderr-text
                                  write-fakes)
 
-(def merge-item (str "rm-0009"))
-
-(def merge-pr (str "12"))
-
 (def merge-slug (str "fake-owner/fake-repo"))
-
-(def approved-head
-  (str "abcdef0123456789abcdef0123456789abcdef01"))
 
 (def moved-head
   (str "1234567890abcdef1234567890abcdef12345678"))
@@ -28,17 +21,24 @@
        "\"head\":\"" approved-head "\","
        "\"approval\":{\"head\":\"" approved-head "\"}}}"))
 
+(def merge-item (str "rm-0009"))
+
+(def merge-pr (str "12"))
+
 (def merged-view
   (str "{\"state\":\"MERGED\",\"mergedAt\":\"2026-11-26T00:00:00Z\","
        "\"headRefOid\":\"" approved-head "\"}"))
 
-(defn moved-view ()
-  (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
-       "\"headRefOid\":\"" moved-head "\"}"))
-
 (def open-view
   (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
        "\"headRefOid\":\"" approved-head "\"}"))
+
+(def approved-head
+  (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(defn moved-view ()
+  (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
+       "\"headRefOid\":\"" moved-head "\"}"))
 
 (defn merge-settings ()
   (assoc (default-settings (clone merge-next) (str "{\"ready\":[]}"))
@@ -57,28 +57,34 @@
          ((err reason) (err reason))
          ((ok _) (ok root)))))))
 
+(defn run (root)
+  (run-with root (vec (str "--once"))))
+
 (defn run-with (root arguments)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
                   arguments))
 
-(defn run (root)
-  (run-with root (vec (str "--once"))))
-
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
 
-(defn next-line ()
-  (str "rmap next --roadmap fake-roadmap --taken-by controller --json\n"))
+(defn merged-sequence ()
+  (str (merge-preface)
+       (view-line)
+       (close-line)))
 
-(defn show-line ()
-  (str "rmap item show " merge-item " --json\n"))
+(defn view-line ()
+  (str "gh pr view " merge-pr
+       " --json state,mergedAt,headRefOid\n"))
 
-(defn repo-view-line ()
-  (str "gh repo view --json nameWithOwner -q .nameWithOwner\n"))
+(defn close-line ()
+  (str "rmap item close " merge-item "\n"))
 
-(defn auto-merge-line ()
-  (str "gh api repos/" merge-slug " --jq .allow_auto_merge\n"))
+(defn merge-preface ()
+  (str (preflight-preface)
+       (required-checks-line)
+       (advance-line)
+       (merge-line)))
 
 (defn required-checks-line ()
   (str "gh api repos/" merge-slug
@@ -93,32 +99,29 @@
        " --auto --merge --match-head-commit " approved-head
        "\n"))
 
-(defn view-line ()
-  (str "gh pr view " merge-pr
-       " --json state,mergedAt,headRefOid\n"))
-
-(defn close-line ()
-  (str "rmap item close " merge-item "\n"))
-
-(defn send-line (message)
-  (str "ringleader send fake-manager " message "\n"))
-
 (defn preflight-preface ()
   (str (next-line)
        (show-line)
        (repo-view-line)
        (auto-merge-line)))
 
-(defn merge-preface ()
-  (str (preflight-preface)
-       (required-checks-line)
-       (advance-line)
-       (merge-line)))
+(defn next-line ()
+  (str "rmap next --roadmap fake-roadmap --taken-by controller --json\n"))
 
-(defn merged-sequence ()
-  (str (merge-preface)
-       (view-line)
-       (close-line)))
+(defn show-line ()
+  (str "rmap item show " merge-item " --json\n"))
+
+(defn repo-view-line ()
+  (str "gh repo view --json nameWithOwner -q .nameWithOwner\n"))
+
+(defn auto-merge-line ()
+  (str "gh api repos/" merge-slug " --jq .allow_auto_merge\n"))
+
+(defn refusal-sequence (lines message)
+  (str lines (send-line message)))
+
+(defn send-line (message)
+  (str "ringleader send fake-manager " message "\n"))
 
 (deftest merges-the-approved-head-and-closes-the-item
   (let (root (unwrap-ok (setup "merge" (merge-settings))))
@@ -126,9 +129,6 @@
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (merged-sequence)))
       (assert (empty? (stderr-text output))))))
-
-(defn refusal-sequence (lines message)
-  (str lines (send-line message)))
 
 (deftest stops-before-advancing-when-auto-merge-is-disabled
   (let (root (unwrap-ok (setup "merge-auto-off"
