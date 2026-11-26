@@ -132,6 +132,149 @@
       (assert (= (sequence-text root) (new-failure-sequence root)))
       (assert (contains? (stderr-text output) "cannot start session")))))
 
+(def review-item (str "rm-0009"))
+
+(def review-head
+  (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(def review-branch (str "build-rm-0009"))
+
+(def review-session (str "review-rm-0009-abcdef0"))
+
+(def review-item-json
+  (str "{\"item\":{"
+       "\"criteria\":[\"the controller starts one reviewer\","
+       "\"the brief names the head\"],"
+       "\"session\":{\"branch\":\"" review-branch
+       "\",\"kind\":\"work\"," "\"name\":\"" review-branch
+       "\"}," "\"status\":\"in_review\"},"
+       "\"pull_request\":{\"number\":12,\"head\":\""
+       review-head "\"}}"))
+
+(defn review-settings (next-json)
+  (assoc (default-settings next-json (clone build-ready))
+         :item-json (clone review-item-json)))
+
+(defn review-preface ()
+  (str (next-line (str "fake-roadmap"))
+       "rmap item show " review-item " --json\n"
+       "rmap review start " review-item " --session "
+       review-session "\n"))
+
+(defn reviewer-start-line (root)
+  (let (repo (absolute-repository-of root))
+    (str "ringleader new --name " review-session " --repo "
+         repo " --agent fake-reviewer-agent"
+         " --base-branch " review-branch
+         " --prompt <filled>\n")))
+
+(defn review-sequence (root)
+  (str (review-preface) (reviewer-start-line root)))
+
+(defn review-prompt ()
+  (str "item=" review-item " roadmap=fake-roadmap "
+       "session=" review-session " pr=12 head=" review-head
+       " criteria=(1) the controller starts one reviewer; "
+       "(2) the brief names the head base=main "
+       "skill=fake-reviewer-skill manager=fake-manager\n"))
+
+(defn verify-stress ()
+  (str "Verify action: the head is approved, but at least one acceptance "
+       "criterion has no verdict on it. Record every missing "
+       "`rmap item verify` verdict before `rmap pr review`.\n\n"))
+
+(deftest starts-a-reviewer-for-a-controller-review
+  (let (root (unwrap-ok (setup "review"
+                               (review-settings (next-with (str "review")
+                                                           review-item)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (stdout-text output) (str review-session "\n")))
+      (assert (= (sequence-text root) (review-sequence root)))
+      (assert (= (prompt-text root) (review-prompt)))
+      (assert (not (contains? (prompt-text root) "{{")))
+      (assert (not (contains? (sequence-text root) "design"))))))
+
+(deftest starts-a-reviewer-for-a-controller-verify
+  (let (root (unwrap-ok (setup "verify"
+                               (review-settings (next-with (str "verify")
+                                                           review-item)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root) (review-sequence root)))
+      (assert (= (prompt-text root)
+                 (str (verify-stress) (review-prompt))))
+      (assert (not (contains? (sequence-text root) "design"))))))
+
+(defn review-refusal-sequence (error)
+  (str (review-preface)
+       (send-line (str "review: " review-item
+                       ": `rmap review start " review-item
+                       " --session " review-session
+                       "` exited 5: " error))))
+
+(deftest stops-when-the-review-is-refused
+  (let (root (unwrap-ok (setup "review-refused"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :review-exit 5
+                                      :review-error (str
+                                                      "review-already-live")))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (review-refusal-sequence (str "review-already-live"))))
+      (assert (not (contains? (sequence-text root) "ringleader new")))
+      (assert (not (contains? (sequence-text root) "session end"))))))
+
+(defn review-new-failure-sequence (root)
+  (let (repo (absolute-repository-of root))
+    (str (review-sequence root)
+         "rmap session end " review-session
+         " --reason abandoned\n"
+         (send-line (str "review: " review-item
+                         ": `ringleader new --name "
+                         review-session " --repo " repo
+                         " --agent fake-reviewer-agent"
+                         " --base-branch " review-branch
+                         " --prompt <filled brief>` "
+                         "exited 4: cannot start session")))))
+
+(deftest ends-the-review-session-when-ringleader-new-fails
+  (let (root (unwrap-ok (setup "review-new-fails"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :new-exit 4
+                                      :new-error (str
+                                                   "cannot start session")))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (review-new-failure-sequence root)))
+      (assert (contains? (stderr-text output) "cannot start session")))))
+
+(defn missing-detail-sequence ()
+  (str (next-line (str "fake-roadmap"))
+       "rmap item show " review-item " --json\n"
+       (send-line (str "review: " review-item
+                       ": `rmap item show " review-item
+                       " --json` exited 0: invalid item JSON: "
+                       "missing `pull_request`"))))
+
+(deftest stops-when-the-item-detail-is-missing
+  (let (root (unwrap-ok (setup "review-no-pull"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :item-json (str
+                                                   "{\"item\":{"
+                                                   "\"criteria\":[\"a criterion\"],"
+                                                   "\"session\":{\"branch\":"
+                                                   "\"build-rm-0009\"}}}")))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (missing-detail-sequence)))
+      (assert (not (contains? (sequence-text root) "review start")))
+      (assert (not (contains? (sequence-text root) "ringleader new"))))))
+
 (defn out-of-scope-sequence (action item)
   (str (next-line (str "fake-roadmap"))
        (send-line (str "controller: " action " action for "
@@ -149,16 +292,6 @@
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root) (out-of-scope-sequence action item)))
       (assert (contains? (stderr-text output) "out of scope")))))
-
-(deftest stops-on-a-controller-review
-  (assert-out-of-scope "review-out-of-scope"
-                       (str "review")
-                       (str "rm-0009")))
-
-(deftest stops-on-a-controller-verify
-  (assert-out-of-scope "verify-out-of-scope"
-                       (str "verify")
-                       (str "rm-0009")))
 
 (deftest stops-on-a-controller-merge
   (assert-out-of-scope "merge-out-of-scope"
@@ -223,7 +356,8 @@
                 text
                 "running binary stays at the version it was built from"))
       (assert (contains? text "rebuilds and restarts it"))
-      (assert (contains? text "no automatic restart")))))
+      (assert (contains? text "no automatic restart"))
+      (assert (contains? text "starts no design reviewer")))))
 
 (deftest notifies-the-manager-when-the-factory-is-incomplete
   (let (root (unwrap-ok (setup "factory-incomplete"

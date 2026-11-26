@@ -16,7 +16,13 @@
        (assert (= (:skill (:worker config))
                   (str "fake-skill")))
        (assert (= (:brief (:worker config))
-                  (str ".kogworks/briefs/worker.md"))))
+                  (str ".kogworks/briefs/worker.md")))
+       (assert (= (:agent (:reviewer config))
+                  (str "fake-reviewer-agent")))
+       (assert (= (:skill (:reviewer config))
+                  (str "fake-reviewer-skill")))
+       (assert (= (:brief (:reviewer config))
+                  (str ".kogworks/briefs/reviewer.md"))))
       ((err _) (assert false)))))
 
 (deftest read-factory-reports-a-missing-factory

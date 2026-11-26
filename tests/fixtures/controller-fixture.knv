@@ -13,18 +13,24 @@
 (defstruct fake-settings
   :next-json string
   :ready-json string
+  :item-json string
   :stop-after int
   :claim-exit int
   :claim-error string
+  :review-exit int
+  :review-error string
   :new-exit int
   :new-error string)
 
 (defn default-settings (next-json ready-json)
   (->fake-settings :next-json next-json
                    :ready-json ready-json
+                   :item-json (str "{}")
                    :stop-after 0
                    :claim-exit 0
                    :claim-error (str)
+                   :review-exit 0
+                   :review-error (str)
                    :new-exit 0
                    :new-error (str)))
 
@@ -33,11 +39,20 @@
          :roles (vec (->role :name role-name/worker
                              :agent (str "fake-agent")
                              :skill (str "fake-skill")
-                             :brief (str ".kogworks/briefs/worker.md")))))
+                             :brief (str ".kogworks/briefs/worker.md"))
+                     (->role :name role-name/reviewer
+                             :agent (str "fake-reviewer-agent")
+                             :skill (str "fake-reviewer-skill")
+                             :brief (str ".kogworks/briefs/reviewer.md")))))
 
 (def worker-brief
   (str "item={{item}} roadmap={{roadmap}} session={{session}} "
        "branch={{branch}} base={{base}} skill={{skill}}\n"))
+
+(def reviewer-brief
+  (str "item={{item}} roadmap={{roadmap}} session={{session}} "
+       "pr={{pr}} head={{head}} criteria={{criteria}} base={{base}} "
+       "skill={{skill}} manager={{manager}}\n"))
 
 (def write-text
   (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
@@ -82,8 +97,11 @@
     (let-try (_ (make-directory (as-str (str root "/repo/.kogworks/briefs"))))
       (let-try (_ (write-text (as-str (str root "/repo/.kogworks/factory.json"))
                               (as-str (factory->json controller-factory))))
-        (write-text (as-str (str root "/repo/.kogworks/briefs/worker.md"))
-                    (as-str worker-brief))))))
+        (let-try (_ (write-text (as-str
+                                  (str root "/repo/.kogworks/briefs/worker.md"))
+                                (as-str worker-brief)))
+          (write-text (as-str (str root "/repo/.kogworks/briefs/reviewer.md"))
+                      (as-str reviewer-brief)))))))
 
 (def rmap-script
   (str
@@ -98,22 +116,42 @@
     "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
-    "    if [ [CLAIM_EXIT] -ne 0 ]; then\n"
-    "      printf '%s\\n' '[CLAIM_ERROR]' >&2\n"
-    "      exit [CLAIM_EXIT]\n" "    fi\n" "    ;;\n"
+    "    case \"$2\" in\n"
+    "      show) cat \"$root/item.json\" ;;\n"
+    "      claim)\n"
+    "        if [ [CLAIM_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[CLAIM_ERROR]' >&2\n"
+    "          exit [CLAIM_EXIT]\n" "        fi\n"
+    "        ;;\n" "    esac\n" "    ;;\n" "  review)\n"
+    "    if [ [REVIEW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[REVIEW_ERROR]' >&2\n"
+    "      exit [REVIEW_EXIT]\n" "    fi\n" "    ;;\n"
     "  session) ;;\n" "esac\n" "exit 0\n"))
 
 (def ringleader-script
   (str
     "#!/bin/sh\n"
     "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-    "if [ \"$1\" = \"new\" ]; then\n" "  case \"$5\" in\n"
-    "    /*) ;;\n"
-    "    *) printf 'repo is not absolute: %s\\n' \"$5\" >&2; exit 9 ;;\n"
+    "if [ \"$1\" = \"new\" ]; then\n" "  shift\n"
+    "  name=\n" "  repo=\n" "  agent=\n" "  base=\n"
+    "  prompt=\n" "  while [ $# -gt 0 ]; do\n"
+    "    case \"$1\" in\n"
+    "      --name) name=$2; shift 2 ;;\n"
+    "      --repo) repo=$2; shift 2 ;;\n"
+    "      --agent) agent=$2; shift 2 ;;\n"
+    "      --base-branch) base=$2; shift 2 ;;\n"
+    "      --prompt) prompt=$2; shift 2 ;;\n"
+    "      *) shift ;;\n" "    esac\n" "  done\n"
+    "  case \"$repo\" in\n" "    /*) ;;\n"
+    "    *) printf 'repo is not absolute: %s\\n' \"$repo\" >&2; exit 9 ;;\n"
     "  esac\n"
-    "  printf 'ringleader new --name %s --repo %s --agent %s --prompt <filled>\\n' "
-    "\"$3\" \"$5\" \"$7\" >> \"$root/sequence\"\n"
-    "  printf '%s' \"$9\" > \"$root/prompt\"\n"
+    "  printf 'ringleader new --name %s --repo %s --agent %s' "
+    "\"$name\" \"$repo\" \"$agent\" >> \"$root/sequence\"\n"
+    "  if [ -n \"$base\" ]; then\n"
+    "    printf ' --base-branch %s' \"$base\" >> \"$root/sequence\"\n"
+    "  fi\n"
+    "  printf ' --prompt <filled>\\n' >> \"$root/sequence\"\n"
+    "  printf '%s' \"$prompt\" > \"$root/prompt\"\n"
     "  if [ [NEW_EXIT] -ne 0 ]; then\n"
     "    printf '%s\\n' '[NEW_ERROR]' >&2\n"
     "    exit [NEW_EXIT]\n" "  fi\n"
@@ -125,7 +163,7 @@
   (str "#!/bin/sh\n"
        "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
        "printf 'git %s\\n' \"$*\" >> \"$root/git.log\"\n"
-       "printf 'origin/main\\n'\n"))
+       "printf 'origin/main\\n'"))
 
 (defn replace-token (text token value)
   (-> text as-str
@@ -141,6 +179,10 @@
                      (str (:claim-exit settings)))
       (replace-token (str "[CLAIM_ERROR]")
                      (clone (:claim-error settings)))
+      (replace-token (str "[REVIEW_EXIT]")
+                     (str (:review-exit settings)))
+      (replace-token (str "[REVIEW_ERROR]")
+                     (clone (:review-error settings)))
       (replace-token (str "[NEW_EXIT]")
                      (str (:new-exit settings)))
       (replace-token (str "[NEW_ERROR]") (:new-error settings))))
@@ -155,13 +197,15 @@
                             (as-str (:next-json settings))))
       (let-try (_ (write-text (as-str (str root "/ready.json"))
                               (as-str (:ready-json settings))))
-        (let-try (_ (write-script (str root "/bin/rmap")
-                                  (replaced-script rmap-script settings)))
-          (let-try (_ (write-script (str root "/bin/ringleader")
-                                    (replaced-script ringleader-script
-                                                     settings)))
-            (write-script (str root "/bin/git")
-                          (replaced-script git-script settings))))))))
+        (let-try (_ (write-text (as-str (str root "/item.json"))
+                                (as-str (:item-json settings))))
+          (let-try (_ (write-script (str root "/bin/rmap")
+                                    (replaced-script rmap-script settings)))
+            (let-try (_ (write-script (str root "/bin/ringleader")
+                                      (replaced-script ringleader-script
+                                                       settings)))
+              (write-script (str root "/bin/git")
+                            (replaced-script git-script settings)))))))))
 
 (deftype process-output (rust "std::process::Output"))
 

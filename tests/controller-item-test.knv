@@ -1,0 +1,41 @@
+(use controller/item criteria->text parse-item-detail)
+(use controller/json parse-json)
+
+(def item-json
+  (str "{\"item\":{\"criteria\":[\"first criterion\",\"second criterion\"],"
+       "\"session\":{\"branch\":\"build-rm-1\"}},"
+       "\"pull_request\":{\"number\":7,\"head\":\"0123456789abcdef\"}}"))
+
+(defn detail-from (text)
+  (match (parse-json (as-str text))
+    ((ok document) (parse-item-detail document))
+    ((err _) (err (str "invalid JSON")))))
+
+(deftest parse-item-detail-reads-the-review-fields
+  (match (detail-from (clone item-json))
+    ((ok detail)
+     (assert (= (:pr detail) (str "7")))
+     (assert (= (:head detail) (str "0123456789abcdef")))
+     (assert (= (:branch detail) (str "build-rm-1")))
+     (assert (= (len (:criteria detail)) 2))
+     (assert (= (clone (at (:criteria detail) 0))
+                (str "first criterion"))))
+    ((err _) (assert false))))
+
+(deftest parse-item-detail-rejects-a-missing-pull-request
+  (match (detail-from (str "{\"item\":{\"criteria\":[\"a criterion\"],"
+                           "\"session\":{\"branch\":\"build-rm-1\"}}}"))
+    ((err reason) (assert (contains? reason "pull_request")))
+    ((ok _) (assert false))))
+
+(deftest parse-item-detail-rejects-empty-criteria
+  (match (detail-from (str "{\"item\":{\"criteria\":[],"
+                           "\"session\":{\"branch\":\"build-rm-1\"}},"
+                           "\"pull_request\":{\"number\":7,"
+                           "\"head\":\"0123456789abcdef\"}}"))
+    ((err reason) (assert (contains? reason "item.criteria")))
+    ((ok _) (assert false))))
+
+(deftest criteria->text-names-every-criterion
+  (assert (= (criteria->text (vec (str "one") (str "two")))
+             (str "(1) one; (2) two"))))
