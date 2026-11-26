@@ -1,0 +1,11 @@
+(use factory/json factory->json)
+(use fixtures/fake-factory fake-factory)
+
+(deftest fake-factory-becomes-json
+  (assert (= (factory->json fake-factory)
+             (str "{\"schema\":0,\"name\":\"fake\",\"manager\":\"fake-manager\",\"roadmap\":\"fake-roadmap\",\"max_active\":1,\"merge\":\"gh-auto\",\"roles\":{\"worker\":{\"agent\":\"fake-worker-agent\",\"skill\":\"fake:worker-skill\",\"brief\":\"fake/briefs/worker.md\"},\"reviewer\":{\"agent\":\"fake-reviewer-agent\",\"skill\":\"fake:reviewer-skill\",\"brief\":\"fake/briefs/reviewer.md\"}}}"))))
+
+(deftest text-with-json-escapes-is-escaped
+  (assert (= (factory->json (assoc (clone fake-factory)
+                                   :name (str "a\"b\\c\nd")))
+             (str "{\"schema\":0,\"name\":\"a\\\"b\\\\c\\nd\",\"manager\":\"fake-manager\",\"roadmap\":\"fake-roadmap\",\"max_active\":1,\"merge\":\"gh-auto\",\"roles\":{\"worker\":{\"agent\":\"fake-worker-agent\",\"skill\":\"fake:worker-skill\",\"brief\":\"fake/briefs/worker.md\"},\"reviewer\":{\"agent\":\"fake-reviewer-agent\",\"skill\":\"fake:reviewer-skill\",\"brief\":\"fake/briefs/reviewer.md\"}}}"))))

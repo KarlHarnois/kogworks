@@ -1,0 +1,88 @@
+(export error->message synth-error synth-factory)
+
+(defenum synth-error
+  (missing-factory string)
+  (unreadable-factory string string)
+  (unwritable-factory-json string string))
+
+(defn error->message (failure)
+  (match failure
+    ((missing-factory path) (str "no factory at " path))
+    ((unreadable-factory path reason)
+     (str "cannot read " path ": " reason))
+    ((unwritable-factory-json path reason)
+     (str "cannot write " path ": " reason))))
+
+(deftype process-output (rust "std::process::Output"))
+
+(def join-path
+  (rust "std::path::Path::new({0}).join({1}).to_string_lossy().into_owned()"
+    (fn ((ref str) (ref str)) string)))
+
+(def holds-file?
+  (rust "std::path::Path::new({0}).is_file()"
+    (fn ((ref str)) bool)))
+
+(def write-text
+  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def run-knave-eval
+  (rust "std::process::Command::new(\"knave\").args([\"eval\", {0}, \"(do (println (factory-json)) (exit 0))\"]).output().map_err(|error| error.to_string())"
+    (fn ((ref str))
+      (result process-output string))))
+
+(def succeeded?
+  (rust "{0}.status.success()"
+    (fn ((ref process-output)) bool)))
+
+(def output-text
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def output-failure
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).trim().to_owned()"
+    (fn ((ref process-output)) string)))
+
+(type checked-factory-json
+  (fn ((ref str) (ref process-output))
+    (result string synth-error)))
+
+(defn checked-factory-json (factory-file output)
+  (match (succeeded? output)
+    (true (ok (output-text output)))
+    (false (err (synth-error/unreadable-factory (str factory-file)
+                                                (output-failure output))))))
+
+(type eval-factory-json
+  (fn ((ref str))
+    (result string synth-error)))
+
+(defn eval-factory-json (factory-file)
+  (match (run-knave-eval factory-file)
+    ((ok output) (checked-factory-json factory-file output))
+    ((err reason)
+     (err (synth-error/unreadable-factory (str factory-file) reason)))))
+
+(type write-factory-json
+  (fn ((ref str) (ref str))
+    (result string synth-error)))
+
+(defn write-factory-json (json-file json)
+  (match (write-text json-file json)
+    ((ok _) (ok (str json-file)))
+    ((err reason)
+     (err (synth-error/unwritable-factory-json (str json-file) reason)))))
+
+(type synth-factory
+  (fn ((ref str))
+    (result string synth-error)))
+
+(defn synth-factory (directory)
+  (let (factory-file (join-path directory "factory.knv"))
+    (if (holds-file? (as-str factory-file))
+      (let-try (json (eval-factory-json (as-str factory-file)))
+        (write-factory-json (as-str (join-path directory "factory.json"))
+                            (as-str json)))
+      (err (synth-error/missing-factory (str factory-file))))))

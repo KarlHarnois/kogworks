@@ -1,0 +1,91 @@
+(use factory/types merge-method role role-name)
+
+(export factory->json)
+
+(defstruct character-escape
+  :character char
+  :text string)
+
+(def character-escapes
+  (vec (->character-escape :character (char "\"")
+                           :text (str "\\\""))
+       (->character-escape :character (char "\\")
+                           :text (str "\\\\"))
+       (->character-escape :character (char "\n")
+                           :text (str "\\n"))
+       (->character-escape :character (char "\r")
+                           :text (str "\\r"))
+       (->character-escape :character (char "\t")
+                           :text (str "\\t"))
+       (->character-escape :character (char "\u{8}")
+                           :text (str "\\b"))
+       (->character-escape :character (char "\u{c}")
+                           :text (str "\\f"))))
+
+(defn factory->json (factory)
+  (str "{\"schema\":"
+       (:schema factory)
+       ",\"name\":"
+       (text->json (:name factory))
+       ",\"manager\":"
+       (text->json (:manager factory))
+       ",\"roadmap\":"
+       (text->json (:roadmap factory))
+       ",\"max_active\":"
+       (:max-active factory)
+       ",\"merge\":"
+       (text->json (merge-method->text (:merge factory)))
+       ",\"roles\":"
+       (roles->json (:roles factory))
+       "}"))
+
+(type roles->json
+  (fn ((ref (vec role))) string))
+
+(defn roles->json (roles)
+  (str "{"
+       (-> roles (map role-entry->json) collect (join ","))
+       "}"))
+
+(type role-entry->json
+  (fn ((ref role)) string))
+
+(defn role-entry->json (role)
+  (str (text->json (role-name->text (:name role)))
+       ":"
+       (role->json role)))
+
+(type role->json
+  (fn ((ref role)) string))
+
+(defn role->json (role)
+  (str "{\"agent\":"
+       (text->json (:agent role))
+       ",\"skill\":"
+       (text->json (:skill role))
+       ",\"brief\":"
+       (text->json (:brief role))
+       "}"))
+
+(defn merge-method->text (method)
+  (match method (gh-auto (str "gh-auto"))))
+
+(defn role-name->text (name)
+  (match name
+    (worker (str "worker"))
+    (reviewer (str "reviewer"))))
+
+(defn text->json (text)
+  (str "\""
+       (-> text as-str chars
+           (map character->json)
+           collect
+           (join ""))
+       "\""))
+
+(defn character->json (character)
+  (match (find character-escapes
+           (fn (escape)
+             (= (:character escape) character)))
+    ((some escape) (clone (:text escape)))
+    (none (str character))))

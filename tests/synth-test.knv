@@ -1,0 +1,17 @@
+(use synth error->message synth-error)
+
+(deftest missing-factory-becomes-a-message
+  (assert (= (error->message (synth-error/missing-factory (str "gone/factory.knv")))
+             "no factory at gone/factory.knv")))
+
+(deftest unreadable-factory-becomes-a-message
+  (assert (= (error->message (synth-error/unreadable-factory (str "factory.knv")
+                                                             (str
+                                                               "no such file")))
+             "cannot read factory.knv: no such file")))
+
+(deftest unwritable-factory-json-becomes-a-message
+  (assert (= (error->message (synth-error/unwritable-factory-json (str "factory.json")
+                                                                  (str
+                                                                    "denied")))
+             "cannot write factory.json: denied")))

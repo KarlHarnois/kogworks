@@ -1,0 +1,1 @@
+{"schema":0,"name":"kogworks","manager":"kw-manager","roadmap":"factory-mvp","max_active":3,"merge":"gh-auto","roles":{"worker":{"agent":"claude-personal","skill":"features:building-features","brief":".kogworks/briefs/worker.md"},"reviewer":{"agent":"claude-personal","skill":"prs:reviewing-prs","brief":".kogworks/briefs/reviewer.md"}}}
