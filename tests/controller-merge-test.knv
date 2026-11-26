@@ -263,6 +263,23 @@
                                         " did not merge within 0 seconds"))))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
+(deftest polls-again-when-the-first-view-is-open
+  (let (root (unwrap-ok (setup "merge-second-poll"
+                               (assoc (merge-settings)
+                                      :view-json (clone open-view)
+                                      :later-view-json (clone merged-view)))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--once")
+                                           (str "--merge-poll")
+                                           (str "0")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (view-line)
+                      (view-line)
+                      (close-line))))
+      (assert (empty? (stderr-text output))))))
+
 (deftest stops-when-the-required-check-call-is-refused
   (let (root (unwrap-ok (setup "merge-check-refused"
                                (assoc (merge-settings)
