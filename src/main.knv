@@ -1,8 +1,13 @@
 (use knave-commandant defcli defcommand run-command)
+(use prelude/macros header-shape)
 (use controller/controller controller-and-exit)
 
 (use synth error->message factory-format-module
            factory-module synth-factory)
+
+(header-shape (defcommand name docstring))
+
+(header-shape (defcli name docstring))
 
 (defcommand synth "Writes <dir>/factory.json." (dir string))
 
