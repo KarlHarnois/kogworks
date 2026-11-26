@@ -123,7 +123,7 @@
         (err (command-failed (str "next") (str "-") command outcome))))))
 
 (defn check-next-output (command text)
-  (let (document (parse-document command text))
+  (let (document (parse-document (str "next") command text))
     (match document
       ((err failure) (err failure))
       ((ok value) (check-next-document command value)))))
@@ -146,7 +146,7 @@
         (err (command-failed (str "ready") (str "-") command outcome))))))
 
 (defn check-ready-output (command text)
-  (let (document (parse-document command text))
+  (let (document (parse-document (str "ready") command text))
     (match document
       ((err failure) (err failure))
       ((ok value) (check-ready-document command value)))))
@@ -158,16 +158,14 @@
      (err (output-failed (str "ready") command reason)))))
 
 (type parse-document
-  (fn ((ref command) (ref string))
+  (fn (string (ref command) (ref string))
     (result json controller-error)))
 
-(defn parse-document (command text)
+(defn parse-document (action command text)
   (match (parse-json (as-str text))
     ((ok document) (ok document))
     ((err failure)
-     (err (output-failed (str "output")
-                         command
-                         (json-error->message failure))))))
+     (err (output-failed action command (json-error->message failure))))))
 
 (type output-failed
   (fn (string (ref command) string) controller-error))
