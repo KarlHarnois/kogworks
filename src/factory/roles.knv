@@ -6,7 +6,7 @@
           value-eq)
 
 (use factory/types ->role role-name)
-(use prelude/macros header-shape template)
+(use prelude/macros template)
 
 (export roles)
 
@@ -57,5 +57,3 @@
 
 (defn role-name-symbol (name)
   (symbol (quote role-name) "role-name/" (symbol-name name)))
-
-(header-shape (roles) :one-per-line)

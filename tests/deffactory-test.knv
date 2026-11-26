@@ -2,17 +2,16 @@
 (use factory/types ->factory ->role merge-method role-name)
 
 (deffactory sample
-  :manager "sample-manager"
-  :roadmap "sample-roadmap"
-  :max-active 2
-  :merge gh-auto
-  (roles
-    (worker :agent "sample-worker"
-            :skill "sample:worker-skill"
-            :brief "sample/briefs/worker.md")
-    (reviewer :agent "sample-reviewer"
-              :skill "sample:reviewer-skill"
-              :brief "sample/briefs/reviewer.md")))
+            :manager "sample-manager"
+            :roadmap "sample-roadmap"
+            :max-active 2
+            :merge gh-auto
+            (roles (worker :agent "sample-worker"
+                           :skill "sample:worker-skill"
+                           :brief "sample/briefs/worker.md")
+                   (reviewer :agent "sample-reviewer"
+                             :skill "sample:reviewer-skill"
+                             :brief "sample/briefs/reviewer.md")))
 
 (deftest deffactory-builds-the-factory-value
   (assert (= factory-value

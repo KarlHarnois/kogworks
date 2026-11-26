@@ -8,7 +8,7 @@
 (use factory/json factory->json)
 (use factory/roles roles)
 (use factory/types ->factory merge-method)
-(use prelude/macros header-shape template)
+(use prelude/macros template)
 
 (export deffactory)
 
@@ -83,5 +83,3 @@
   (symbol (quote merge-method)
           "merge-method/"
           (symbol-name merge)))
-
-(header-shape (deffactory name) :one-per-line)

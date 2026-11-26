@@ -5,11 +5,9 @@
 
 (defcommand synth "Writes <dir>/factory.json." (dir string))
 
-(defcommand module "Writes the module that synth evaluates."
-  (dir string))
+(defcommand module "Writes the module." (dir string))
 
-(defcli kogworks "Builds the factory."
-  (commands synth module))
+(defcli kogworks "Factory tools." (commands synth module))
 
 (defn greeting () "hello")
 
