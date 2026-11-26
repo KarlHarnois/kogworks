@@ -26,6 +26,7 @@
   (missing-field string)
   (non-text-field string)
   (non-object-field string)
+  (non-number-field string)
   (unsupported-merge-method string))
 
 (defenum merge-error
@@ -77,6 +78,8 @@
      (str "the factory field `" path "` is not text"))
     ((non-object-field path)
      (str "the factory field `" path "` is not an object"))
+    ((non-number-field path)
+     (str "the factory field `" path "` is not a number"))
     ((unsupported-merge-method method)
      (str "the factory merge method `" method
           "` is not supported"))))

@@ -1,5 +1,7 @@
 (use controller/factory merge-method read-factory)
-(use controller/failure factory-error)
+
+(use controller/failure factory-error
+                        factory-error->message)
 
 (use fixtures/controller-fixture prepare-repo
                                  reset-directory write-text)
@@ -56,3 +58,7 @@
       ((err (unsupported-merge-method method))
        (assert (= method (str "gh-api"))))
       (_ (assert false)))))
+
+(deftest names-a-non-number-factory-field
+  (assert (= (factory-error->message (factory-error/non-number-field (str "worker.weight")))
+             (str "the factory field `worker.weight` is not a number"))))
