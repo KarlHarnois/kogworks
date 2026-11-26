@@ -1,73 +1,78 @@
-(use apply apply-error apply-error->message cap-from-text)
+(use apply apply-error apply-error->message
+           cap-from-document)
+
+(use controller/failure factory-error)
+(use controller/json parse-json)
 
 (use apply-fixture ->fake-rmap exit-code export-document
                    factory-json prepare-real-repo
                    prepare-repo prepare-repo-without-factory
                    recorded-command recorded-directory
-                   repo-directory rmap-path
+                   repo-directory rmap-call-count rmap-path
                    roadmap-max-active run-apply stderr-text
-                   stdout-text stored-max-active)
+                   stdout-text stored-max-active
+                   write-unreadable-factory)
+
+(def stored-factory-json
+  (str "{\"roadmap\": \"factory-mvp\", \"max_active\": 5}\n"))
 
 (def refusal-factory-json
-  (str "{\"roadmap\": \"missing-roadmap\", \"max_active\": 3}\n"))
+  (str "{\"roadmap\": \"missing-roadmap\", \"max_active\": 4}\n"))
 
-(deftest cap-from-text-reads-the-roadmap-and-max-active
-  (match (cap-from-text "factory.json"
-                        "{\"roadmap\": \"factory-mvp\", \"max_active\": 3}")
-    ((ok cap)
-     (assert (= (:roadmap cap) (str "factory-mvp")))
-     (assert (= (:max-active cap) 3)))
-    ((err _) (assert false))))
+(deftest cap-from-document-reads-the-roadmap-and-max-active
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": 3}")))))
+    (match (cap-from-document document)
+      ((ok cap)
+       (assert (= (:roadmap cap) (str "factory-mvp")))
+       (assert (= (:max-active cap) 3)))
+      ((err _) (assert false)))))
 
-(deftest cap-from-text-rejects-a-fractional-max-active
-  (match (cap-from-text "factory.json"
-                        "{\"roadmap\": \"factory-mvp\", \"max_active\": 3.5}")
-    ((err (invalid-max-active path _))
-     (assert (= path (str "max_active"))))
-    (_ (assert false))))
+(deftest cap-from-document-rejects-a-fractional-max-active
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": 3.5}")))))
+    (match (cap-from-document document)
+      ((err (invalid-max-active path _))
+       (assert (= path (str "max_active"))))
+      (_ (assert false)))))
 
-(deftest cap-from-text-rejects-a-missing-roadmap
-  (match (cap-from-text "factory.json" "{\"max_active\": 3}")
-    ((err (missing-field path))
-     (assert (= path (str "roadmap"))))
-    (_ (assert false))))
+(deftest cap-from-document-rejects-a-missing-roadmap
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"max_active\": 3}")))))
+    (match (cap-from-document document)
+      ((err (missing-field path))
+       (assert (= path (str "roadmap"))))
+      (_ (assert false)))))
 
-(deftest cap-from-text-rejects-a-missing-max-active
-  (match (cap-from-text "factory.json"
-                        "{\"roadmap\": \"factory-mvp\"}")
-    ((err (missing-field path))
-     (assert (= path (str "max_active"))))
-    (_ (assert false))))
+(deftest cap-from-document-rejects-a-missing-max-active
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\"}")))))
+    (match (cap-from-document document)
+      ((err (missing-field path))
+       (assert (= path (str "max_active"))))
+      (_ (assert false)))))
 
-(deftest cap-from-text-rejects-a-text-max-active
-  (match (cap-from-text "factory.json"
-                        "{\"roadmap\": \"factory-mvp\", \"max_active\": \"3\"}")
-    ((err (non-number-field path))
-     (assert (= path (str "max_active"))))
-    (_ (assert false))))
+(deftest cap-from-document-rejects-a-text-max-active
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": \"3\"}")))))
+    (match (cap-from-document document)
+      ((err (non-number-field path))
+       (assert (= path (str "max_active"))))
+      (_ (assert false)))))
 
-(deftest cap-from-text-rejects-a-text-roadmap
-  (match (cap-from-text "factory.json"
-                        "{\"roadmap\": 7, \"max_active\": 3}")
-    ((err (non-text-field path))
-     (assert (= path (str "roadmap"))))
-    (_ (assert false))))
-
-(deftest cap-from-text-rejects-malformed-json
-  (match (cap-from-text "factory.json" "{")
-    ((err (malformed-factory path _))
-     (assert (= path (str "factory.json"))))
-    (_ (assert false))))
+(deftest cap-from-document-rejects-a-text-roadmap
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": 7, \"max_active\": 3}")))))
+    (match (cap-from-document document)
+      ((err (non-text-field path))
+       (assert (= path (str "roadmap"))))
+      (_ (assert false)))))
 
 (deftest apply-error-messages-name-the-failure
-  (assert (= (apply-error->message (apply-error/missing-factory (str "f.json")))
+  (assert (= (apply-error->message (apply-error/factory (factory-error/missing-factory
+                                                          (str "f.json"))))
              (str "no factory at f.json")))
-  (assert (= (apply-error->message (apply-error/unreadable-factory
-                                     (str "f.json")
-                                     (str "denied")))
+  (assert (= (apply-error->message (apply-error/factory (factory-error/unreadable-factory
+                                                          (str "f.json")
+                                                          (str "denied"))))
              (str "cannot read f.json: denied")))
-  (assert (= (apply-error->message (apply-error/malformed-factory (str "f.json")
-                                                                  (str "bad")))
+  (assert (= (apply-error->message (apply-error/factory (factory-error/malformed-factory
+                                                          (str "f.json")
+                                                          (str "bad"))))
              (str "cannot parse f.json: bad")))
   (assert (= (apply-error->message (apply-error/missing-field (str "roadmap")))
              (str "the factory has no `roadmap`")))
@@ -91,22 +96,23 @@
 (deftest apply-stores-the-factory-max-active
   (let (root (str "target/knave/apply-tests/stores"))
     (unwrap-ok (prepare-repo (as-str root)
-                             (as-str factory-json)
-                             (->fake-rmap :stdout (str "Set the max active of roadmap factory-mvp to 3.")
+                             (as-str stored-factory-json)
+                             (->fake-rmap :stdout (str "Set the max active of roadmap factory-mvp to 5.")
                                           :stderr (str)
                                           :code 0)))
     (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
                                         (as-str (str root "/repo")))))
       (assert (= (exit-code outcome) 0))
       (assert (= (stdout-text outcome)
-                 (str "Set the max active of roadmap factory-mvp to 3.")))
+                 (str "Set the max active of roadmap factory-mvp to 5.")))
       (assert (empty? (stderr-text outcome)))
       (assert (= (recorded-command (as-str root))
-                 (some (str "roadmap set factory-mvp --max-active 3"))))
+                 (some (str "roadmap set factory-mvp --max-active 5"))))
       (assert (= (recorded-directory (as-str root))
                  (some (unwrap-ok (repo-directory (as-str root))))))
       (assert (= (stored-max-active (as-str root))
-                 (some (str "3")))))))
+                 (some (str "5"))))
+      (assert (= (rmap-call-count (as-str root)) 1)))))
 
 (deftest apply-passes-through-an-rmap-refusal
   (let (root (str "target/knave/apply-tests/refusal"))
@@ -122,10 +128,11 @@
       (assert (= (stderr-text outcome)
                  (str "error: no roadmap is named missing-roadmap (roadmap-not-found)")))
       (assert (= (recorded-command (as-str root))
-                 (some (str "roadmap set missing-roadmap --max-active 3"))))
+                 (some (str "roadmap set missing-roadmap --max-active 4"))))
       (assert (= (recorded-directory (as-str root))
                  (some (unwrap-ok (repo-directory (as-str root))))))
-      (assert (= (stored-max-active (as-str root)) none)))))
+      (assert (= (stored-max-active (as-str root)) none))
+      (assert (= (rmap-call-count (as-str root)) 1)))))
 
 (deftest apply-reports-a-missing-factory
   (let (root (str "target/knave/apply-tests/missing-factory"))
@@ -134,7 +141,35 @@
                                         (as-str (str root "/repo")))))
       (assert (= (exit-code outcome) 1))
       (assert (contains? (stderr-text outcome) "no factory at"))
-      (assert (contains? (stderr-text outcome) ".kogworks/factory.json")))))
+      (assert (contains? (stderr-text outcome) ".kogworks/factory.json"))
+      (assert (= (rmap-call-count (as-str root)) 0)))))
+
+(deftest apply-reports-an-unreadable-factory
+  (let (root (str "target/knave/apply-tests/unreadable-factory"))
+    (unwrap-ok (prepare-repo (as-str root)
+                             (as-str factory-json)
+                             (->fake-rmap :stdout (str) :stderr (str) :code 0)))
+    (unwrap-ok (write-unreadable-factory (as-str root)))
+    (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
+                                        (as-str (str root "/repo")))))
+      (assert (= (exit-code outcome) 1))
+      (assert (= (stdout-text outcome) (str)))
+      (assert (contains? (stderr-text outcome) "cannot read"))
+      (assert (contains? (stderr-text outcome) "factory.json"))
+      (assert (= (rmap-call-count (as-str root)) 0)))))
+
+(deftest apply-reports-a-malformed-factory
+  (let (root (str "target/knave/apply-tests/malformed-factory"))
+    (unwrap-ok (prepare-repo (as-str root)
+                             (as-str (str "{"))
+                             (->fake-rmap :stdout (str) :stderr (str) :code 0)))
+    (let (outcome (unwrap-ok (run-apply (as-str (str root "/bin"))
+                                        (as-str (str root "/repo")))))
+      (assert (= (exit-code outcome) 1))
+      (assert (= (stdout-text outcome) (str)))
+      (assert (contains? (stderr-text outcome) "cannot parse"))
+      (assert (contains? (stderr-text outcome) "factory.json"))
+      (assert (= (rmap-call-count (as-str root)) 0)))))
 
 (deftest apply-stores-the-factory-max-active-with-real-rmap
   (match (rmap-path)

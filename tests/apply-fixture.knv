@@ -10,9 +10,10 @@
 (export ->fake-rmap exit-code export-document factory-json
         prepare-real-repo prepare-repo
         prepare-repo-without-factory recorded-command
-        recorded-directory repo-directory rmap-path
-        roadmap-max-active run-apply stderr-text stdout-text
-        stored-max-active)
+        recorded-directory repo-directory rmap-call-count
+        rmap-path roadmap-max-active run-apply stderr-text
+        stdout-text stored-max-active
+        write-unreadable-factory)
 
 (defstruct fake-rmap
   :stdout string
@@ -49,6 +50,10 @@
   (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result string string))))
 
+(def write-invalid-utf8
+  (rust "std::fs::write({0}, [0xFFu8, 0xFEu8]).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
 (def make-executable
   (rust "{{
     use std::os::unix::fs::PermissionsExt;
@@ -68,7 +73,7 @@
 (def fake-rmap-script
   (str "#!/bin/sh\n"
        "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-       "printf '%s' \"$*\" > \"$root/rmap-command\"\n"
+       "printf '%s\n' \"$*\" >> \"$root/rmap-commands\"\n"
        "printf '%s' \"$(pwd -P)\" > \"$root/rmap-directory\"\n"
        "if [ [CODE] -eq 0 ] && [ \"$1 $2\" = \"roadmap set\" ]; then\n"
        "  printf '%s' \"$5\" > \"$root/stored-max-active\"\n"
@@ -120,6 +125,12 @@
 (defn write-factory (root factory-text)
   (write-text (as-str (str root "/repo/.kogworks/factory.json"))
               factory-text))
+
+(type write-unreadable-factory
+  (fn ((ref str)) (result unit string)))
+
+(defn write-unreadable-factory (root)
+  (write-invalid-utf8 (as-str (str root "/repo/.kogworks/factory.json"))))
 
 (type write-fake-rmap
   (fn ((ref str) (ref fake-rmap))
@@ -215,7 +226,17 @@
   (fn ((ref str)) (option string)))
 
 (defn recorded-command (root)
-  (read-option (as-str (str root "/rmap-command"))))
+  (match (read-option (as-str (str root "/rmap-commands")))
+    ((some text) (some (str (trim (as-str text)))))
+    (none none)))
+
+(type rmap-call-count
+  (fn ((ref str)) int))
+
+(defn rmap-call-count (root)
+  (match (read-option (as-str (str root "/rmap-commands")))
+    ((some text) (len (collect (lines (as-str text)))))
+    (none 0)))
 
 (type recorded-directory
   (fn ((ref str)) (option string)))
