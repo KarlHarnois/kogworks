@@ -1,0 +1,121 @@
+(module
+  "Builds the rmap and GitHub commands that the controller's merge action runs.")
+
+(use controller/factory merge-method)
+(use controller/merge-target merge-target)
+(use controller/process ->command command)
+
+(export advance-command auto-merge-command close-command
+        merge-command repo-view-command
+        required-checks-command show-command view-command)
+
+(type show-command
+  (fn ((ref string)) command))
+
+(defn show-command (item)
+  (->command :program (str "rmap")
+             :arguments (vec (str "item")
+                             (str "show")
+                             (clone item)
+                             (str "--json"))
+             :label (str "rmap item show " item " --json")))
+
+(type advance-command
+  (fn ((ref string)) command))
+
+(defn advance-command (item)
+  (->command :program (str "rmap")
+             :arguments (vec (str "item")
+                             (str "advance")
+                             (clone item)
+                             (str "merging"))
+             :label (str "rmap item advance " item " merging")))
+
+(type close-command
+  (fn ((ref string)) command))
+
+(defn close-command (item)
+  (->command :program (str "rmap")
+             :arguments (vec (str "item")
+                             (str "close")
+                             (clone item))
+             :label (str "rmap item close " item)))
+
+(type repo-view-command (fn () command))
+
+(defn repo-view-command ()
+  (->command :program (str "gh")
+             :arguments (vec (str "repo")
+                             (str "view")
+                             (str "--json")
+                             (str "nameWithOwner")
+                             (str "-q")
+                             (str ".nameWithOwner"))
+             :label (str
+                      "gh repo view --json nameWithOwner -q .nameWithOwner")))
+
+(type auto-merge-command
+  (fn ((ref string)) command))
+
+(defn auto-merge-command (slug)
+  (let (repository (str "repos/" slug))
+    (let (label (str "gh api " repository " --jq .allow_auto_merge"))
+      (->command :program (str "gh")
+                 :arguments (vec (str "api")
+                                 repository
+                                 (str "--jq")
+                                 (str ".allow_auto_merge"))
+                 :label label))))
+
+(type required-checks-command
+  (fn ((ref string)) command))
+
+(defn required-checks-command (slug)
+  (let (path (str "repos/" slug "/branches/main/protection"))
+    (let (label (str "gh api " path
+                     " --jq .required_status_checks.contexts | length"))
+      (->command :program (str "gh")
+                 :arguments (vec (str "api")
+                                 path
+                                 (str "--jq")
+                                 (str
+                                   ".required_status_checks.contexts | length"))
+                 :label label))))
+
+(type merge-command
+  (fn ((ref merge-method) (ref merge-target))
+    command))
+
+(defn merge-command (method target)
+  (let (arguments (merge-arguments method target))
+    (let (label (str "gh " (join arguments " ")))
+      (->command :program (str "gh")
+                 :arguments arguments
+                 :label label))))
+
+(type merge-arguments
+  (fn ((ref merge-method) (ref merge-target))
+    (vec string)))
+
+(defn merge-arguments (method target)
+  (match method
+    (gh-auto (vec (str "pr")
+                  (str "merge")
+                  (clone (:pull-request target))
+                  (str "--auto")
+                  (str "--merge")
+                  (str "--match-head-commit")
+                  (clone (:head target))))))
+
+(type view-command
+  (fn ((ref string)) command))
+
+(defn view-command (pull-request)
+  (->command :program (str "gh")
+             :arguments (vec (str "pr")
+                             (str "view")
+                             (clone pull-request)
+                             (str "--json")
+                             (str "state,mergedAt,headRefOid"))
+             :label (str "gh pr view " pull-request
+                         " --json state,mergedAt,headRefOid")))

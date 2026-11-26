@@ -11,8 +11,10 @@
 
 (use controller/process join-path read-text-file text-file?)
 
-(export ->factory-config ->role factory-config read-factory
-        read-manager role)
+(export ->factory-config ->role factory-config merge-method
+        read-factory read-manager role)
+
+(defenum merge-method gh-auto)
 
 (defstruct role
   :agent string
@@ -22,6 +24,7 @@
 (defstruct factory-config
   :manager string
   :roadmap string
+  :merge merge-method
   :worker role
   :reviewer role)
 
@@ -91,13 +94,27 @@
 (defn config-from-json (document)
   (let-try (manager (factory-text document "manager" "manager"))
     (let-try (roadmap (factory-text document "roadmap" "roadmap"))
-      (let-try (roles (factory-object document "roles" "roles"))
-        (let-try (worker (required-role roles "worker" "roles.worker"))
-          (let-try (reviewer (required-role roles "reviewer" "roles.reviewer"))
-            (ok (->factory-config :manager manager
-                                  :roadmap roadmap
-                                  :worker worker
-                                  :reviewer reviewer))))))))
+      (let-try (merge-text (factory-text document "merge" "merge"))
+        (let-try (merge (merge-method-of merge-text))
+          (let-try (roles (factory-object document "roles" "roles"))
+            (let-try (worker (required-role roles "worker" "roles.worker"))
+              (let-try (reviewer (required-role roles
+                                                "reviewer"
+                                                "roles.reviewer"))
+                (ok (->factory-config :manager manager
+                                      :roadmap roadmap
+                                      :merge merge
+                                      :worker worker
+                                      :reviewer reviewer))))))))))
+
+(type merge-method-of
+  (fn ((ref string))
+    (result merge-method factory-error)))
+
+(defn merge-method-of (text)
+  (cond
+    ((= text (str "gh-auto")) (ok merge-method/gh-auto))
+    (else (err (factory-error/unsupported-merge-method (clone text))))))
 
 (type required-role
   (fn ((ref json) (ref str) (ref str))

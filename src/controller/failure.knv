@@ -3,7 +3,8 @@
 
 (export ->action-failure ->failure-report action-failure
         controller-error error->message factory-error
-        factory-error->message failure-report)
+        factory-error->message failure-report merge-error
+        merge-error->message)
 
 (defenum factory-error
   (missing-factory string)
@@ -11,7 +12,8 @@
   (malformed-factory string string)
   (missing-field string)
   (non-text-field string)
-  (non-object-field string))
+  (non-object-field string)
+  (unsupported-merge-method string))
 
 (defn factory-error->message (failure)
   (match failure
@@ -24,7 +26,26 @@
     ((non-text-field path)
      (str "the factory field `" path "` is not text"))
     ((non-object-field path)
-     (str "the factory field `" path "` is not an object"))))
+     (str "the factory field `" path "` is not an object"))
+    ((unsupported-merge-method method)
+     (str "the factory merge method `" method
+          "` is not supported"))))
+
+(defenum merge-error
+  (settings-refused string string)
+  (head-changed string string string string)
+  (timed-out string string int))
+
+(defn merge-error->message (failure)
+  (match failure
+    ((settings-refused item detail)
+     (str "merge: " item ": " detail))
+    ((head-changed item pull-request approved observed)
+     (str "merge: " item ": PR " pull-request " head is "
+          observed ", not the approved " approved))
+    ((timed-out item pull-request seconds)
+     (str "merge: " item ": PR " pull-request
+          " did not merge within " seconds " seconds"))))
 
 (defstruct action-failure
   :action string
@@ -37,6 +58,7 @@
   (command-failed action-failure)
   (out-of-scope action-failure)
   (factory-failed factory-error)
+  (merge-failed merge-error)
   (unreadable-brief string string)
   (unreadable-repository string string)
   (placeholder-left string string))
@@ -75,6 +97,7 @@
           " and no session started"))
     ((factory-failed cause)
      (str "controller: " (factory-error->message cause)))
+    ((merge-failed cause) (merge-error->message cause))
     ((unreadable-brief path reason)
      (str "controller: cannot read the brief " path ": " reason))
     ((unreadable-repository path reason)
