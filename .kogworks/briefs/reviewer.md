@@ -42,7 +42,15 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 ## Findings
 
-**A minor finding on a changed line makes the verdict `changes`.** A changed line is a line the pull request under review changed. The same pull request fixes the finding before merge.
+**A real problem is any of these:**
+- a bug
+- a regression
+- a security issue
+- the pull request not delivering its claim
+- a broken repository rule
+- a wrong test or no test for a criterion
+
+**A nitpick is a style, wording or naming issue that does not break the work.** A nitpick does not force the verdict `changes`. When only nitpicks remain, record the verdict `approve` and list the nitpicks in one `ringleader send {{manager}}` message.
 
 **A finding about code the pull request did not touch is a follow-up suggestion.** Send the follow-up suggestion to the manager with one `ringleader send {{manager}}` before the review verdict. A follow-up suggestion does not change the verdict. If `ringleader send` exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
 
@@ -56,7 +64,7 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{head}} --reviewer {{session}}
 ```
 
-**Choose the verdict by the criteria and the findings.** If every criterion holds and no blocking finding or minor finding on a changed line stands, use `--verdict approve`. If any criterion fails, or a blocking finding or minor finding on a changed line stands, use `--verdict changes`.
+**Choose the verdict by the criteria and the findings.** If every criterion holds and no real problem or blocking finding stands, use `--verdict approve`. If any criterion fails, or a real problem or blocking finding stands, use `--verdict changes`.
 
 ## Limits
 

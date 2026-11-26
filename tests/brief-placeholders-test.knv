@@ -84,14 +84,37 @@
   (let (brief (unwrap-ok (slurp worker-brief-path)))
     (assert (contains? brief "--kind question"))))
 
-(deftest reviewer-brief-turns-a-changed-line-finding-into-changes
+(deftest reviewer-brief-records-changes-for-a-real-problem
   (let (brief (unwrap-ok (slurp reviewer-brief-path)))
-    (assert (contains?
-              brief
-              "A minor finding on a changed line makes the verdict `changes`."))
-    (assert (contains?
-              brief
-              "The same pull request fixes the finding before merge."))))
+    (assert (contains? brief "A real problem is any of these:"))
+    (assert (contains? brief "- a bug"))
+    (assert (contains? brief "- a regression"))
+    (assert (contains? brief "- a security issue"))
+    (assert (contains? brief
+                       "- the pull request not delivering its claim"))
+    (assert (contains? brief "- a broken repository rule"))
+    (assert (contains? brief
+                       "- a wrong test or no test for a criterion"))
+    (assert (contains? brief
+                       (as-str (str "If any criterion fails, or a real problem or blocking finding "
+                                    "stands, use `--verdict changes`."))))))
+
+(deftest reviewer-brief-approves-and-lists-nitpicks-when-only-nitpicks-remain
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief
+                       "A nitpick is a style, wording or naming issue that does not break the work."))
+    (assert (contains? brief
+                       "A nitpick does not force the verdict `changes`."))
+    (assert (contains? brief
+                       (as-str (str "When only nitpicks remain, record the verdict `approve` and list "
+                                    "the nitpicks in one `ringleader send {{manager}}` message."))))))
+
+(deftest reviewer-brief-keeps-no-changed-line-minor-rule
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (not (contains? brief "minor finding")))
+    (assert (not (contains?
+                   brief
+                   "The same pull request fixes the finding before merge.")))))
 
 (deftest reviewer-brief-sends-an-untouched-finding-as-a-follow-up
   (let (brief (unwrap-ok (slurp reviewer-brief-path)))
