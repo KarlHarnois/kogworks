@@ -7,9 +7,8 @@
 (use controller/failure ->action-failure controller-error)
 (use controller/factory factory-config)
 
-(use controller/item ->item-detail criteria->text
-                     item-detail item-error->message
-                     parse-item-detail)
+(use controller/item criteria->text item-detail
+                     item-error->message parse-item-detail)
 
 (use controller/json json json-error->message parse-json)
 
