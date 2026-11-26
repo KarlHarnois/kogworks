@@ -9,20 +9,25 @@
 
 ## Start
 
-1. If the `coordinating-through-rmap` skill is available, invoke it.
-2. If the `coordinating-through-rmap` skill is unavailable, follow the rmap commands in this brief.
-3. Read the description and acceptance criteria with `rmap item show {{item}}`.
-4. Invoke the `{{skill}}` skill.
+1. Invoke the `{{skill}}` skill first.
+2. If the `coordinating-through-rmap` skill is available, invoke it.
+3. If the `coordinating-through-rmap` skill is unavailable, follow the rmap commands in this brief.
+4. Read the description and acceptance criteria with `rmap item show {{item}}`.
 5. Invoke the `writing-knave` skill.
-6. Read `AGENTS.md` and `.agents/skills/writing-knave/SKILL.md`.
+6. Invoke the `writing-clean-code` skill.
+7. Read `AGENTS.md` and `.agents/skills/writing-knave/SKILL.md`.
 
 ## Review
 
-1. Fetch the pull request branch with `gh pr checkout {{pr}}`.
-2. Read every changed line against `{{base}}` with `gh pr diff {{pr}}`.
+The worktree is already at the pull request head.
+
+1. Fetch the base and the pull request head with `git fetch origin`.
+2. Read every changed line with `git diff origin/{{base}}...HEAD`.
 3. Use the gate in `AGENTS.md` as the review standard.
-4. Check that command-line work uses `knave-commandant`.
-5. Record one criterion verdict for each acceptance criterion.
+4. Review the behavior against the acceptance criteria.
+5. Review the design with the `{{skill}}` skill, the `writing-clean-code` principles, and the `writing-knave` design principles.
+6. Check that command-line work uses `knave-commandant`.
+7. Record one criterion verdict for each acceptance criterion.
 
 ## Criterion verdicts
 
@@ -34,6 +39,20 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 ```
 
 **Choose the verdict by the criterion.** If the criterion holds, use `--met`. If the criterion fails, use `--failed`.
+
+## Non-blocking findings
+
+**Record non-blocking findings before the review verdict.** If you found a non-blocking issue, run:
+
+```sh
+rmap report {{item}} --session {{session}} --kind question --file -
+```
+
+If rmap refuses that report because you are a review session, send the findings with one `ringleader send`:
+
+```sh
+ringleader send {{manager}} "<findings>"
+```
 
 ## Review verdict
 
@@ -51,10 +70,11 @@ rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{hea
 - Open no pull request.
 - Post no GitHub review.
 - NEVER merge a pull request.
+- NEVER switch branches.
 - NEVER decide an open question.
 - NEVER ask the user a question.
 
-**Contact the controller only through rmap.** If a question or a block stops your work, record a question report and stop. Run:
+**Contact the controller only through rmap or the non-blocking fallback.** If a question or a block stops your work, record a question report and stop. Run:
 
 ```sh
 rmap report {{item}} --session {{session}} --kind question --file -

@@ -34,7 +34,9 @@
                       :sample (str "the item works"))
        (->placeholder :token (str "{{base}}") :sample (str "main"))
        (->placeholder :token (str "{{skill}}")
-                      :sample (str "prs:reviewing-prs"))))
+                      :sample (str "prs:reviewing-prs"))
+       (->placeholder :token (str "{{manager}}")
+                      :sample (str "sample-manager"))))
 
 (type substitute
   (fn (string (ref placeholder)) string))
@@ -64,3 +66,12 @@
               (fn (placeholder) (placeholder-present? brief placeholder))))
     (assert (not (leftover-braces?
                    (reduce reviewer-placeholders (clone brief) substitute))))))
+
+(deftest reviewer-brief-states-the-owner-review-protocol
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief "1. Invoke the `{{skill}}` skill first."))
+    (assert (not (contains? brief "gh pr checkout")))
+    (assert (contains? brief "git fetch origin"))
+    (assert (contains? brief "git diff origin/{{base}}...HEAD"))
+    (assert (contains? brief "ringleader send {{manager}}"))
+    (assert (contains? brief "writing-clean-code"))))
