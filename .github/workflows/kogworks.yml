@@ -18,16 +18,18 @@ jobs:
         run: knave check
       - name: Format
         run: knave fmt --check
-      - name: Format the factory
-        run: knave fmt --check .kogworks/factory.knv
       - name: Lint
         run: knave lint
-      - name: Lint the factory
-        run: knave lint .kogworks/factory.knv
-      - name: Check the factory
-        run: knave check .kogworks/factory.knv
       - name: Build
         run: knave build
+      - name: Write the factory module
+        run: ./target/knave/kogworks/kogworks module .kogworks > target/factory-module.knv
+      - name: Format the factory module
+        run: knave fmt --check target/factory-module.knv
+      - name: Lint the factory module
+        run: knave lint target/factory-module.knv
+      - name: Check the factory module
+        run: knave check target/factory-module.knv
       - name: Test
         run: knave test
       - name: Synthesize the factory

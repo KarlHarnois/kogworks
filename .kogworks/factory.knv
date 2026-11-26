@@ -1,24 +1,12 @@
-(use kogworks/factory/types ->factory ->role merge-method
-                            role-name)
-
-(use kogworks/factory/json factory->json)
-
-(export factory-json factory-value)
-
-(defn factory-json () (factory->json factory-value))
-
-(def factory-value
-  (->factory :schema 0
-             :name (str "kogworks")
-             :manager (str "kw-manager")
-             :roadmap (str "factory-mvp")
-             :max-active 3
-             :merge merge-method/gh-auto
-             :roles (vec (->role :name role-name/worker
-                                 :agent (str "opencode")
-                                 :skill (str "writing-knave")
-                                 :brief (str ".kogworks/briefs/worker.md"))
-                         (->role :name role-name/reviewer
-                                 :agent (str "opencode")
-                                 :skill (str "reviewing-prs")
-                                 :brief (str ".kogworks/briefs/reviewer.md")))))
+(deffactory kogworks
+  :manager "kw-manager"
+  :roadmap "factory-mvp"
+  :max-active 3
+  :merge gh-auto
+  (roles
+    (worker :agent "opencode"
+            :skill "writing-knave"
+            :brief ".kogworks/briefs/worker.md")
+    (reviewer :agent "opencode"
+              :skill "reviewing-prs"
+              :brief ".kogworks/briefs/reviewer.md")))

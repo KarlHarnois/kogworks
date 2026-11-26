@@ -4,9 +4,9 @@ Kogworks is a Knave 0.22.0 project. Read `.agents/skills/writing-knave/SKILL.md`
 
 ## Factory
 
-The factory definition is `.kogworks/factory.knv`. The committed output is `.kogworks/factory.json`. `kogworks synth .kogworks` writes the output from the definition. NEVER edit `.kogworks/factory.json` by hand: the gate fails when the output differs from the definition.
+The factory definition is `.kogworks/factory.knv`. It holds only one `deffactory` form. The committed output is `.kogworks/factory.json`. `kogworks synth .kogworks` writes the output from the definition. NEVER edit `.kogworks/factory.json` by hand: the gate fails when the output differs from the definition.
 
-`.kogworks/factory.knv` is outside `src/`. It imports the `kogworks` path library, which is this repository, so the explicit file commands below resolve its modules.
+`.kogworks/factory.knv` is outside `src/`. `kogworks synth` and `kogworks module` supply the `kogworks` library import, which is this repository, so the generated module resolves its modules.
 
 ## Gate
 
@@ -15,14 +15,15 @@ Run every command before you push. If a command fails, fix the cause and rerun t
 ```sh
 knave check
 knave fmt --check
-knave fmt --check .kogworks/factory.knv
 knave lint
-knave lint .kogworks/factory.knv
-knave check .kogworks/factory.knv
 knave build
+./target/knave/kogworks/kogworks module .kogworks > target/factory-module.knv
+knave fmt --check target/factory-module.knv
+knave lint target/factory-module.knv
+knave check target/factory-module.knv
 knave test
 ./target/knave/kogworks/kogworks synth .kogworks
 git diff --exit-code .kogworks/factory.json
 ```
 
-`knave check`, `knave fmt` and `knave lint` do not reach `.kogworks` on their own, so the gate names `.kogworks/factory.knv` in its own format, lint and check commands.
+`knave check`, `knave fmt` and `knave lint` do not reach `.kogworks` on their own, and the factory file alone cannot resolve `deffactory`. The gate formats, lints and checks `target/factory-module.knv`, the module that `kogworks synth` evaluates: the factory file with the library import in front.
