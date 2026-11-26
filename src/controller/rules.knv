@@ -47,6 +47,9 @@
   :id string
   :kind item-kind)
 
+(type action-kind->text
+  (fn ((ref action-kind)) string))
+
 (defn action-kind->text (kind)
   (match kind
     (work (str "work"))
@@ -56,7 +59,7 @@
     (merge (str "merge"))
     (send-fixes (str "send-fixes"))
     (wait (str "wait"))
-    ((other text) text)))
+    ((other text) (clone text))))
 
 (defn action-kind-of (text)
   (cond

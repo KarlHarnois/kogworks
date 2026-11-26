@@ -1,23 +1,255 @@
 (module
-  "Runs the controller command.")
+  "Runs the controller loop.")
 
-(use controller/factory read-factory)
+(use knave-commandant switch-state)
+(use controller/dispatch dispatch)
 
-(use controller/failure error->message
-                        factory-error->message)
+(use controller/failure ->action-failure ->failure-report
+                        controller-error error->message
+                        failure-report)
 
-(use controller/repository default-branch)
+(use controller/factory factory-config read-factory)
+(use controller/json json json-error->message parse-json)
+
+(use controller/process ->command command command-detail
+                        execute outcome successful?)
+
+(use controller/rules action-kind->text first-build
+                      first-controller-action item-action
+                      parse-next-response
+                      parse-ready-response ready-item)
 
 (export controller-and-exit)
 
-(defn controller-and-exit (repo)
-  (match (read-factory repo)
-    ((ok _) (check-base repo))
-    ((err failure)
-     (eprintln (factory-error->message failure))
-     (exit 1))))
+(defenum run-mode
+  one-pass
+  polling)
 
-(defn check-base (repo)
-  (match (default-branch repo)
-    ((ok _) (do))
-    ((err failure) (eprintln (error->message failure)) (exit 1))))
+(defenum pass-outcome
+  dispatched
+  idle)
+
+(type controller-and-exit
+  (fn ((ref str) u64 switch-state) unit))
+
+(defn controller-and-exit (repo poll once)
+  (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
+    (match (run-controller repo poll mode)
+      ((ok _) (do))
+      ((err report) (fail-stop repo report)))))
+
+(type run-controller
+  (fn ((ref str) u64 run-mode)
+    (result unit failure-report)))
+
+(defn run-controller (repo poll mode)
+  (loop ()
+    (match (run-pass repo)
+      ((ok dispatched)
+       (match mode
+         (one-pass (ok (do)))
+         (polling (recur))))
+      ((ok idle)
+       (match mode
+         (one-pass (ok (do)))
+         (polling (do (sleep (seconds (poll-seconds poll))) (recur)))))
+      ((err report) (err report)))))
+
+(type poll-seconds (fn (u64) int))
+
+(defn poll-seconds (poll)
+  (the int (convert poll)))
+
+(type run-pass
+  (fn ((ref str))
+    (result pass-outcome failure-report)))
+
+(defn run-pass (repo)
+  (match (read-factory repo)
+    ((err failure)
+     (err (->failure-report :manager none
+                            :error (controller-error/factory-failed failure))))
+    ((ok config) (run-pass-with repo config))))
+
+(type run-pass-with
+  (fn ((ref str) (ref factory-config))
+    (result pass-outcome failure-report)))
+
+(defn run-pass-with (repo config)
+  (let (manager (some (clone (:manager config))))
+    (match (poll-next repo config)
+      ((err failure)
+       (err (->failure-report :manager manager :error failure)))
+      ((ok pending)
+       (continue-from-next repo config manager pending)))))
+
+(defn continue-from-next (repo config manager pending)
+  (match pending
+    ((some action)
+     (err (->failure-report :manager manager
+                            :error (out-of-scope-error config action))))
+    (none (run-ready repo config manager))))
+
+(type run-ready
+  (fn ((ref str)
+       (ref factory-config)
+       (option string))
+    (result pass-outcome failure-report)))
+
+(defn run-ready (repo config manager)
+  (match (poll-ready repo config)
+    ((err failure)
+     (err (->failure-report :manager manager :error failure)))
+    ((ok items) (dispatch-first repo config manager items))))
+
+(defn dispatch-first (repo config manager items)
+  (match (first-build items)
+    (none (ok pass-outcome/idle))
+    ((some item)
+     (match (dispatch repo config item)
+       ((ok _) (ok pass-outcome/dispatched))
+       ((err failure)
+        (err (->failure-report :manager manager :error failure)))))))
+
+(type poll-next
+  (fn ((ref str) (ref factory-config))
+    (result (option item-action) controller-error)))
+
+(defn poll-next (repo config)
+  (let (command (next-command (:roadmap config)))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (check-next-output command (:stdout outcome))
+        (err (command-failed (str "next") (str "-") command outcome))))))
+
+(defn check-next-output (command text)
+  (let (document (parse-document command text))
+    (match document
+      ((err failure) (err failure))
+      ((ok value) (check-next-document command value)))))
+
+(defn check-next-document (command document)
+  (match (parse-next-response document)
+    ((ok lines) (ok (first-controller-action lines)))
+    ((err reason)
+     (err (output-failed (str "next") command reason)))))
+
+(type poll-ready
+  (fn ((ref str) (ref factory-config))
+    (result (vec ready-item) controller-error)))
+
+(defn poll-ready (repo config)
+  (let (command (ready-command (:roadmap config)))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (check-ready-output command (:stdout outcome))
+        (err (command-failed (str "ready") (str "-") command outcome))))))
+
+(defn check-ready-output (command text)
+  (let (document (parse-document command text))
+    (match document
+      ((err failure) (err failure))
+      ((ok value) (check-ready-document command value)))))
+
+(defn check-ready-document (command document)
+  (match (parse-ready-response document)
+    ((ok items) (ok items))
+    ((err reason)
+     (err (output-failed (str "ready") command reason)))))
+
+(type parse-document
+  (fn ((ref command) (ref string))
+    (result json controller-error)))
+
+(defn parse-document (command text)
+  (match (parse-json (as-str text))
+    ((ok document) (ok document))
+    ((err failure)
+     (err (output-failed (str "output")
+                         command
+                         (json-error->message failure))))))
+
+(type output-failed
+  (fn (string (ref command) string) controller-error))
+
+(defn output-failed (action command reason)
+  (controller-error/command-failed (->action-failure
+                                     :action action
+                                     :item (str "-")
+                                     :command (clone (:label command))
+                                     :code 0
+                                     :detail (str "invalid JSON: " reason))))
+
+(type command-failed
+  (fn (string string (ref command) (ref outcome))
+    controller-error))
+
+(defn command-failed (action item command outcome)
+  (controller-error/command-failed (->action-failure
+                                     :action action
+                                     :item item
+                                     :command (clone (:label command))
+                                     :code (:code outcome)
+                                     :detail (command-detail outcome))))
+
+(type next-command
+  (fn ((ref string)) command))
+
+(defn next-command (roadmap)
+  (->command :program (str "rmap")
+             :arguments (vec (str "next")
+                             (str "--roadmap")
+                             (clone roadmap)
+                             (str "--taken-by")
+                             (str "controller")
+                             (str "--json"))
+             :label (str "rmap next --roadmap " roadmap
+                         " --taken-by controller --json")))
+
+(type ready-command
+  (fn ((ref string)) command))
+
+(defn ready-command (roadmap)
+  (->command :program (str "rmap")
+             :arguments (vec (str "ready")
+                             (str "--roadmap")
+                             (clone roadmap)
+                             (str "--json"))
+             :label (str "rmap ready --roadmap " roadmap " --json")))
+
+(type out-of-scope-error
+  (fn ((ref factory-config) (ref item-action))
+    controller-error))
+
+(defn out-of-scope-error (config action)
+  (let (command (next-command (:roadmap config)))
+    (controller-error/out-of-scope (->action-failure
+                                     :action (action-kind->text (:kind action))
+                                     :item (clone (:item action))
+                                     :command (clone (:label command))
+                                     :code 0
+                                     :detail (str)))))
+
+(type fail-stop
+  (fn ((ref str) (ref failure-report))
+    unit))
+
+(defn fail-stop (repo report)
+  (let (message (error->message (:error report)))
+    (match (:manager report)
+      ((some manager)
+       (let (_outcome (execute repo (send-command manager message)))
+         (do)))
+      (none (do)))
+    (eprintln message)
+    (exit 1)))
+
+(type send-command
+  (fn ((ref string) (ref string)) command))
+
+(defn send-command (manager message)
+  (->command :program (str "ringleader")
+             :arguments (vec (str "send")
+                             (clone manager)
+                             (clone message))
+             :label (str "ringleader send " manager)))

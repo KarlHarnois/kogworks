@@ -32,7 +32,9 @@
     ((kogworks-command/format options)
      (format-and-exit (:dir options)))
     ((kogworks-command/controller options)
-     (controller-and-exit (as-str (:repo options))))))
+     (controller-and-exit (as-str (:repo options))
+                          (:poll options)
+                          (:once options)))))
 
 (type synth-and-exit
   (fn ((ref str)) unit))
