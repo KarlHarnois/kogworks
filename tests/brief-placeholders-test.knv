@@ -75,3 +75,12 @@
     (assert (contains? brief "git diff origin/{{base}}...HEAD"))
     (assert (contains? brief "ringleader send {{manager}}"))
     (assert (contains? brief "writing-clean-code"))))
+
+(deftest reviewer-brief-sends-no-report-to-rmap
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (not (contains? brief "rmap report")))))
+
+(deftest worker-brief-keeps-the-question-report
+  (let (brief (unwrap-ok (slurp worker-brief-path)))
+    (assert (contains? brief "rmap report"))
+    (assert (contains? brief "--kind question"))))

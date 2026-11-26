@@ -42,17 +42,7 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 ## Non-blocking findings
 
-**Record non-blocking findings before the review verdict.** If you found a non-blocking issue, run:
-
-```sh
-rmap report {{item}} --session {{session}} --kind question --file -
-```
-
-If rmap refuses that report because you are a review session, send the findings with one `ringleader send`:
-
-```sh
-ringleader send {{manager}} "<findings>"
-```
+**Send non-blocking findings to the manager before the review verdict.** If you found a non-blocking issue, run `ringleader send {{manager}} '<findings>'` once. Then record the verdict.
 
 ## Review verdict
 
@@ -74,10 +64,6 @@ rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{hea
 - NEVER decide an open question.
 - NEVER ask the user a question.
 
-**Contact the controller only through rmap or the non-blocking fallback.** If a question or a block stops your work, record a question report and stop. Run:
-
-```sh
-rmap report {{item}} --session {{session}} --kind question --file -
-```
+**Contact the manager with one `ringleader send {{manager}}` for a question or a block.** Send one message and stop.
 
 **When you finish, send no chat message.** The controller reads rmap.
