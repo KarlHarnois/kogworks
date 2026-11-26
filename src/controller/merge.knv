@@ -22,7 +22,7 @@
 (use controller/process command command-detail execute
                         outcome successful?)
 
-(export start-merge)
+(export ->merge-settings merge-settings start-merge)
 
 (defstruct merge-state
   :state string
@@ -32,9 +32,6 @@
   :poll-seconds int
   :timeout-seconds int)
 
-(def default-merge-settings
-  (->merge-settings :poll-seconds 30 :timeout-seconds 3600))
-
 (defenum poll-verdict
   merged
   moved
@@ -43,13 +40,15 @@
 (type start-merge
   (fn ((ref str)
        (ref factory-config)
+       (ref merge-settings)
        (ref string))
     (result string controller-error)))
 
-(defn start-merge (repo config item)
+(defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
     ((err failure) (err failure))
-    ((ok target) (prepare-merge repo config item target))))
+    ((ok target)
+     (prepare-merge repo config settings item target))))
 
 (type read-merge-target
   (fn ((ref str) (ref string))
@@ -72,9 +71,8 @@
   (match (parse-json (as-str text))
     ((ok document) (target-from-json item command document))
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid item JSON")
-                          (json-error->message failure))))))
+     (err (invalid-item-output item command
+                               (json-error->message failure))))))
 
 (type target-from-json
   (fn ((ref string) (ref command) (ref json))
@@ -83,9 +81,8 @@
 (defn target-from-json (item command document)
   (match (required-object document "pull_request" "pull_request")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid item JSON")
-                          (field-error->message failure))))
+     (err (invalid-item-output item command
+                               (field-error->message failure))))
     ((ok pull) (target-from-pull item command pull))))
 
 (type target-from-pull
@@ -95,9 +92,8 @@
 (defn target-from-pull (item command pull)
   (match (required-number pull "number" "pull_request.number")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid item JSON")
-                          (field-error->message failure))))
+     (err (invalid-item-output item command
+                               (field-error->message failure))))
     ((ok pr) (target-from-pull-approval item command pull pr))))
 
 (type target-from-pull-approval
@@ -110,9 +106,8 @@
 (defn target-from-pull-approval (item command pull pr)
   (match (required-object pull "approval" "pull_request.approval")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid item JSON")
-                          (field-error->message failure))))
+     (err (invalid-item-output item command
+                               (field-error->message failure))))
     ((ok approval)
      (target-from-approval item command approval pr))))
 
@@ -126,23 +121,24 @@
 (defn target-from-approval (item command approval pr)
   (match (required-text approval "head" "pull_request.approval.head")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid item JSON")
-                          (field-error->message failure))))
+     (err (invalid-item-output item command
+                               (field-error->message failure))))
     ((ok head)
      (ok (->merge-target :pull-request (clone pr) :head head)))))
 
 (type prepare-merge
   (fn ((ref str)
        (ref factory-config)
+       (ref merge-settings)
        (ref string)
        (ref merge-target))
     (result string controller-error)))
 
-(defn prepare-merge (repo config item target)
+(defn prepare-merge (repo config settings item target)
   (match (preflight repo item)
     ((err failure) (err failure))
-    ((ok _) (advance-and-enable repo config item target))))
+    ((ok _)
+     (advance-and-enable repo config settings item target))))
 
 (type preflight
   (fn ((ref str) (ref string))
@@ -248,14 +244,16 @@
 (type advance-and-enable
   (fn ((ref str)
        (ref factory-config)
+       (ref merge-settings)
        (ref string)
        (ref merge-target))
     (result string controller-error)))
 
-(defn advance-and-enable (repo config item target)
+(defn advance-and-enable (repo config settings item target)
   (match (advance-item repo item)
     ((err failure) (err failure))
-    ((ok _) (enable-auto-merge repo config item target))))
+    ((ok _)
+     (enable-auto-merge repo config settings item target))))
 
 (type advance-item
   (fn ((ref str) (ref string))
@@ -271,15 +269,16 @@
 (type enable-auto-merge
   (fn ((ref str)
        (ref factory-config)
+       (ref merge-settings)
        (ref string)
        (ref merge-target))
     (result string controller-error)))
 
-(defn enable-auto-merge (repo config item target)
+(defn enable-auto-merge (repo config settings item target)
   (let (command (merge-command (:merge config) target))
     (let (outcome (execute repo command))
       (if (successful? outcome)
-        (poll-merge repo item target default-merge-settings)
+        (poll-merge repo item target settings)
         (err (merge-command-failure item command outcome))))))
 
 (type poll-merge
@@ -330,9 +329,8 @@
   (match (parse-json (as-str text))
     ((ok document) (state-from-json item command document))
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid poll JSON")
-                          (json-error->message failure))))))
+     (err (invalid-poll-output item command
+                               (json-error->message failure))))))
 
 (type state-from-json
   (fn ((ref string) (ref command) (ref json))
@@ -341,9 +339,8 @@
 (defn state-from-json (item command document)
   (match (required-text document "state" "state")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid poll JSON")
-                          (field-error->message failure))))
+     (err (invalid-poll-output item command
+                               (field-error->message failure))))
     ((ok state)
      (poll-head-from-json item command document state))))
 
@@ -357,9 +354,8 @@
 (defn poll-head-from-json (item command document state)
   (match (required-text document "headRefOid" "headRefOid")
     ((err failure)
-     (err (invalid-output item command
-                          (str "invalid poll JSON")
-                          (field-error->message failure))))
+     (err (invalid-poll-output item command
+                               (field-error->message failure))))
     ((ok head)
      (ok (->merge-state :state (clone state) :head head)))))
 
@@ -450,6 +446,24 @@
       (if (successful? outcome)
         (ok (clone (:pull-request target)))
         (err (merge-command-failure item command outcome))))))
+
+(type invalid-item-output
+  (fn ((ref string) (ref command) string)
+    controller-error))
+
+(defn invalid-item-output (item command reason)
+  (invalid-output item command
+                  (str "invalid item JSON")
+                  reason))
+
+(type invalid-poll-output
+  (fn ((ref string) (ref command) string)
+    controller-error))
+
+(defn invalid-poll-output (item command reason)
+  (invalid-output item command
+                  (str "invalid poll JSON")
+                  reason))
 
 (type invalid-output
   (fn ((ref string)

@@ -31,6 +31,8 @@
   :repo-view-error string
   :api-exit int
   :api-error string
+  :required-checks-exit int
+  :required-checks-error string
   :slug string
   :allow-auto-merge string
   :required-checks string
@@ -57,6 +59,8 @@
                    :repo-view-error (str)
                    :api-exit 0
                    :api-error (str)
+                   :required-checks-exit 0
+                   :required-checks-error (str)
                    :slug (str "fake-owner/fake-repo")
                    :allow-auto-merge (str "true")
                    :required-checks (str "1")
@@ -217,6 +221,9 @@
        "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n"
        "    ;;\n"
        "  \"api repos/[SLUG]/branches/main/protection\")\n"
+       "    if [ [REQUIRED_CHECKS_EXIT] -ne 0 ]; then\n"
+       "      printf '%s\\n' '[REQUIRED_CHECKS_ERROR]' >&2\n"
+       "      exit [REQUIRED_CHECKS_EXIT]\n" "    fi\n"
        "    if [ [API_EXIT] -ne 0 ]; then\n"
        "      printf '%s\\n' '[API_ERROR]' >&2\n"
        "      exit [API_EXIT]\n" "    fi\n"
@@ -269,6 +276,10 @@
                      (str (:api-exit settings)))
       (replace-token (str "[API_ERROR]")
                      (clone (:api-error settings)))
+      (replace-token (str "[REQUIRED_CHECKS_EXIT]")
+                     (str (:required-checks-exit settings)))
+      (replace-token (str "[REQUIRED_CHECKS_ERROR]")
+                     (clone (:required-checks-error settings)))
       (replace-token (str "[SLUG]") (:slug settings))
       (replace-token (str "[ALLOW_AUTO_MERGE]")
                      (:allow-auto-merge settings))

@@ -24,6 +24,12 @@
   (:poll u32
          :default 30
          :about "Seconds to wait between passes")
+  (:merge-poll u32
+               :default 30
+               :about "Seconds to wait between merge polls")
+  (:merge-timeout u32
+                  :default 3600
+                  :about "Seconds to wait for a merge")
   (:once switch :about "Runs one pass and exits"))
 
 (defcommand apply "Sets a governed repository's roadmap max active from its factory."
@@ -46,6 +52,8 @@
     ((kogworks-command/controller options)
      (controller-and-exit (as-str (:repo options))
                           (:poll options)
+                          (:merge-poll options)
+                          (:merge-timeout options)
                           (:once options)))
     ((kogworks-command/apply options)
      (apply-and-exit (as-str (:repo options))))))

@@ -36,6 +36,10 @@
   (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
        "\"headRefOid\":\"" moved-head "\"}"))
 
+(def open-view
+  (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
+       "\"headRefOid\":\"" approved-head "\"}"))
+
 (defn merge-settings ()
   (assoc (default-settings (clone merge-next) (str "{\"ready\":[]}"))
          :item-json (clone merge-item-json)
@@ -53,10 +57,13 @@
          ((err reason) (err reason))
          ((ok _) (ok root)))))))
 
-(defn run (root)
+(defn run-with (root arguments)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
-                  (vec (str "--once"))))
+                  arguments))
+
+(defn run (root)
+  (run-with root (vec (str "--once"))))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
@@ -221,3 +228,54 @@
   (assert (= (merge-error->message
                (merge-error/timed-out (str "rm-0009") (str "12") 3600))
              (str "merge: rm-0009: PR 12 did not merge within 3600 seconds"))))
+
+(deftest stops-with-one-manager-line-when-the-merge-times-out
+  (let (root (unwrap-ok (setup "merge-timeout"
+                               (assoc (merge-settings)
+                                      :view-json (clone open-view)))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--once")
+                                           (str "--merge-timeout")
+                                           (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (merge-preface) (view-line))
+                                   (str "merge: " merge-item
+                                        ": PR " merge-pr
+                                        " did not merge within 0 seconds"))))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest stops-when-the-required-check-call-is-refused
+  (let (root (unwrap-ok (setup "merge-check-refused"
+                               (assoc (merge-settings)
+                                      :required-checks-exit 6
+                                      :required-checks-error (str
+                                                               "forbidden")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence
+                   (str (preflight-preface) (required-checks-line))
+                   (str "merge: " merge-item
+                        ": `gh api repos/" merge-slug
+                        "/branches/main/protection --jq"
+                        " .required_status_checks.contexts | length`"
+                        " exited 6: forbidden"))))
+      (assert (not (contains? (sequence-text root) "item advance"))))))
+
+(deftest stops-when-the-repository-view-is-refused
+  (let (root (unwrap-ok (setup "merge-repo-view-refused"
+                               (assoc (merge-settings)
+                                      :repo-view-exit 8
+                                      :repo-view-error (str "no repository")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (next-line)
+                                        (show-line)
+                                        (repo-view-line))
+                                   (str "merge: " merge-item
+                                        ": `gh repo view --json nameWithOwner"
+                                        " -q .nameWithOwner` exited 8: no repository"))))
+      (assert (not (contains? (sequence-text root) "allow_auto_merge")))
+      (assert (not (contains? (sequence-text root) "item advance"))))))

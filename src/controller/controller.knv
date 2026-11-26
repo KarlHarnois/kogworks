@@ -12,7 +12,9 @@
                         read-manager)
 
 (use controller/json json json-error->message parse-json)
-(use controller/merge start-merge)
+
+(use controller/merge ->merge-settings merge-settings
+                      start-merge)
 
 (use controller/process ->command canonical-path command
                         command-detail execute outcome
@@ -33,16 +35,35 @@
 
 (defenum pass-outcome
   dispatched
+  merged
   idle)
 
-(type controller-and-exit
-  (fn ((ref str) u32 switch-state) unit))
+(defstruct controller-settings
+  :poll-seconds int
+  :merge-wait merge-settings)
 
-(defn controller-and-exit (repo poll once)
+(type controller-and-exit
+  (fn ((ref str) u32 u32 u32 switch-state) unit))
+
+(defn controller-and-exit (repo poll merge-poll merge-timeout once)
   (match (canonical-repo repo)
     ((ok absolute)
-     (run-controller-and-exit (as-str absolute) poll once))
+     (run-controller-and-exit
+       (as-str absolute)
+       (build-controller-settings poll merge-poll merge-timeout)
+       once))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
+
+(type build-controller-settings
+  (fn (u32 u32 u32) controller-settings))
+
+(defn build-controller-settings (poll merge-poll merge-timeout)
+  (let (pass-seconds (poll-seconds poll)
+        merge-wait (->merge-settings :poll-seconds (poll-seconds merge-poll)
+                                     :timeout-seconds (poll-seconds
+                                                        merge-timeout)))
+    (->controller-settings :poll-seconds pass-seconds
+                           :merge-wait merge-wait)))
 
 (type canonical-repo
   (fn ((ref str))
@@ -53,22 +74,22 @@
     (fn (reason)
       (controller-error/unreadable-repository (str repo) reason))))
 
-(defn run-controller-and-exit (repo poll once)
+(defn run-controller-and-exit (repo settings once)
   (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
-    (match (run-controller repo poll mode)
+    (match (run-controller repo settings mode)
       ((ok _) (do))
       ((err report) (fail-stop repo report)))))
 
 (type run-controller
-  (fn ((ref str) u32 run-mode)
+  (fn ((ref str) (ref controller-settings) run-mode)
     (result unit failure-report)))
 
-(defn run-controller (repo poll mode)
+(defn run-controller (repo settings mode)
   (loop ()
-    (let (pass (run-pass repo))
+    (let (pass (run-pass repo settings))
       (if (pass-complete? mode pass)
         (pass-result pass)
-        (do (wait-before-repeat poll pass) (recur))))))
+        (do (wait-before-repeat settings pass) (recur))))))
 
 (defn pass-complete? (mode pass)
   (match pass
@@ -78,9 +99,9 @@
 (defn one-pass? (mode)
   (match mode (one-pass true) (polling false)))
 
-(defn wait-before-repeat (poll pass)
+(defn wait-before-repeat (settings pass)
   (match pass
-    ((ok idle) (sleep (seconds (poll-seconds poll))))
+    ((ok idle) (sleep (seconds (:poll-seconds settings))))
     (_ (do))))
 
 (defn pass-result (pass)
@@ -94,60 +115,66 @@
   (the int (convert poll)))
 
 (type run-pass
-  (fn ((ref str))
+  (fn ((ref str) (ref controller-settings))
     (result pass-outcome failure-report)))
 
-(defn run-pass (repo)
+(defn run-pass (repo settings)
   (match (read-factory repo)
     ((err failure)
      (err (->failure-report :manager (read-manager repo)
                             :error (controller-error/factory-failed failure))))
-    ((ok config) (run-pass-with repo config))))
+    ((ok config) (run-pass-with repo config settings))))
 
 (type run-pass-with
-  (fn ((ref str) (ref factory-config))
+  (fn ((ref str)
+       (ref factory-config)
+       (ref controller-settings))
     (result pass-outcome failure-report)))
 
-(defn run-pass-with (repo config)
+(defn run-pass-with (repo config settings)
   (let (manager (some (clone (:manager config))))
     (match (poll-next repo config)
       ((err failure)
        (err (->failure-report :manager manager :error failure)))
       ((ok pending)
-       (continue-from-next repo config manager pending)))))
+       (continue-from-next repo config manager settings pending)))))
 
-(defn continue-from-next (repo config manager pending)
+(defn continue-from-next (repo config manager settings pending)
   (match pending
     ((some action)
-     (take-controller-action repo config manager action))
+     (take-controller-action repo config manager settings action))
     (none (run-ready repo config manager))))
 
 (type take-controller-action
   (fn ((ref str)
        (ref factory-config)
        (option string)
+       (ref controller-settings)
        (ref item-action))
     (result pass-outcome failure-report)))
 
-(defn take-controller-action (repo config manager action)
+(defn take-controller-action (repo config manager settings action)
   (match (:kind action)
     (review (start-review-report repo config manager action
                                  review-mode/review))
     (verify (start-review-report repo config manager action
                                  review-mode/verify))
-    (merge (start-merge-report repo config manager action))
+    (merge (start-merge-report repo config manager settings action))
     (_ (out-of-scope-report config manager action))))
 
 (type start-merge-report
   (fn ((ref str)
        (ref factory-config)
        (option string)
+       (ref controller-settings)
        (ref item-action))
     (result pass-outcome failure-report)))
 
-(defn start-merge-report (repo config manager action)
-  (match (start-merge repo config (:item action))
-    ((ok _) (ok pass-outcome/dispatched))
+(defn start-merge-report (repo config manager settings action)
+  (match (start-merge repo config
+                      (:merge-wait settings)
+                      (:item action))
+    ((ok _) (ok pass-outcome/merged))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
 
