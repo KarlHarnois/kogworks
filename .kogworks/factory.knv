@@ -15,10 +15,10 @@
              :max-active 3
              :merge merge-method/gh-auto
              :roles (vec (->role :name role-name/worker
-                                 :agent (str "claude-personal")
-                                 :skill (str "features:building-features")
+                                 :agent (str "opencode")
+                                 :skill (str "building-features")
                                  :brief (str ".kogworks/briefs/worker.md"))
                          (->role :name role-name/reviewer
-                                 :agent (str "claude-personal")
-                                 :skill (str "prs:reviewing-prs")
+                                 :agent (str "opencode")
+                                 :skill (str "reviewing-prs")
                                  :brief (str ".kogworks/briefs/reviewer.md")))))
