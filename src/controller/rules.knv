@@ -1,6 +1,7 @@
 (module
   "Reads rmap's next and ready JSON into the controller's decisions.")
 
+(use controller/fields field-error->message required-field)
 (use controller/json json json-array json-field json-text)
 
 (export action-kind action-kind->text actor first-build
@@ -161,14 +162,21 @@
       (let-try (actions (parse-next-actions action-values))
         (ok (->next-line :item item :actions actions))))))
 
+(type required-field-value
+  (fn ((ref json) (ref str))
+    (result json string)))
+
+(defn required-field-value (value key)
+  (map-err (required-field value key key)
+           field-error->message))
+
 (type required-array
   (fn ((ref json) (ref str))
     (result (vec json) string)))
 
 (defn required-array (value key)
-  (match (json-field value key)
-    (none (err (str "missing `" (str key) "`")))
-    ((some found) (field-array found key))))
+  (let-try (found (required-field-value value key))
+    (field-array found key)))
 
 (defn field-array (found key)
   (match (json-array found)
@@ -340,9 +348,8 @@
     (result string string)))
 
 (defn required-text (value key)
-  (match (json-field value key)
-    (none (err (str "missing `" (str key) "`")))
-    ((some found) (field-text found key))))
+  (let-try (found (required-field-value value key))
+    (field-text found key)))
 
 (defn field-text (found key)
   (match (json-text found)
