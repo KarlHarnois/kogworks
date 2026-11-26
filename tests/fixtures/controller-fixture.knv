@@ -1,5 +1,5 @@
 (module
-  "Builds the fake rmap, ringleader and git programs and the repository that the controller tests use.")
+  "Builds the fake rmap, ringleader, git and gh programs, the JSON value files, and the repository with its factory and briefs that the controller tests use.")
 
 (use factory/json factory->json)
 (use factory/types ->role role-name)
