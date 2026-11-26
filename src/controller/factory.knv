@@ -51,11 +51,13 @@
 
 (defn manager-from-text (text)
   (match (parse-json (as-str text))
-    ((ok document)
-     (match (json-field document "manager")
-       ((some value) (json-text value))
-       (none none)))
+    ((ok document) (manager-from-document document))
     ((err _) none)))
+
+(defn manager-from-document (document)
+  (match (json-field document "manager")
+    ((some value) (json-text value))
+    (none none)))
 
 (type read-config
   (fn ((ref string))
@@ -105,10 +107,12 @@
 (defn required-text (value key path)
   (match (json-field value key)
     (none (err (factory-error/missing-field (str path))))
-    ((some found)
-     (match (json-text found)
-       ((some text) (ok text))
-       (none (err (factory-error/non-text-field (str path))))))))
+    ((some found) (field-text found path))))
+
+(defn field-text (found path)
+  (match (json-text found)
+    ((some text) (ok text))
+    (none (err (factory-error/non-text-field (str path))))))
 
 (type required-object
   (fn ((ref json) (ref str) (ref str))
@@ -117,7 +121,9 @@
 (defn required-object (value key path)
   (match (json-field value key)
     (none (err (factory-error/missing-field (str path))))
-    ((some found)
-     (if (json-object? found)
-       (ok found)
-       (err (factory-error/non-object-field (str path)))))))
+    ((some found) (field-object found path))))
+
+(defn field-object (found path)
+  (if (json-object? found)
+    (ok found)
+    (err (factory-error/non-object-field (str path)))))

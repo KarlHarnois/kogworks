@@ -1,0 +1,137 @@
+(use controller/json json json-array json-error
+                     json-error->message json-field
+                     json-object? json-text parse-json)
+
+(defn assert-text-value (value expected)
+  (match (json-text value)
+    ((some text) (assert (= (as-str text) (as-str expected))))
+    (none (assert false))))
+
+(defn assert-text-field (document key expected)
+  (match (json-field document key)
+    ((some value) (assert-text-value value expected))
+    (none (assert false))))
+
+(defn assert-parsed-text (source expected)
+  (match (parse-json (as-str source))
+    ((ok document) (assert-text-value document expected))
+    ((err _) (assert false))))
+
+(deftest parse-json-reads-an-object
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"a\": \"b\"}")))))
+    (assert (json-object? document))
+    (assert-text-field document "a" (str "b"))))
+
+(deftest parse-json-reads-an-array
+  (let (document (unwrap-ok (parse-json (as-str (str "[1, 2]")))))
+    (match (json-array document)
+      ((some items) (assert (= (len items) 2)))
+      (none (assert false)))))
+
+(deftest parse-json-rejects-a-truncated-object
+  (match (parse-json (as-str (str "{")))
+    ((err (unexpected-end _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-an-unexpected-character
+  (match (parse-json (as-str (str "{\"a\" @}")))
+    ((err (unexpected-character _ _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-trailing-input
+  (match (parse-json (as-str (str "1 2")))
+    ((err (trailing-input _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-an-unknown-word
+  (match (parse-json (as-str (str "tru")))
+    ((err (invalid-token _ _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-an-invalid-escape
+  (match (parse-json (as-str (str "\"\\q\"")))
+    ((err (invalid-escape _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-an-unterminated-string
+  (match (parse-json (as-str (str "\"abc")))
+    ((err (unexpected-end _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-decodes-each-escape
+  (assert-parsed-text (str "\"a\\\"b\"") (str "a\"b"))
+  (assert-parsed-text (str "\"a\\\\b\"") (str "a\\b"))
+  (assert-parsed-text (str "\"a\\/b\"") (str "a/b"))
+  (assert-parsed-text (str "\"a\\nb\"") (str "a\nb"))
+  (assert-parsed-text (str "\"a\\tb\"") (str "a\tb"))
+  (assert-parsed-text (str "\"a\\rb\"") (str "a\rb"))
+  (assert-parsed-text (str "\"a\\bb\"")
+                      (str "a" (char "\u{8}") "b"))
+  (assert-parsed-text (str "\"a\\fb\"")
+                      (str "a" (char "\u{c}") "b")))
+
+(deftest parse-json-decodes-unicode
+  (assert-parsed-text (str "\"\\u0041\\u00e9\"") (str "Aé")))
+
+(deftest parse-json-rejects-invalid-unicode
+  (match (parse-json (as-str (str "\"\\u00zz\"")))
+    ((err (invalid-escape _)) (assert true))
+    (_ (assert false))))
+
+(deftest parse-json-rejects-truncated-unicode
+  (match (parse-json (as-str (str "\"\\u00")))
+    ((err (unexpected-end _)) (assert true))
+    (_ (assert false))))
+
+(deftest json-field-reads-a-key
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"a\": \"b\"}")))))
+    (assert-text-field document "a" (str "b"))))
+
+(deftest json-field-is-none-for-a-missing-key
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"a\": \"b\"}")))))
+    (match (json-field document "z")
+      (none (assert true))
+      (_ (assert false)))))
+
+(deftest json-field-is-none-outside-an-object
+  (let (value (json/number (str "1")))
+    (match (json-field value "a")
+      (none (assert true))
+      (_ (assert false)))))
+
+(deftest json-text-returns-the-string
+  (match (json-text (json/text (str "x")))
+    ((some text) (assert (= text (str "x"))))
+    (none (assert false))))
+
+(deftest json-text-rejects-other-values
+  (match (json-text (json/number (str "1")))
+    (none (assert true))
+    (_ (assert false))))
+
+(deftest json-array-returns-the-items
+  (match (json-array (json/array (vec (json/number (str "1")))))
+    ((some items) (assert (= (len items) 1)))
+    (none (assert false))))
+
+(deftest json-array-rejects-other-values
+  (match (json-array (json/text (str "x")))
+    (none (assert true))
+    (_ (assert false))))
+
+(deftest json-object?-recognizes-an-object
+  (assert (json-object? (json/object (vec))))
+  (assert (not (json-object? (json/array (vec))))))
+
+(deftest json-error-messages-name-the-failure
+  (assert (= (json-error->message (json-error/unexpected-character 3
+                                                                   (char "x")))
+             (str "unexpected `x` at 3")))
+  (assert (= (json-error->message (json-error/unexpected-end 4))
+             (str "unexpected end at 4")))
+  (assert (= (json-error->message (json-error/invalid-escape 5))
+             (str "invalid escape at 5")))
+  (assert (= (json-error->message (json-error/invalid-token 6 (str "tru")))
+             (str "invalid token `tru` at 6")))
+  (assert (= (json-error->message (json-error/trailing-input 7))
+             (str "trailing input at 7"))))

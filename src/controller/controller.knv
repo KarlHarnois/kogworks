@@ -46,16 +46,28 @@
 
 (defn run-controller (repo poll mode)
   (loop ()
-    (match (run-pass repo)
-      ((ok dispatched)
-       (match mode
-         (one-pass (ok (do)))
-         (polling (recur))))
-      ((ok idle)
-       (match mode
-         (one-pass (ok (do)))
-         (polling (do (sleep (seconds (poll-seconds poll))) (recur)))))
-      ((err report) (err report)))))
+    (let (pass (run-pass repo))
+      (if (pass-complete? mode pass)
+        (pass-result pass)
+        (do (wait-before-repeat poll pass) (recur))))))
+
+(defn pass-complete? (mode pass)
+  (match pass
+    ((ok _) (one-pass? mode))
+    ((err _) true)))
+
+(defn one-pass? (mode)
+  (match mode (one-pass true) (polling false)))
+
+(defn wait-before-repeat (poll pass)
+  (match pass
+    ((ok idle) (sleep (seconds (poll-seconds poll))))
+    (_ (do))))
+
+(defn pass-result (pass)
+  (match pass
+    ((ok _) (ok (do)))
+    ((err report) (err report))))
 
 (type poll-seconds (fn (u32) int))
 
@@ -107,11 +119,13 @@
 (defn dispatch-first (repo config manager items)
   (match (first-build items)
     (none (ok pass-outcome/idle))
-    ((some item)
-     (match (dispatch repo config item)
-       ((ok _) (ok pass-outcome/dispatched))
-       ((err failure)
-        (err (->failure-report :manager manager :error failure)))))))
+    ((some item) (dispatch-ready repo config manager item))))
+
+(defn dispatch-ready (repo config manager item)
+  (match (dispatch repo config item)
+    ((ok _) (ok pass-outcome/dispatched))
+    ((err failure)
+     (err (->failure-report :manager manager :error failure)))))
 
 (type poll-next
   (fn ((ref str) (ref factory-config))

@@ -23,13 +23,19 @@
 (defn dispatch (repo config item)
   (let (session (str "build-" (:id item)))
     (let (branch (clone session))
-      (match (default-branch repo)
-        ((err failure) (err failure))
-        ((ok base)
-         (match (fill-worker-brief repo config item session branch base)
-           ((err failure) (err failure))
-           ((ok prompt)
-            (claim-and-start repo config item session branch prompt))))))))
+      (dispatch-with-base repo config item session branch))))
+
+(defn dispatch-with-base (repo config item session branch)
+  (match (default-branch repo)
+    ((err failure) (err failure))
+    ((ok base)
+     (dispatch-with-brief repo config item session branch base))))
+
+(defn dispatch-with-brief (repo config item session branch base)
+  (match (fill-worker-brief repo config item session branch base)
+    ((err failure) (err failure))
+    ((ok prompt)
+     (claim-and-start repo config item session branch prompt))))
 
 (type fill-worker-brief
   (fn ((ref str)

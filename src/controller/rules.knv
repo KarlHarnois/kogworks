@@ -94,10 +94,12 @@
 (defn required-text (value key)
   (match (json-field value key)
     (none (err (str "missing `" (str key) "`")))
-    ((some found)
-     (match (json-text found)
-       ((some text) (ok text))
-       (none (err (str "`" (str key) "` is not text")))))))
+    ((some found) (field-text found key))))
+
+(defn field-text (found key)
+  (match (json-text found)
+    ((some text) (ok text))
+    (none (err (str "`" (str key) "` is not text")))))
 
 (type required-array
   (fn ((ref json) (ref str))
@@ -106,10 +108,12 @@
 (defn required-array (value key)
   (match (json-field value key)
     (none (err (str "missing `" (str key) "`")))
-    ((some found)
-     (match (json-array found)
-       ((some items) (ok items))
-       (none (err (str "`" (str key) "` is not an array")))))))
+    ((some found) (field-array found key))))
+
+(defn field-array (found key)
+  (match (json-array found)
+    ((some items) (ok items))
+    (none (err (str "`" (str key) "` is not an array")))))
 
 (type parse-next-response
   (fn ((ref json))
@@ -119,21 +123,35 @@
   (let-try (items (required-array document "next"))
     (parse-next-lines items)))
 
-(type with-line
+(type with-line!
   (fn ((vec next-line) next-line)
     (vec next-line)))
 
-(defn with-line (lines line)
+(defn with-line! (lines line)
   (do (push! lines line) lines))
+
+(defenum next-line-step
+  (line next-line)
+  (failure string)
+  done)
 
 (defn parse-next-lines (items)
   (loop (index 0
          lines (vec))
-    (if (>= index (len items))
-      (ok lines)
-      (match (parse-next-line (at items index))
-        ((ok line) (recur (inc index) (with-line lines line)))
-        ((err failure) (err failure))))))
+    (match (next-line-step-at items index)
+      ((line line) (recur (inc index) (with-line! lines line)))
+      ((failure reason) (err reason))
+      (done (ok lines)))))
+
+(defn next-line-step-at (items index)
+  (if (>= index (len items))
+    next-line-step/done
+    (parsed-next-line (parse-next-line (at items index)))))
+
+(defn parsed-next-line (parsed)
+  (match parsed
+    ((ok line) (next-line-step/line line))
+    ((err failure) (next-line-step/failure failure))))
 
 (type parse-next-line
   (fn ((ref json))
@@ -145,22 +163,36 @@
       (let-try (actions (parse-next-actions action-values))
         (ok (->next-line :item item :actions actions))))))
 
-(type with-action
+(type with-action!
   (fn ((vec next-action) next-action)
     (vec next-action)))
 
-(defn with-action (actions action)
+(defn with-action! (actions action)
   (do (push! actions action) actions))
+
+(defenum next-action-step
+  (action next-action)
+  (failure string)
+  done)
 
 (defn parse-next-actions (values)
   (loop (index 0
          actions (vec))
-    (if (>= index (len values))
-      (ok actions)
-      (match (parse-next-action (at values index))
-        ((ok action)
-         (recur (inc index) (with-action actions action)))
-        ((err failure) (err failure))))))
+    (match (next-action-step-at values index)
+      ((action action)
+       (recur (inc index) (with-action! actions action)))
+      ((failure reason) (err reason))
+      (done (ok actions)))))
+
+(defn next-action-step-at (values index)
+  (if (>= index (len values))
+    next-action-step/done
+    (parsed-next-action (parse-next-action (at values index)))))
+
+(defn parsed-next-action (parsed)
+  (match parsed
+    ((ok action) (next-action-step/action action))
+    ((err failure) (next-action-step/failure failure))))
 
 (type parse-next-action
   (fn ((ref json))
@@ -179,24 +211,40 @@
 (defn optional-actor (value)
   (match (json-field value "actor")
     (none (ok none))
-    ((some found)
-     (match (json-text found)
-       ((some text) (ok (some (actor-of text))))
-       (none (err (str "`actor` is not text")))))))
+    ((some found) (actor-field found))))
+
+(defn actor-field (found)
+  (match (json-text found)
+    ((some text) (ok (some (actor-of text))))
+    (none (err (str "`actor` is not text")))))
 
 (type first-controller-action
   (fn ((ref (vec next-line)))
     (option item-action)))
 
+(defenum controller-action-step
+  (found action-kind)
+  absent
+  done)
+
 (defn first-controller-action (lines)
   (loop (index 0)
-    (if (>= index (len lines))
-      none
-      (let (line (at lines index))
-        (match (controller-action-in line)
-          ((some kind)
-           (some (->item-action :item (clone (:item line)) :kind kind)))
-          (none (recur (inc index))))))))
+    (match (controller-action-step-at lines index)
+      ((found kind)
+       (some (->item-action :item (clone (:item (at lines index)))
+                            :kind kind)))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn controller-action-step-at (lines index)
+  (if (>= index (len lines))
+    controller-action-step/done
+    (controller-action-step-of (controller-action-in (at lines index)))))
+
+(defn controller-action-step-of (found)
+  (match found
+    ((some kind) (controller-action-step/found kind))
+    (none controller-action-step/absent)))
 
 (type controller-action-in
   (fn ((ref next-line))
@@ -204,13 +252,27 @@
 
 (defn controller-action-in (line)
   (loop (index 0)
-    (if (>= index (len (:actions line)))
-      none
-      (let (action (at (:actions line) index))
-        (if (and (controller-scope? (:kind action))
-                 (controller-actor? (:actor action)))
-          (some (clone (:kind action)))
-          (recur (inc index)))))))
+    (match (action-step-at line index)
+      ((found kind) (some kind))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn action-step-at (line index)
+  (if (>= index (len (:actions line)))
+    controller-action-step/done
+    (action-step-of (at (:actions line) index))))
+
+(defn action-step-of (action)
+  (if (controller-action? action)
+    (controller-action-step/found (clone (:kind action)))
+    controller-action-step/absent))
+
+(type controller-action?
+  (fn ((ref next-action)) bool))
+
+(defn controller-action? (action)
+  (and (controller-scope? (:kind action))
+       (controller-actor? (:actor action))))
 
 (defn controller-scope? (kind)
   (match kind
@@ -232,21 +294,35 @@
   (let-try (items (required-array document "ready"))
     (parse-ready-items items)))
 
-(type with-item
+(type with-item!
   (fn ((vec ready-item) ready-item)
     (vec ready-item)))
 
-(defn with-item (items item)
+(defn with-item! (items item)
   (do (push! items item) items))
+
+(defenum ready-item-step
+  (item ready-item)
+  (failure string)
+  done)
 
 (defn parse-ready-items (values)
   (loop (index 0
          items (vec))
-    (if (>= index (len values))
-      (ok items)
-      (match (parse-ready-item (at values index))
-        ((ok item) (recur (inc index) (with-item items item)))
-        ((err failure) (err failure))))))
+    (match (ready-item-step-at values index)
+      ((item item) (recur (inc index) (with-item! items item)))
+      ((failure reason) (err reason))
+      (done (ok items)))))
+
+(defn ready-item-step-at (values index)
+  (if (>= index (len values))
+    ready-item-step/done
+    (parsed-ready-item (parse-ready-item (at values index)))))
+
+(defn parsed-ready-item (parsed)
+  (match parsed
+    ((ok item) (ready-item-step/item item))
+    ((err failure) (ready-item-step/failure failure))))
 
 (type parse-ready-item
   (fn ((ref json))
@@ -261,11 +337,27 @@
   (fn ((ref (vec ready-item)))
     (option ready-item)))
 
+(defenum build-step
+  (found ready-item)
+  absent
+  done)
+
 (defn first-build (items)
   (loop (index 0)
-    (if (>= index (len items))
-      none
-      (let (item (at items index))
-        (match (:kind item)
-          (build (some (clone item)))
-          (_ (recur (inc index))))))))
+    (match (build-step-at items index)
+      ((found item) (some item))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn build-step-at (items index)
+  (if (>= index (len items))
+    build-step/done
+    (build-step-of (at items index))))
+
+(type build-step-of
+  (fn ((ref ready-item)) build-step))
+
+(defn build-step-of (item)
+  (match (:kind item)
+    (build (build-step/found (clone item)))
+    (_ build-step/absent)))
