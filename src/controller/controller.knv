@@ -1,0 +1,23 @@
+(module
+  "Runs the controller command.")
+
+(use controller/factory read-factory)
+
+(use controller/failure error->message
+                        factory-error->message)
+
+(use controller/repository default-branch)
+
+(export controller-and-exit)
+
+(defn controller-and-exit (repo)
+  (match (read-factory repo)
+    ((ok _) (check-base repo))
+    ((err failure)
+     (eprintln (factory-error->message failure))
+     (exit 1))))
+
+(defn check-base (repo)
+  (match (default-branch repo)
+    ((ok _) (do))
+    ((err failure) (eprintln (error->message failure)) (exit 1))))
