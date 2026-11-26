@@ -4,7 +4,7 @@
 (use fixtures/controller-fixture prepare-repo
                                  reset-directory write-text)
 
-(deftest read-factory-reads-the-manager-roadmap-and-worker
+(deftest read-factory-reads-the-manager-roadmap-and-roles
   (let (root (str "target/knave/controller-tests/factory-read"))
     (unwrap-ok (prepare-repo (as-str root)))
     (match (read-factory (as-str (str root "/repo")))
@@ -16,7 +16,13 @@
        (assert (= (:skill (:worker config))
                   (str "fake-skill")))
        (assert (= (:brief (:worker config))
-                  (str ".kogworks/briefs/worker.md"))))
+                  (str ".kogworks/briefs/worker.md")))
+       (assert (= (:agent (:reviewer config))
+                  (str "fake-reviewer-agent")))
+       (assert (= (:skill (:reviewer config))
+                  (str "fake-reviewer-skill")))
+       (assert (= (:brief (:reviewer config))
+                  (str ".kogworks/briefs/reviewer.md"))))
       ((err _) (assert false)))))
 
 (deftest read-factory-reports-a-missing-factory

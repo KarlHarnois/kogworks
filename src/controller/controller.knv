@@ -17,9 +17,11 @@
                         command-detail execute outcome
                         successful?)
 
-(use controller/rules action-kind->text first-build
-                      first-controller-action item-action
-                      parse-next-response
+(use controller/review review-mode start-review)
+
+(use controller/rules action-kind action-kind->text
+                      first-build first-controller-action
+                      item-action parse-next-response
                       parse-ready-response ready-item)
 
 (export controller-and-exit)
@@ -116,9 +118,47 @@
 (defn continue-from-next (repo config manager pending)
   (match pending
     ((some action)
-     (err (->failure-report :manager manager
-                            :error (out-of-scope-error config action))))
+     (take-controller-action repo config manager action))
     (none (run-ready repo config manager))))
+
+(type take-controller-action
+  (fn ((ref str)
+       (ref factory-config)
+       (option string)
+       (ref item-action))
+    (result pass-outcome failure-report)))
+
+(defn take-controller-action (repo config manager action)
+  (match (:kind action)
+    (review (start-review-report repo config manager action
+                                 review-mode/review))
+    (verify (start-review-report repo config manager action
+                                 review-mode/verify))
+    (_ (out-of-scope-report config manager action))))
+
+(type start-review-report
+  (fn ((ref str)
+       (ref factory-config)
+       (option string)
+       (ref item-action)
+       (ref review-mode))
+    (result pass-outcome failure-report)))
+
+(defn start-review-report (repo config manager action mode)
+  (match (start-review repo config (:item action) mode)
+    ((ok _) (ok pass-outcome/dispatched))
+    ((err failure)
+     (err (->failure-report :manager manager :error failure)))))
+
+(type out-of-scope-report
+  (fn ((ref factory-config)
+       (option string)
+       (ref item-action))
+    (result pass-outcome failure-report)))
+
+(defn out-of-scope-report (config manager action)
+  (err (->failure-report :manager manager
+                         :error (out-of-scope-error config action))))
 
 (type run-ready
   (fn ((ref str)

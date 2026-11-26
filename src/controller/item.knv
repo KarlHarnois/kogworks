@@ -1,0 +1,106 @@
+(module
+  "Reads the item detail that rmap prints for a review.")
+
+(use controller/fields field-error field-error->message
+                       required-field required-number
+                       required-object required-text)
+
+(use controller/json json json-array json-text)
+
+(export ->item-detail criteria->text item-detail item-error
+        item-error->message parse-item-detail)
+
+(defstruct item-detail
+  :pr string
+  :head string
+  :branch string
+  :criteria (vec string))
+
+(defenum item-error
+  (field field-error)
+  (non-array-criteria string)
+  (empty-criteria string)
+  (non-text-criterion int))
+
+(defn item-error->message (failure)
+  (match failure
+    ((field cause) (field-error->message cause))
+    ((non-array-criteria path)
+     (str "`" path "` is not an array"))
+    ((empty-criteria path) (str "`" path "` is empty"))
+    ((non-text-criterion index)
+     (str "`item.criteria[" index "]` is not text"))))
+
+(type required-criteria
+  (fn ((ref json))
+    (result (vec string) item-error)))
+
+(defn required-criteria (item)
+  (let-try (found (required-field item "criteria" "item.criteria"))
+    (match (json-array found)
+      ((some items) (criterion-texts items 0 (vec)))
+      (none (err (item-error/non-array-criteria (str "item.criteria")))))))
+
+(type criterion-texts
+  (fn ((ref (vec json)) int (vec string))
+    (result (vec string) item-error)))
+
+(defn criterion-texts (items index texts)
+  (if (>= index (len items))
+    (checked-criteria texts)
+    (let-try (text (criterion-text (at items index) index))
+      (criterion-texts items (inc index) (with-text! texts text)))))
+
+(type checked-criteria
+  (fn ((vec string))
+    (result (vec string) item-error)))
+
+(defn checked-criteria (texts)
+  (if (empty? texts)
+    (err (item-error/empty-criteria (str "item.criteria")))
+    (ok texts)))
+
+(type criterion-text
+  (fn ((ref json) int)
+    (result string item-error)))
+
+(defn criterion-text (value index)
+  (match (json-text value)
+    ((some text) (ok text))
+    (none (err (item-error/non-text-criterion index)))))
+
+(type with-text!
+  (fn ((vec string) string) (vec string)))
+
+(defn with-text! (texts text)
+  (do (push! texts text) texts))
+
+(type parse-item-detail
+  (fn ((ref json))
+    (result item-detail item-error)))
+
+(defn parse-item-detail (document)
+  (let-try (item (required-object document "item" "item"))
+    (let-try (pull (required-object document "pull_request" "pull_request"))
+      (let-try (pr (required-number pull "number" "pull_request.number"))
+        (let-try (head (required-text pull "head" "pull_request.head"))
+          (let-try (session (required-object item "session" "item.session"))
+            (let-try (branch (required-text session "branch"
+                                            "item.session.branch"))
+              (let-try (criteria (required-criteria item))
+                (ok (->item-detail :pr pr
+                                   :head head
+                                   :branch branch
+                                   :criteria criteria))))))))))
+
+(type criteria->text
+  (fn ((ref (vec string))) string))
+
+(defn criteria->text (criteria)
+  (join (collect (map (range 0 (len criteria))
+                   (fn (index)
+                     (str "("
+                          (inc index)
+                          ") "
+                          (clone (at criteria index))))))
+        "; "))

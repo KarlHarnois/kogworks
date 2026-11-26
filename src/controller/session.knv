@@ -1,0 +1,32 @@
+(module
+  "Ends a session that started but could not run.")
+
+(use controller/process ->command command command-detail
+                        outcome successful?)
+
+(export abandon-command failed-start-detail)
+
+(type abandon-command
+  (fn ((ref string)) command))
+
+(defn abandon-command (session)
+  (->command :program (str "rmap")
+             :arguments (vec (str "session")
+                             (str "end")
+                             (clone session)
+                             (str "--reason")
+                             (str "abandoned"))
+             :label (str "rmap session end " session " --reason abandoned")))
+
+(type failed-start-detail
+  (fn ((ref outcome) (ref outcome))
+    string))
+
+(defn failed-start-detail (outcome end-outcome)
+  (let (detail (command-detail outcome))
+    (if (successful? end-outcome)
+      detail
+      (str detail "; session end exited "
+           (:code end-outcome)
+           ": "
+           (command-detail end-outcome)))))

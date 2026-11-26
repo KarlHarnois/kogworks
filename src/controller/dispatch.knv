@@ -1,7 +1,9 @@
 (module
   "Claims a ready build item and starts its worker session.")
 
-(use controller/brief ->brief-values fill-brief)
+(use controller/brief ->worker-values fill-brief
+                      worker-brief)
+
 (use controller/failure ->action-failure controller-error)
 (use controller/factory factory-config)
 
@@ -11,6 +13,7 @@
 
 (use controller/repository default-branch)
 (use controller/rules ready-item)
+(use controller/session abandon-command failed-start-detail)
 
 (export dispatch)
 
@@ -49,13 +52,13 @@
 (defn fill-worker-brief (repo config item session branch base)
   (let (path (join-path repo
                         (as-str (:brief (:worker config)))))
-    (fill-brief (as-str path)
-                (->brief-values :item (clone (:id item))
-                                :roadmap (clone (:roadmap config))
-                                :session (clone session)
-                                :branch (clone branch)
-                                :base (clone base)
-                                :skill (clone (:skill (:worker config)))))))
+    (let (values (->worker-values :item (clone (:id item))
+                                  :roadmap (clone (:roadmap config))
+                                  :session (clone session)
+                                  :branch (clone branch)
+                                  :base (clone base)
+                                  :skill (clone (:skill (:worker config)))))
+      (fill-brief (as-str path) (worker-brief values)))))
 
 (type claim-and-start
   (fn ((ref str)
@@ -130,17 +133,8 @@
                                :item (clone item)
                                :command (clone (:label start))
                                :code (:code outcome)
-                               :detail (start-failure-detail outcome
-                                                             end-outcome)))))))
-
-(defn start-failure-detail (outcome end-outcome)
-  (let (detail (command-detail outcome))
-    (if (successful? end-outcome)
-      detail
-      (str detail "; session end exited "
-           (:code end-outcome)
-           ": "
-           (command-detail end-outcome)))))
+                               :detail (failed-start-detail outcome
+                                                            end-outcome)))))))
 
 (type start-command
   (fn ((ref str)
@@ -164,18 +158,6 @@
                :label (str "ringleader new --name " session
                            " --repo " repo " --agent " agent
                            " --prompt <filled brief>"))))
-
-(type abandon-command
-  (fn ((ref string)) command))
-
-(defn abandon-command (session)
-  (->command :program (str "rmap")
-             :arguments (vec (str "session")
-                             (str "end")
-                             (clone session)
-                             (str "--reason")
-                             (str "abandoned"))
-             :label (str "rmap session end " session " --reason abandoned")))
 
 (type command-failed
   (fn (string string (ref command) (ref outcome))

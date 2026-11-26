@@ -1,17 +1,20 @@
 (module
-  "Reads the factory JSON that names the roadmap, manager and worker role.")
+  "Reads the factory JSON that names the roadmap, manager, worker and reviewer roles.")
 
 (use controller/failure factory-error)
 
+(use controller/fields field-error required-object
+                       required-text)
+
 (use controller/json json json-error->message json-field
-                     json-object? json-text parse-json)
+                     json-text parse-json)
 
 (use controller/process join-path read-text-file text-file?)
 
-(export ->factory-config ->worker-role factory-config
-        read-factory read-manager worker-role)
+(export ->factory-config ->role factory-config read-factory
+        read-manager role)
 
-(defstruct worker-role
+(defstruct role
   :agent string
   :skill string
   :brief string)
@@ -19,7 +22,8 @@
 (defstruct factory-config
   :manager string
   :roadmap string
-  :worker worker-role)
+  :worker role
+  :reviewer role)
 
 (type factory-path
   (fn ((ref str)) string))
@@ -85,45 +89,50 @@
     (result factory-config factory-error)))
 
 (defn config-from-json (document)
-  (let-try (manager (required-text document "manager" "manager"))
-    (let-try (roadmap (required-text document "roadmap" "roadmap"))
-      (let-try (roles (required-object document "roles" "roles"))
-        (let-try (worker (required-object roles "worker" "roles.worker"))
-          (let-try (agent (required-text worker "agent" "roles.worker.agent"))
-            (let-try (skill (required-text worker "skill" "roles.worker.skill"))
-              (let-try (brief (required-text worker "brief"
-                                             "roles.worker.brief"))
-                (ok (->factory-config :manager manager
-                                      :roadmap roadmap
-                                      :worker (->worker-role
-                                                :agent agent
-                                                :skill skill
-                                                :brief brief)))))))))))
+  (let-try (manager (factory-text document "manager" "manager"))
+    (let-try (roadmap (factory-text document "roadmap" "roadmap"))
+      (let-try (roles (factory-object document "roles" "roles"))
+        (let-try (worker (required-role roles "worker" "roles.worker"))
+          (let-try (reviewer (required-role roles "reviewer" "roles.reviewer"))
+            (ok (->factory-config :manager manager
+                                  :roadmap roadmap
+                                  :worker worker
+                                  :reviewer reviewer))))))))
 
-(type required-text
+(type required-role
+  (fn ((ref json) (ref str) (ref str))
+    (result role factory-error)))
+
+(defn required-role (roles name path)
+  (let-try (value (factory-object roles name path))
+    (let-try (agent (factory-text value "agent" (as-str (str path ".agent"))))
+      (let-try (skill (factory-text value "skill" (as-str (str path ".skill"))))
+        (let-try (brief (factory-text value "brief"
+                                      (as-str (str path ".brief"))))
+          (ok (->role :agent agent :skill skill :brief brief)))))))
+
+(type factory-text
   (fn ((ref json) (ref str) (ref str))
     (result string factory-error)))
 
-(defn required-text (value key path)
-  (match (json-field value key)
-    (none (err (factory-error/missing-field (str path))))
-    ((some found) (field-text found path))))
+(defn factory-text (value key path)
+  (map-err (required-text value key path) factory-field-error))
 
-(defn field-text (found path)
-  (match (json-text found)
-    ((some text) (ok text))
-    (none (err (factory-error/non-text-field (str path))))))
-
-(type required-object
+(type factory-object
   (fn ((ref json) (ref str) (ref str))
     (result json factory-error)))
 
-(defn required-object (value key path)
-  (match (json-field value key)
-    (none (err (factory-error/missing-field (str path))))
-    ((some found) (field-object found path))))
+(defn factory-object (value key path)
+  (map-err (required-object value key path)
+           factory-field-error))
 
-(defn field-object (found path)
-  (if (json-object? found)
-    (ok found)
-    (err (factory-error/non-object-field (str path)))))
+(type factory-field-error (fn (field-error) factory-error))
+
+(defn factory-field-error (failure)
+  (match failure
+    ((missing-field path) (factory-error/missing-field path))
+    ((non-text-field path) (factory-error/non-text-field path))
+    ((non-object-field path)
+     (factory-error/non-object-field path))
+    ((non-number-field path)
+     (factory-error/non-text-field path))))
