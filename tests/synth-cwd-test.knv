@@ -1,0 +1,82 @@
+(use fixtures/factory-fixture prepare-factory)
+
+(deftype process-output (rust "std::process::Output"))
+
+(def create-directory
+  (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
+(def write-text
+  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def current-directory
+  (rust "std::env::current_dir().map(|directory| directory.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
+    (fn () (result string string))))
+
+(def run-synth-in
+  (rust "{{
+    std::process::Command::new({0})
+      .args([\"synth\", {1}])
+      .current_dir({2})
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref str) (ref str))
+      (result process-output string))))
+
+(def exit-code
+  (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
+    (fn ((ref process-output)) int)))
+
+(type prepare-governed-repo
+  (fn ((ref str)) (result unit string)))
+
+(defn prepare-governed-repo (root)
+  (match (create-directory (as-str (str root "/.kogworks")))
+    ((ok _)
+     (write-text (as-str (str root "/project.knv"))
+                 (as-str (str "(defproject governed\n"
+                              "  :knave \"0.22.0\"\n"
+                              "  (libraries\n"
+                              "    (kogworks :path \"../../../../..\")))\n"))))
+    ((err reason) (err reason))))
+
+(deftest neutral-working-directory-writes-the-factory-json
+  (let (base (str "target/knave/test-factories/synth-cwd")
+        governed (str base "/governed")
+        neutral (str base "/neutral"))
+    (unwrap-ok (prepare-governed-repo (as-str governed)))
+    (unwrap-ok (prepare-factory (str governed "/.kogworks")
+                                (str
+                                  "(deffactory neutral-sample\n"
+                                  "  :manager \"neutral-manager\"\n"
+                                  "  :roadmap \"neutral-roadmap\"\n"
+                                  "  :max-active 1\n"
+                                  "  :merge gh-auto\n"
+                                  "  (roles (worker :agent \"opencode\"\n"
+                                  "                  :skill \"writing-knave\"\n"
+                                  "                  :brief \".kogworks/briefs/worker.md\")))\n")))
+    (unwrap-ok (create-directory (as-str neutral)))
+    (let (root (unwrap-ok (current-directory))
+          output (unwrap-ok (run-synth-in
+                              (as-str (str root
+                                           "/target/knave/kogworks/kogworks"))
+                              (as-str (str root "/" governed "/.kogworks"))
+                              (as-str (str root "/" neutral)))))
+      (assert (= (exit-code output) 0))
+      (assert
+        (= (unwrap-ok (slurp (as-str (str root "/" governed
+                                          "/.kogworks/factory.json"))))
+           (str "{\n" "  \"schema\": 0,\n"
+                "  \"name\": \"neutral-sample\",\n"
+                "  \"manager\": \"neutral-manager\",\n"
+                "  \"roadmap\": \"neutral-roadmap\",\n"
+                "  \"max_active\": 1,\n"
+                "  \"merge\": \"gh-auto\",\n"
+                "  \"roles\": {\n" "    \"worker\": {\n"
+                "      \"agent\": \"opencode\",\n"
+                "      \"skill\": \"writing-knave\",\n"
+                "      \"brief\": \".kogworks/briefs/worker.md\"\n"
+                "    }\n" "  }\n" "}\n"))))))

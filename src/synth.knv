@@ -59,7 +59,8 @@
   (rust "{{
     use std::io::Write;
     std::process::Command::new(\"knave\")
-      .args([\"eval\", \"--stdin\", {0}, \"(do (print (factory-json)) (exit 0))\"])
+      .args([\"eval\", \"--stdin\", \"factory.knv\", \"(do (print (factory-json)) (exit 0))\"])
+      .current_dir({0})
       .stdin(std::process::Stdio::piped())
       .stdout(std::process::Stdio::piped())
       .stderr(std::process::Stdio::piped())
@@ -106,11 +107,13 @@
   (fn ((ref str) (ref str))
     (result string synth-error)))
 
-(defn eval-factory-json (factory-file module-text)
-  (match (run-knave-eval factory-file module-text)
-    ((ok output) (checked-factory-json factory-file output))
-    ((err reason)
-     (err (synth-error/unreadable-factory (str factory-file) reason)))))
+(defn eval-factory-json (directory module-text)
+  (let (factory-file (join-path directory "factory.knv"))
+    (match (run-knave-eval directory module-text)
+      ((ok output)
+       (checked-factory-json (as-str factory-file) output))
+      ((err reason)
+       (err (synth-error/unreadable-factory (str factory-file) reason))))))
 
 (type write-factory-json
   (fn ((ref str) (ref str))
@@ -158,9 +161,7 @@
     (result string synth-error)))
 
 (defn synth-factory (directory)
-  (let (factory-file (join-path directory "factory.knv"))
-    (let-try (module-text (factory-module directory))
-      (let-try (json (eval-factory-json (as-str factory-file)
-                                        (as-str module-text)))
-        (write-factory-json (as-str (join-path directory "factory.json"))
-                            (as-str json))))))
+  (let-try (module-text (factory-module directory))
+    (let-try (json (eval-factory-json directory (as-str module-text)))
+      (write-factory-json (as-str (join-path directory "factory.json"))
+                          (as-str json)))))
