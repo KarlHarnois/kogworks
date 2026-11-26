@@ -1,5 +1,5 @@
 (module
-  "Builds the fake rmap, ringleader and git programs and the repository that the controller tests use.")
+  "Builds the fake rmap, ringleader, git and gh programs, the JSON value files, and the repository with its factory and briefs that the controller tests use.")
 
 (use factory/json factory->json)
 (use factory/types ->role role-name)
@@ -162,8 +162,14 @@
        "    if [ [MERGE_EXIT] -ne 0 ]; then\n"
        "      printf '%s\\n' '[MERGE_ERROR]' >&2\n"
        "      exit [MERGE_EXIT]\n" "    fi\n" "    ;;\n"
-       "  \"pr view\") cat \"$root/view.json\" ;;\n"
-       "esac\n" "exit 0\n"))
+       "  \"pr view\")\n" "    views=0\n"
+       "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
+       "    views=$((views + 1))\n"
+       "    printf '%s' \"$views\" > \"$root/view-count\"\n"
+       "    if [ \"$views\" -ge 2 ]; then\n"
+       "      cat \"$root/later-view.json\"\n" "    else\n"
+       "      cat \"$root/view.json\"\n" "    fi\n"
+       "    ;;\n" "esac\n" "exit 0\n"))
 
 (def absolute-path
   (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
@@ -225,7 +231,8 @@
   :slug string
   :allow-auto-merge string
   :required-checks string
-  :view-json string)
+  :view-json string
+  :later-view-json string)
 
 (deftype process-output (rust "std::process::Output"))
 
@@ -255,7 +262,8 @@
                    :slug (str "fake-owner/fake-repo")
                    :allow-auto-merge (str "true")
                    :required-checks (str "1")
-                   :view-json (str "{}")))
+                   :view-json (str "{}")
+                   :later-view-json (str "{}")))
 
 (type prepare-repo
   (fn ((ref str)) (result unit string)))
@@ -345,5 +353,7 @@
                             (as-str (:ready-json settings))))
       (let-try (_ (write-text (as-str (str root "/item.json"))
                               (as-str (:item-json settings))))
-        (write-text (as-str (str root "/view.json"))
-                    (as-str (:view-json settings)))))))
+        (let-try (_ (write-text (as-str (str root "/view.json"))
+                                (as-str (:view-json settings))))
+          (write-text (as-str (str root "/later-view.json"))
+                      (as-str (:later-view-json settings))))))))
