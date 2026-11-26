@@ -1,7 +1,13 @@
 (use knave-commandant defcli defcommand run-command)
+(use prelude/macros header-shape)
+(use controller/controller controller-and-exit)
 
 (use synth error->message factory-format-module
            factory-module synth-factory)
+
+(header-shape (defcommand name docstring))
+
+(header-shape (defcli name docstring))
 
 (defcommand synth "Writes <dir>/factory.json." (dir string))
 
@@ -9,7 +15,18 @@
 
 (defcommand format "Writes the shape module." (dir string))
 
-(defcli kogworks "Factory." (commands synth module format))
+(defcommand controller "Runs the controller loop against a governed repository. It polls rmap and starts the worker for the first startable build, and exits 1 on the first failure. A person reads the manager message and restarts it. The controller can merge pull requests that change the controller itself; the running binary stays at the version it was built from, and a person rebuilds and restarts it after such a merge. It has no automatic restart, supervisor or backoff loop."
+  (:repo string
+         :required true
+         :value-name path
+         :about "The governed repository")
+  (:poll u32
+         :default 30
+         :about "Seconds to wait between passes")
+  (:once switch :about "Runs one pass and exits"))
+
+(defcli kogworks "Factory."
+  (commands synth module format controller))
 
 (defn main ()
   (match (:command (run-command kogworks))
@@ -18,7 +35,11 @@
     ((kogworks-command/module options)
      (module-and-exit (:dir options)))
     ((kogworks-command/format options)
-     (format-and-exit (:dir options)))))
+     (format-and-exit (:dir options)))
+    ((kogworks-command/controller options)
+     (controller-and-exit (as-str (:repo options))
+                          (:poll options)
+                          (:once options)))))
 
 (type synth-and-exit
   (fn ((ref str)) unit))

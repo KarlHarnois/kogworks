@@ -1,0 +1,129 @@
+(module
+  "Reads the factory JSON that names the roadmap, manager and worker role.")
+
+(use controller/failure factory-error)
+
+(use controller/json json json-error->message json-field
+                     json-object? json-text parse-json)
+
+(use controller/process join-path read-text-file text-file?)
+
+(export ->factory-config ->worker-role factory-config
+        read-factory read-manager worker-role)
+
+(defstruct worker-role
+  :agent string
+  :skill string
+  :brief string)
+
+(defstruct factory-config
+  :manager string
+  :roadmap string
+  :worker worker-role)
+
+(type factory-path
+  (fn ((ref str)) string))
+
+(defn factory-path (repo)
+  (let (directory (join-path repo ".kogworks"))
+    (join-path (as-str directory) "factory.json")))
+
+(type read-factory
+  (fn ((ref str))
+    (result factory-config factory-error)))
+
+(defn read-factory (repo)
+  (let (path (factory-path repo))
+    (if (text-file? (as-str path))
+      (read-config path)
+      (err (factory-error/missing-factory path)))))
+
+(type read-manager
+  (fn ((ref str)) (option string)))
+
+(defn read-manager (repo)
+  (match (read-text-file (as-str (factory-path repo)))
+    ((ok text) (manager-from-text text))
+    ((err _) none)))
+
+(type manager-from-text
+  (fn ((ref string)) (option string)))
+
+(defn manager-from-text (text)
+  (match (parse-json (as-str text))
+    ((ok document) (manager-from-document document))
+    ((err _) none)))
+
+(defn manager-from-document (document)
+  (match (json-field document "manager")
+    ((some value) (json-text value))
+    (none none)))
+
+(type read-config
+  (fn ((ref string))
+    (result factory-config factory-error)))
+
+(defn read-config (path)
+  (match (read-text-file (as-str path))
+    ((ok text) (parse-config path text))
+    ((err reason)
+     (err (factory-error/unreadable-factory (clone path) reason)))))
+
+(type parse-config
+  (fn ((ref string) (ref string))
+    (result factory-config factory-error)))
+
+(defn parse-config (path text)
+  (match (parse-json (as-str text))
+    ((ok document) (config-from-json document))
+    ((err failure)
+     (err (factory-error/malformed-factory (clone path)
+                                           (json-error->message failure))))))
+
+(type config-from-json
+  (fn ((ref json))
+    (result factory-config factory-error)))
+
+(defn config-from-json (document)
+  (let-try (manager (required-text document "manager" "manager"))
+    (let-try (roadmap (required-text document "roadmap" "roadmap"))
+      (let-try (roles (required-object document "roles" "roles"))
+        (let-try (worker (required-object roles "worker" "roles.worker"))
+          (let-try (agent (required-text worker "agent" "roles.worker.agent"))
+            (let-try (skill (required-text worker "skill" "roles.worker.skill"))
+              (let-try (brief (required-text worker "brief"
+                                             "roles.worker.brief"))
+                (ok (->factory-config :manager manager
+                                      :roadmap roadmap
+                                      :worker (->worker-role
+                                                :agent agent
+                                                :skill skill
+                                                :brief brief)))))))))))
+
+(type required-text
+  (fn ((ref json) (ref str) (ref str))
+    (result string factory-error)))
+
+(defn required-text (value key path)
+  (match (json-field value key)
+    (none (err (factory-error/missing-field (str path))))
+    ((some found) (field-text found path))))
+
+(defn field-text (found path)
+  (match (json-text found)
+    ((some text) (ok text))
+    (none (err (factory-error/non-text-field (str path))))))
+
+(type required-object
+  (fn ((ref json) (ref str) (ref str))
+    (result json factory-error)))
+
+(defn required-object (value key path)
+  (match (json-field value key)
+    (none (err (factory-error/missing-field (str path))))
+    ((some found) (field-object found path))))
+
+(defn field-object (found path)
+  (if (json-object? found)
+    (ok found)
+    (err (factory-error/non-object-field (str path)))))

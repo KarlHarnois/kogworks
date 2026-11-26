@@ -1,0 +1,241 @@
+(use fixtures/controller-fixture ->fake-settings
+                                 absolute-path
+                                 default-settings exit-code
+                                 prepare-repo read-text
+                                 run-controller stderr-text
+                                 stdout-text write-fakes
+                                 write-text)
+
+(def ignored-next
+  (str "{\"next\":["
+       "{\"item\":\"rm-0000\",\"actions\":[{\"action\":\"review\","
+       "\"actor\":\"worker\",\"session\":\"review-rm-0000\"}]},"
+       "{\"item\":\"rm-0001\",\"actions\":[{\"action\":\"wait\","
+       "\"actor\":\"controller\"}]},"
+       "{\"item\":\"rm-0002\",\"actions\":[{\"action\":\"send-fixes\","
+       "\"actor\":\"manager\"}]},"
+       "{\"item\":\"rm-0003\",\"actions\":[{\"action\":\"dispatch\","
+       "\"actor\":\"controller\"}]}" "]}"))
+
+(def build-ready
+  (str "{\"ready\":["
+       "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
+       "{\"id\":\"rm-0001\",\"kind\":\"build\",\"weight\":1.5},"
+       "{\"id\":\"rm-0002\",\"kind\":\"build\"}" "]}"))
+
+(def wait-next
+  (str "{\"next\":[{\"item\":\"rm-0001\",\"actions\":["
+       "{\"action\":\"wait\",\"actor\":\"controller\"}]}]}"))
+
+(def research-ready
+  (str "{\"ready\":["
+       "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
+       "{\"id\":\"rm-design\",\"kind\":\"design\"}" "]}"))
+
+(defn next-with (action item)
+  (str "{\"next\":[{\"item\":\"" item "\",\"actions\":["
+       "{\"action\":\"" action
+       "\",\"actor\":\"controller\"}]}]}"))
+
+(defn setup (name settings)
+  (let (root (str "target/knave/controller-tests/" name))
+    (match (prepare-repo (as-str root))
+      ((err reason) (err reason))
+      ((ok _)
+       (match (write-fakes (as-str root) settings)
+         ((err reason) (err reason))
+         ((ok _) (ok root)))))))
+
+(defn run (root arguments)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str (str root "/repo"))
+                  arguments))
+
+(defn sequence-text (root)
+  (unwrap-ok (read-text (as-str (str root "/sequence")))))
+
+(defn prompt-text (root)
+  (unwrap-ok (read-text (as-str (str root "/prompt")))))
+
+(defn next-line (roadmap)
+  (str "rmap next --roadmap " roadmap
+       " --taken-by controller --json\n"))
+
+(defn ready-line (roadmap)
+  (str "rmap ready --roadmap " roadmap " --json\n"))
+
+(defn send-line (message)
+  (str "ringleader send fake-manager " message "\n"))
+
+(defn repository-of (root) (str root "/repo"))
+
+(defn absolute-repository-of (root)
+  (unwrap-ok (absolute-path (as-str (repository-of root)))))
+
+(defn dispatch-sequence (root)
+  (let (repo (absolute-repository-of root))
+    (str
+      (next-line (str "fake-roadmap"))
+      (ready-line (str "fake-roadmap"))
+      "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
+      "ringleader new --name build-rm-0001 --repo " repo
+      " --agent fake-agent --prompt <filled>\n")))
+
+(deftest dispatches-with-a-relative-repository
+  (let (root (unwrap-ok (setup "relative-repo"
+                               (default-settings (clone ignored-next)
+                                                 (clone build-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (let (repo (absolute-repository-of root)
+            relative-repo (repository-of root))
+        (assert (not= (as-str repo) (as-str relative-repo)))
+        (assert (starts-with? (as-str repo) "/"))
+        (assert (= (exit-code output) 0))
+        (assert (= (stdout-text output) (str "build-rm-0001\n")))
+        (assert (= (sequence-text root) (dispatch-sequence root))))
+      (assert (= (prompt-text root)
+                 (str "item=rm-0001 roadmap=fake-roadmap "
+                      "session=build-rm-0001 branch=build-rm-0001 "
+                      "base=main skill=fake-skill\n"))))))
+
+(deftest dispatches-the-first-ready-build
+  (let (root (unwrap-ok (setup "dispatch"
+                               (default-settings (clone ignored-next)
+                                                 (clone build-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (stdout-text output) (str "build-rm-0001\n")))
+      (assert (= (sequence-text root) (dispatch-sequence root)))
+      (assert (= (prompt-text root)
+                 (str "item=rm-0001 roadmap=fake-roadmap "
+                      "session=build-rm-0001 branch=build-rm-0001 "
+                      "base=main skill=fake-skill\n"))))))
+
+(defn new-failure-sequence (root)
+  (let (repo (absolute-repository-of root))
+    (str (dispatch-sequence root)
+         "rmap session end build-rm-0001 --reason abandoned\n"
+         (send-line (str "dispatch: rm-0001: `ringleader new --name build-rm-0001 --repo "
+                         repo
+                         " --agent fake-agent --prompt <filled brief>` "
+                         "exited 4: cannot start session")))))
+
+(deftest ends-the-session-when-ringleader-new-fails
+  (let (root (unwrap-ok (setup "new-fails"
+                               (assoc (default-settings (clone ignored-next)
+                                                        (clone build-ready))
+                                      :new-exit 4
+                                      :new-error (str
+                                                   "cannot start session")))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (new-failure-sequence root)))
+      (assert (contains? (stderr-text output) "cannot start session")))))
+
+(defn out-of-scope-sequence (action item)
+  (str (next-line (str "fake-roadmap"))
+       (send-line (str "controller: " action " action for "
+                       item
+                       " is out of scope in this build; "
+                       "`rmap next --roadmap fake-roadmap "
+                       "--taken-by controller --json` exited 0 "
+                       "and no session started"))))
+
+(defn assert-out-of-scope (name action item)
+  (let (root (unwrap-ok (setup name
+                               (default-settings (next-with action item)
+                                                 (clone build-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (out-of-scope-sequence action item)))
+      (assert (contains? (stderr-text output) "out of scope")))))
+
+(deftest stops-on-a-controller-review
+  (assert-out-of-scope "review-out-of-scope"
+                       (str "review")
+                       (str "rm-0009")))
+
+(deftest stops-on-a-controller-verify
+  (assert-out-of-scope "verify-out-of-scope"
+                       (str "verify")
+                       (str "rm-0009")))
+
+(deftest stops-on-a-controller-merge
+  (assert-out-of-scope "merge-out-of-scope"
+                       (str "merge")
+                       (str "rm-0009")))
+
+(defn claim-refusal-sequence ()
+  (str
+    (next-line (str "fake-roadmap"))
+    (ready-line (str "fake-roadmap"))
+    "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
+    (send-line (str "dispatch: rm-0001: `rmap item claim rm-0001 "
+                    "--session build-rm-0001 --branch build-rm-0001` "
+                    "exited 5: not-ready"))))
+
+(deftest stops-when-the-claim-is-refused
+  (let (root (unwrap-ok (setup "claim-refused"
+                               (assoc (default-settings (clone ignored-next)
+                                                        (clone build-ready))
+                                      :claim-exit 5
+                                      :claim-error (str "not-ready")))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (claim-refusal-sequence)))
+      (assert (not (contains? (sequence-text root) "ringleader new")))
+      (assert (not (contains? (sequence-text root) "session end"))))))
+
+(defn poll-sequence ()
+  (str (next-line (str "fake-roadmap"))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (send-line (str "next: -: `rmap next --roadmap fake-roadmap "
+                       "--taken-by controller --json` exited 7: poll limit"))))
+
+(deftest polls-when-no-action-exists
+  (let (root (unwrap-ok (setup "poll"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone research-ready))
+                                      :stop-after 3))))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (poll-sequence)))
+      (assert (not (contains? (sequence-text root) "ringleader new")))
+      (assert (not (contains? (sequence-text root) "item claim"))))))
+
+(deftest help-states-the-restart-and-bootstrap-rules
+  (let (root (unwrap-ok (setup "help"
+                               (default-settings (clone wait-next)
+                                                 (clone research-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--help"))))
+          text (stdout-text output))
+      (assert (= (exit-code output) 0))
+      (assert (contains? text "exits 1 on the first failure"))
+      (assert (contains? text "restarts it"))
+      (assert (contains?
+                text
+                "merge pull requests that change the controller itself"))
+      (assert (contains?
+                text
+                "running binary stays at the version it was built from"))
+      (assert (contains? text "rebuilds and restarts it"))
+      (assert (contains? text "no automatic restart")))))
+
+(deftest notifies-the-manager-when-the-factory-is-incomplete
+  (let (root (unwrap-ok (setup "factory-incomplete"
+                               (default-settings (clone wait-next)
+                                                 (clone research-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{\"manager\":\"fake-manager\","
+                                        "\"roadmap\":\"fake-roadmap\"}"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str "ringleader send fake-manager "
+                      "controller: the factory has no `roles`\n")))
+      (assert (contains? (stderr-text output)
+                         "the factory has no `roles`")))))

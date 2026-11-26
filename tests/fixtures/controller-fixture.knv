@@ -1,0 +1,200 @@
+(module
+  "Builds the fake rmap, ringleader and git programs and the repository that the controller tests use.")
+
+(use factory/json factory->json)
+(use factory/types ->role role-name)
+(use fixtures/fake-factory fake-factory)
+
+(export ->fake-settings absolute-path default-settings
+        exit-code fake-settings make-directory prepare-repo
+        read-text reset-directory run-controller stderr-text
+        stdout-text write-fakes write-text)
+
+(defstruct fake-settings
+  :next-json string
+  :ready-json string
+  :stop-after int
+  :claim-exit int
+  :claim-error string
+  :new-exit int
+  :new-error string)
+
+(defn default-settings (next-json ready-json)
+  (->fake-settings :next-json next-json
+                   :ready-json ready-json
+                   :stop-after 0
+                   :claim-exit 0
+                   :claim-error (str)
+                   :new-exit 0
+                   :new-error (str)))
+
+(def controller-factory
+  (assoc (clone fake-factory)
+         :roles (vec (->role :name role-name/worker
+                             :agent (str "fake-agent")
+                             :skill (str "fake-skill")
+                             :brief (str ".kogworks/briefs/worker.md")))))
+
+(def worker-brief
+  (str "item={{item}} roadmap={{roadmap}} session={{session}} "
+       "branch={{branch}} base={{base}} skill={{skill}}\n"))
+
+(def write-text
+  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def read-text
+  (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
+(def make-directory
+  (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
+(def reset-directory
+  (rust "{{
+    match std::fs::remove_dir_all({0}) {{
+      Ok(_) => Ok(()),
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+      Err(error) => Err(error.to_string()),
+    }}
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(def make-executable
+  (rust "{{
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata({0})
+      .map_err(|error| error.to_string())?
+      .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions({0}, permissions)
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(type prepare-repo
+  (fn ((ref str)) (result unit string)))
+
+(defn prepare-repo (root)
+  (let-try (_ (reset-directory root))
+    (let-try (_ (make-directory (as-str (str root "/repo/.kogworks/briefs"))))
+      (let-try (_ (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                              (as-str (factory->json controller-factory))))
+        (write-text (as-str (str root "/repo/.kogworks/briefs/worker.md"))
+                    (as-str worker-brief))))))
+
+(def rmap-script
+  (str
+    "#!/bin/sh\n"
+    "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+    "printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\"\n"
+    "case \"$1\" in\n" "  next)\n" "    count=0\n"
+    "    if [ -f \"$root/counter\" ]; then count=$(cat \"$root/counter\"); fi\n"
+    "    count=$((count + 1))\n"
+    "    printf '%s' \"$count\" > \"$root/counter\"\n"
+    "    if [ [STOP_AFTER] -gt 0 ] && [ \"$count\" -ge [STOP_AFTER] ]; then\n"
+    "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
+    "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
+    "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
+    "    if [ [CLAIM_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[CLAIM_ERROR]' >&2\n"
+    "      exit [CLAIM_EXIT]\n" "    fi\n" "    ;;\n"
+    "  session) ;;\n" "esac\n" "exit 0\n"))
+
+(def ringleader-script
+  (str
+    "#!/bin/sh\n"
+    "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+    "if [ \"$1\" = \"new\" ]; then\n" "  case \"$5\" in\n"
+    "    /*) ;;\n"
+    "    *) printf 'repo is not absolute: %s\\n' \"$5\" >&2; exit 9 ;;\n"
+    "  esac\n"
+    "  printf 'ringleader new --name %s --repo %s --agent %s --prompt <filled>\\n' "
+    "\"$3\" \"$5\" \"$7\" >> \"$root/sequence\"\n"
+    "  printf '%s' \"$9\" > \"$root/prompt\"\n"
+    "  if [ [NEW_EXIT] -ne 0 ]; then\n"
+    "    printf '%s\\n' '[NEW_ERROR]' >&2\n"
+    "    exit [NEW_EXIT]\n" "  fi\n"
+    "elif [ \"$1\" = \"send\" ]; then\n"
+    "  printf 'ringleader send %s %s\\n' \"$2\" \"$3\" >> \"$root/sequence\"\n"
+    "fi\n" "exit 0\n"))
+
+(def git-script
+  (str "#!/bin/sh\n"
+       "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+       "printf 'git %s\\n' \"$*\" >> \"$root/git.log\"\n"
+       "printf 'origin/main\\n'\n"))
+
+(defn replace-token (text token value)
+  (-> text as-str
+      (split (as-str token))
+      collect
+      (join (as-str value))))
+
+(defn replaced-script (script settings)
+  (-> script
+      (replace-token (str "[STOP_AFTER]")
+                     (str (:stop-after settings)))
+      (replace-token (str "[CLAIM_EXIT]")
+                     (str (:claim-exit settings)))
+      (replace-token (str "[CLAIM_ERROR]")
+                     (clone (:claim-error settings)))
+      (replace-token (str "[NEW_EXIT]")
+                     (str (:new-exit settings)))
+      (replace-token (str "[NEW_ERROR]") (:new-error settings))))
+
+(defn write-script (path text)
+  (let-try (_ (write-text (as-str path) (as-str text)))
+    (make-executable (as-str path))))
+
+(defn write-fakes (root settings)
+  (let-try (_ (make-directory (as-str (str root "/bin"))))
+    (let-try (_ (write-text (as-str (str root "/next.json"))
+                            (as-str (:next-json settings))))
+      (let-try (_ (write-text (as-str (str root "/ready.json"))
+                              (as-str (:ready-json settings))))
+        (let-try (_ (write-script (str root "/bin/rmap")
+                                  (replaced-script rmap-script settings)))
+          (let-try (_ (write-script (str root "/bin/ringleader")
+                                    (replaced-script ringleader-script
+                                                     settings)))
+            (write-script (str root "/bin/git")
+                          (replaced-script git-script settings))))))))
+
+(deftype process-output (rust "std::process::Output"))
+
+(def absolute-path
+  (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
+(def run-controller
+  (rust "{{
+    let bin = std::fs::canonicalize({0}).map_err(|error| error.to_string())?;
+    let path = format!(\"{{}}:{{}}\",
+                       bin.display(),
+                       std::env::var(\"PATH\").unwrap_or_default());
+    std::process::Command::new(\"./target/knave/kogworks/kogworks\")
+      .arg(\"controller\")
+      .arg(\"--repo\")
+      .arg({1})
+      .args({2}.iter().map(|argument| argument.as_str()))
+      .env(\"PATH\", path)
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref str) (ref (vec string)))
+      (result process-output string))))
+
+(def exit-code
+  (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
+    (fn ((ref process-output)) int)))
+
+(def stdout-text
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def stderr-text
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))

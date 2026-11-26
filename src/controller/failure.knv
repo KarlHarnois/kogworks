@@ -1,0 +1,91 @@
+(module
+  "Names the failures the controller reports to its manager.")
+
+(export ->action-failure ->failure-report action-failure
+        controller-error error->message factory-error
+        factory-error->message failure-report)
+
+(defenum factory-error
+  (missing-factory string)
+  (unreadable-factory string string)
+  (malformed-factory string string)
+  (missing-field string)
+  (non-text-field string)
+  (non-object-field string))
+
+(defn factory-error->message (failure)
+  (match failure
+    ((missing-factory path) (str "no factory at " path))
+    ((unreadable-factory path reason)
+     (str "cannot read " path ": " reason))
+    ((malformed-factory path reason)
+     (str "cannot parse " path ": " reason))
+    ((missing-field path) (str "the factory has no `" path "`"))
+    ((non-text-field path)
+     (str "the factory field `" path "` is not text"))
+    ((non-object-field path)
+     (str "the factory field `" path "` is not an object"))))
+
+(defstruct action-failure
+  :action string
+  :item string
+  :command string
+  :code int
+  :detail string)
+
+(defenum controller-error
+  (command-failed action-failure)
+  (out-of-scope action-failure)
+  (factory-failed factory-error)
+  (unreadable-brief string string)
+  (unreadable-repository string string)
+  (placeholder-left string string))
+
+(defn command-failure->message (failure)
+  (let (detail (:detail failure))
+    (if (empty? detail)
+      (str (:action failure)
+           ": "
+           (:item failure)
+           ": `"
+           (:command failure)
+           "` exited "
+           (:code failure))
+      (str (:action failure)
+           ": "
+           (:item failure)
+           ": `"
+           (:command failure)
+           "` exited "
+           (:code failure)
+           ": " detail))))
+
+(defn error->message (failure)
+  (match failure
+    ((command-failed report) (command-failure->message report))
+    ((out-of-scope report)
+     (str "controller: "
+          (:action report)
+          " action for "
+          (:item report)
+          " is out of scope in this build; `"
+          (:command report)
+          "` exited "
+          (:code report)
+          " and no session started"))
+    ((factory-failed cause)
+     (str "controller: " (factory-error->message cause)))
+    ((unreadable-brief path reason)
+     (str "dispatch: cannot read the worker brief " path
+          ": " reason))
+    ((unreadable-repository path reason)
+     (str "controller: cannot resolve the repository " path
+          ": " reason))
+    ((placeholder-left item token)
+     (str "dispatch: " item
+          ": the worker brief still holds `" token
+          "` after filling"))))
+
+(defstruct failure-report
+  :manager (option string)
+  :error controller-error)

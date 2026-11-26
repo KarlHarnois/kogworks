@@ -1,0 +1,410 @@
+(module
+  "Reads the JSON that the factory file and rmap print.")
+
+(export field json json-array json-error json-error->message
+        json-field json-object? json-text parse-json)
+
+(defstruct field
+  :key string
+  :value json)
+
+(defenum json
+  (object (vec field))
+  (array (vec json))
+  (text string)
+  (number string)
+  (boolean bool)
+  null)
+
+(defstruct parsed
+  :value json
+  :position int)
+
+(defstruct text-end
+  :text string
+  :position int)
+
+(defenum json-error
+  (unexpected-character int char)
+  (unexpected-end int)
+  (invalid-escape int)
+  (invalid-token int string)
+  (trailing-input int))
+
+(defn json-error->message (failure)
+  (match failure
+    ((unexpected-character position character)
+     (str "unexpected `" (str character) "` at " position))
+    ((unexpected-end position)
+     (str "unexpected end at " position))
+    ((invalid-escape position)
+     (str "invalid escape at " position))
+    ((invalid-token position token)
+     (str "invalid token `" token "` at " position))
+    ((trailing-input position)
+     (str "trailing input at " position))))
+
+(defn whitespace? (character)
+  (or (= character (char " "))
+      (= character (char "\t"))
+      (= character (char "\n"))
+      (= character (char "\r"))))
+
+(defn space-at? (characters index)
+  (and (< index (len characters))
+       (whitespace? (deref (at characters index)))))
+
+(defn skip-space (characters position)
+  (loop (index position)
+    (if (space-at? characters index)
+      (recur (inc index))
+      index)))
+
+(def hex-digit
+  (rust "{0}.to_digit(16).map(|digit| digit as i64)"
+    (fn (char) (option int))))
+
+(def char-from-code
+  (rust "char::from_u32({0} as u32).unwrap_or('?')"
+    (fn (int) char)))
+
+(type parse-json
+  (fn ((ref str))
+    (result json json-error)))
+
+(defn parse-json (text)
+  (let (characters (collect (chars text)))
+    (let-try (found (parse-value (ref characters) 0))
+      (let (end (skip-space (ref characters) (:position found)))
+        (if (= end (len characters))
+          (ok (clone (:value found)))
+          (err (json-error/trailing-input end)))))))
+
+(defn parse-value (characters position)
+  (let (start (skip-space characters position))
+    (if (>= start (len characters))
+      (err (json-error/unexpected-end start))
+      (let (character (deref (at characters start)))
+        (cond
+          ((= character (char "{")) (parse-object characters start))
+          ((= character (char "[")) (parse-array characters start))
+          ((= character (char "\""))
+           (parse-text-value characters start))
+          ((= character (char "t"))
+           (parse-word characters start
+                       (str "true")
+                       (json/boolean true)))
+          ((= character (char "f"))
+           (parse-word characters start
+                       (str "false")
+                       (json/boolean false)))
+          ((= character (char "n"))
+           (parse-word characters start (str "null") json/null))
+          (else (parse-number characters start)))))))
+
+(defn parse-text-value (characters position)
+  (let-try (text (parse-string characters (inc position)))
+    (ok (->parsed :value (json/text (clone (:text text)))
+                  :position (:position text)))))
+
+(defn parse-word (characters position word value)
+  (if (word-at? characters position word)
+    (ok (->parsed :value value
+                  :position (+ position
+                               (count (chars (as-str word))))))
+    (err (json-error/invalid-token position word))))
+
+(defn word-at? (characters position word)
+  (let (expected (collect (chars (as-str word))))
+    (and (<= (+ position (len expected))
+             (len characters))
+         (every? (range 0 (len expected))
+           (fn (offset)
+             (= (deref (at characters (+ position offset)))
+                (deref (at expected offset))))))))
+
+(defn delimiter? (character)
+  (or (whitespace? character)
+      (= character (char ","))
+      (= character (char "]"))
+      (= character (char "}"))))
+
+(defn number-character? (character)
+  (or (digit? character)
+      (= character (char "-"))
+      (= character (char "+"))
+      (= character (char "."))
+      (= character (char "e"))
+      (= character (char "E"))))
+
+(defn valid-number? (text)
+  (let (characters (collect (chars text)))
+    (and (not (empty? text))
+         (or (digit? (deref (at characters 0)))
+             (= (deref (at characters 0)) (char "-")))
+         (every? characters number-character?)
+         (any? characters digit?))))
+
+(defn parse-number (characters position)
+  (loop (index position)
+    (if (or (>= index (len characters))
+            (delimiter? (deref (at characters index))))
+      (finish-number characters position index)
+      (recur (inc index)))))
+
+(defn finish-number (characters position end)
+  (let (text (join (collect (map (range position end)
+                              (fn (index)
+                                (str (deref (at characters index))))))
+                   ""))
+    (if (valid-number? (as-str text))
+      (ok (->parsed :value (json/number text) :position end))
+      (err (json-error/invalid-token position text)))))
+
+(defn parse-object (characters position)
+  (let (start (skip-space characters (inc position)))
+    (if (>= start (len characters))
+      (err (json-error/unexpected-end start))
+      (parse-object-start characters start))))
+
+(defn parse-object-start (characters start)
+  (if (= (deref (at characters start))
+         (char "}"))
+    (ok (->parsed :value (json/object (vec))
+                  :position (inc start)))
+    (parse-fields characters start (vec))))
+
+(defn parse-fields (characters position fields)
+  (if (>= position (len characters))
+    (err (json-error/unexpected-end position))
+    (parse-field-name characters position fields)))
+
+(defn parse-field-name (characters position fields)
+  (if (not= (deref (at characters position))
+            (char "\""))
+    (err (json-error/unexpected-character position
+                                          (deref (at characters position))))
+    (let-try (key (parse-string characters (inc position)))
+      (parse-field-value characters
+                         (skip-space characters (:position key))
+                         (:text key)
+                         fields))))
+
+(defn parse-field-value (characters position key fields)
+  (if (>= position (len characters))
+    (err (json-error/unexpected-end position))
+    (parse-field-colon characters position key fields)))
+
+(defn parse-field-colon (characters position key fields)
+  (if (not= (deref (at characters position))
+            (char ":"))
+    (err (json-error/unexpected-character position
+                                          (deref (at characters position))))
+    (let-try (value (parse-value characters
+                                 (skip-space characters (inc position))))
+      (append-field characters
+                    (skip-space characters (:position value))
+                    key
+                    (:value value)
+                    fields))))
+
+(defn append-field (characters position key value fields)
+  (let (field (->field :key (clone key) :value (clone value)))
+    (if (>= position (len characters))
+      (err (json-error/unexpected-end position))
+      (let (character (deref (at characters position)))
+        (cond
+          ((= character (char ","))
+           (parse-fields characters
+                         (skip-space characters (inc position))
+                         (with-field! fields field)))
+          ((= character (char "}"))
+           (ok (->parsed :value (json/object (with-field! fields field))
+                         :position (inc position))))
+          (else (err (json-error/unexpected-character position character))))))))
+
+(type with-field!
+  (fn ((vec field) field) (vec field)))
+
+(defn with-field! (fields field)
+  (do (push! fields field) fields))
+
+(defn parse-array (characters position)
+  (let (start (skip-space characters (inc position)))
+    (if (>= start (len characters))
+      (err (json-error/unexpected-end start))
+      (parse-array-start characters start))))
+
+(defn parse-array-start (characters start)
+  (if (= (deref (at characters start))
+         (char "]"))
+    (ok (->parsed :value (json/array (vec))
+                  :position (inc start)))
+    (parse-items characters start (vec))))
+
+(defn parse-items (characters position items)
+  (let-try (value (parse-value characters position))
+    (append-item characters
+                 (skip-space characters (:position value))
+                 (:value value)
+                 items)))
+
+(defn append-item (characters position value items)
+  (if (>= position (len characters))
+    (err (json-error/unexpected-end position))
+    (let (character (deref (at characters position)))
+      (cond
+        ((= character (char ","))
+         (parse-items characters
+                      (skip-space characters (inc position))
+                      (with-item! items (clone value))))
+        ((= character (char "]"))
+         (ok (->parsed :value (json/array (with-item! items (clone value)))
+                       :position (inc position))))
+        (else (err (json-error/unexpected-character position character)))))))
+
+(type with-item!
+  (fn ((vec json) json) (vec json)))
+
+(defn with-item! (items item)
+  (do (push! items item) items))
+
+(defstruct escaped-character
+  :character char
+  :position int)
+
+(defenum string-step
+  (append char)
+  (escaped escaped-character)
+  (done int)
+  (failed json-error))
+
+(defn characters->text (characters)
+  (join (collect (map characters
+                   (fn (character) (str character))))
+        ""))
+
+(defn parse-string (characters position)
+  (loop (index position
+         text (vec))
+    (match (string-step-at characters index)
+      ((append character)
+       (do
+         (push! text character)
+         (recur (inc index) text)))
+      ((escaped escaped)
+       (do
+         (push! text (:character escaped))
+         (recur (:position escaped) text)))
+      ((done end)
+       (ok (->text-end :text (characters->text text) :position end)))
+      ((failed failure) (err failure)))))
+
+(defn string-step-at (characters index)
+  (if (>= index (len characters))
+    (string-step/failed (json-error/unexpected-end index))
+    (string-character-step characters index)))
+
+(defn string-character-step (characters index)
+  (let (character (deref (at characters index)))
+    (cond
+      ((= character (char "\"")) (string-step/done (inc index)))
+      ((= character (char "\\")) (escaped-step characters index))
+      (else (string-step/append character)))))
+
+(defn first-character (text)
+  (deref (at (collect (chars (as-str text))) 0)))
+
+(defn escaped-step (characters index)
+  (match (parse-escape characters index)
+    ((ok escaped)
+     (string-step/escaped (->escaped-character :character (first-character (:text
+                                                                             escaped))
+                                               :position (:position escaped))))
+    ((err failure) (string-step/failed failure))))
+
+(defn parse-escape (characters position)
+  (let (index (inc position))
+    (if (>= index (len characters))
+      (err (json-error/unexpected-end index))
+      (let (character (deref (at characters index)))
+        (cond
+          ((= character (char "\""))
+           (ok (->text-end :text (str "\"") :position (inc index))))
+          ((= character (char "\\"))
+           (ok (->text-end :text (str "\\") :position (inc index))))
+          ((= character (char "/"))
+           (ok (->text-end :text (str "/") :position (inc index))))
+          ((= character (char "b"))
+           (ok (->text-end :text (str (char "\u{8}"))
+                           :position (inc index))))
+          ((= character (char "f"))
+           (ok (->text-end :text (str (char "\u{c}"))
+                           :position (inc index))))
+          ((= character (char "n"))
+           (ok (->text-end :text (str "\n") :position (inc index))))
+          ((= character (char "r"))
+           (ok (->text-end :text (str "\r") :position (inc index))))
+          ((= character (char "t"))
+           (ok (->text-end :text (str "\t") :position (inc index))))
+          ((= character (char "u"))
+           (parse-unicode characters (inc index)))
+          (else (err (json-error/invalid-escape position))))))))
+
+(defn parse-unicode (characters position)
+  (if (> (+ position 4) (len characters))
+    (err (json-error/unexpected-end position))
+    (let-try (code (hex-code characters position 0 4))
+      (ok (->text-end :text (str (char-from-code code))
+                      :position (+ position 4))))))
+
+(defn hex-code (characters position value remaining)
+  (if (= remaining 0)
+    (ok value)
+    (hex-code-step characters position value remaining)))
+
+(defn hex-code-step (characters position value remaining)
+  (match (hex-digit (deref (at characters position)))
+    ((some digit)
+     (hex-code characters
+               (inc position)
+               (+ (* value 16) digit)
+               (dec remaining)))
+    (none (err (json-error/invalid-escape position)))))
+
+(type json-field
+  (fn ((ref json) (ref str))
+    (option json)))
+
+(defn json-field (value key)
+  (match value
+    ((object fields)
+     (map-some (find (iter fields)
+                 (fn (field)
+                   (= (as-str (:key field)) key)))
+               (fn (field) (clone (:value field)))))
+    (_ none)))
+
+(type json-text
+  (fn ((ref json)) (option string)))
+
+(defn json-text (value)
+  (match value
+    ((text text) (some (clone text)))
+    (_ none)))
+
+(type json-array
+  (fn ((ref json)) (option (vec json))))
+
+(defn json-array (value)
+  (match value
+    ((array items) (some (clone items)))
+    (_ none)))
+
+(type json-object?
+  (fn ((ref json)) bool))
+
+(defn json-object? (value)
+  (match value
+    ((object _) true)
+    (_ false)))

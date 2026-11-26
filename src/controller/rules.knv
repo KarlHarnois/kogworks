@@ -1,0 +1,363 @@
+(module
+  "Reads rmap's next and ready JSON into the controller's decisions.")
+
+(use controller/json json json-array json-field json-text)
+
+(export action-kind action-kind->text actor first-build
+        first-controller-action item-action item-kind
+        next-action next-line parse-next-response
+        parse-ready-response ready-item)
+
+(defenum actor
+  controller
+  manager
+  worker
+  user
+  (other string))
+
+(defenum action-kind
+  work
+  dispatch
+  review
+  verify
+  merge
+  send-fixes
+  wait
+  (other string))
+
+(defenum item-kind
+  build
+  research
+  design
+  (other string))
+
+(defstruct next-action
+  :kind action-kind
+  :actor (option actor))
+
+(defstruct next-line
+  :item string
+  :actions (vec next-action))
+
+(defstruct item-action
+  :item string
+  :kind action-kind)
+
+(defstruct ready-item
+  :id string
+  :kind item-kind)
+
+(type action-kind->text
+  (fn ((ref action-kind)) string))
+
+(defn action-kind->text (kind)
+  (match kind
+    (work (str "work"))
+    (dispatch (str "dispatch"))
+    (review (str "review"))
+    (verify (str "verify"))
+    (merge (str "merge"))
+    (send-fixes (str "send-fixes"))
+    (wait (str "wait"))
+    ((other text) (clone text))))
+
+(defn action-kind-of (text)
+  (cond
+    ((= text (str "work")) action-kind/work)
+    ((= text (str "dispatch")) action-kind/dispatch)
+    ((= text (str "review")) action-kind/review)
+    ((= text (str "verify")) action-kind/verify)
+    ((= text (str "merge")) action-kind/merge)
+    ((= text (str "send-fixes")) action-kind/send-fixes)
+    ((= text (str "wait")) action-kind/wait)
+    (else (action-kind/other text))))
+
+(defn actor-of (text)
+  (cond
+    ((= text (str "controller")) actor/controller)
+    ((= text (str "manager")) actor/manager)
+    ((= text (str "worker")) actor/worker)
+    ((= text (str "user")) actor/user)
+    (else (actor/other text))))
+
+(defn item-kind-of (text)
+  (cond
+    ((= text (str "build")) item-kind/build)
+    ((= text (str "research")) item-kind/research)
+    ((= text (str "design")) item-kind/design)
+    (else (item-kind/other text))))
+
+(type required-text
+  (fn ((ref json) (ref str))
+    (result string string)))
+
+(defn required-text (value key)
+  (match (json-field value key)
+    (none (err (str "missing `" (str key) "`")))
+    ((some found) (field-text found key))))
+
+(defn field-text (found key)
+  (match (json-text found)
+    ((some text) (ok text))
+    (none (err (str "`" (str key) "` is not text")))))
+
+(type required-array
+  (fn ((ref json) (ref str))
+    (result (vec json) string)))
+
+(defn required-array (value key)
+  (match (json-field value key)
+    (none (err (str "missing `" (str key) "`")))
+    ((some found) (field-array found key))))
+
+(defn field-array (found key)
+  (match (json-array found)
+    ((some items) (ok items))
+    (none (err (str "`" (str key) "` is not an array")))))
+
+(type parse-next-response
+  (fn ((ref json))
+    (result (vec next-line) string)))
+
+(defn parse-next-response (document)
+  (let-try (items (required-array document "next"))
+    (parse-next-lines items)))
+
+(type with-line!
+  (fn ((vec next-line) next-line)
+    (vec next-line)))
+
+(defn with-line! (lines line)
+  (do (push! lines line) lines))
+
+(defenum next-line-step
+  (line next-line)
+  (failure string)
+  done)
+
+(defn parse-next-lines (items)
+  (loop (index 0
+         lines (vec))
+    (match (next-line-step-at items index)
+      ((line line) (recur (inc index) (with-line! lines line)))
+      ((failure reason) (err reason))
+      (done (ok lines)))))
+
+(defn next-line-step-at (items index)
+  (if (>= index (len items))
+    next-line-step/done
+    (parsed-next-line (parse-next-line (at items index)))))
+
+(defn parsed-next-line (parsed)
+  (match parsed
+    ((ok line) (next-line-step/line line))
+    ((err failure) (next-line-step/failure failure))))
+
+(type parse-next-line
+  (fn ((ref json))
+    (result next-line string)))
+
+(defn parse-next-line (value)
+  (let-try (item (required-text value "item"))
+    (let-try (action-values (required-array value "actions"))
+      (let-try (actions (parse-next-actions action-values))
+        (ok (->next-line :item item :actions actions))))))
+
+(type with-action!
+  (fn ((vec next-action) next-action)
+    (vec next-action)))
+
+(defn with-action! (actions action)
+  (do (push! actions action) actions))
+
+(defenum next-action-step
+  (action next-action)
+  (failure string)
+  done)
+
+(defn parse-next-actions (values)
+  (loop (index 0
+         actions (vec))
+    (match (next-action-step-at values index)
+      ((action action)
+       (recur (inc index) (with-action! actions action)))
+      ((failure reason) (err reason))
+      (done (ok actions)))))
+
+(defn next-action-step-at (values index)
+  (if (>= index (len values))
+    next-action-step/done
+    (parsed-next-action (parse-next-action (at values index)))))
+
+(defn parsed-next-action (parsed)
+  (match parsed
+    ((ok action) (next-action-step/action action))
+    ((err failure) (next-action-step/failure failure))))
+
+(type parse-next-action
+  (fn ((ref json))
+    (result next-action string)))
+
+(defn parse-next-action (value)
+  (let-try (text (required-text value "action"))
+    (let-try (actor-value (optional-actor value))
+      (ok (->next-action :kind (action-kind-of text)
+                         :actor actor-value)))))
+
+(type optional-actor
+  (fn ((ref json))
+    (result (option actor) string)))
+
+(defn optional-actor (value)
+  (match (json-field value "actor")
+    (none (ok none))
+    ((some found) (actor-field found))))
+
+(defn actor-field (found)
+  (match (json-text found)
+    ((some text) (ok (some (actor-of text))))
+    (none (err (str "`actor` is not text")))))
+
+(type first-controller-action
+  (fn ((ref (vec next-line)))
+    (option item-action)))
+
+(defenum controller-action-step
+  (found action-kind)
+  absent
+  done)
+
+(defn first-controller-action (lines)
+  (loop (index 0)
+    (match (controller-action-step-at lines index)
+      ((found kind)
+       (some (->item-action :item (clone (:item (at lines index)))
+                            :kind kind)))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn controller-action-step-at (lines index)
+  (if (>= index (len lines))
+    controller-action-step/done
+    (controller-action-step-of (controller-action-in (at lines index)))))
+
+(defn controller-action-step-of (found)
+  (match found
+    ((some kind) (controller-action-step/found kind))
+    (none controller-action-step/absent)))
+
+(type controller-action-in
+  (fn ((ref next-line))
+    (option action-kind)))
+
+(defn controller-action-in (line)
+  (loop (index 0)
+    (match (action-step-at line index)
+      ((found kind) (some kind))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn action-step-at (line index)
+  (if (>= index (len (:actions line)))
+    controller-action-step/done
+    (action-step-of (at (:actions line) index))))
+
+(defn action-step-of (action)
+  (if (controller-action? action)
+    (controller-action-step/found (clone (:kind action)))
+    controller-action-step/absent))
+
+(type controller-action?
+  (fn ((ref next-action)) bool))
+
+(defn controller-action? (action)
+  (and (controller-scope? (:kind action))
+       (controller-actor? (:actor action))))
+
+(defn controller-scope? (kind)
+  (match kind
+    (review true)
+    (verify true)
+    (merge true)
+    (_ false)))
+
+(defn controller-actor? (actor-value)
+  (match actor-value
+    ((some controller) true)
+    (_ false)))
+
+(type parse-ready-response
+  (fn ((ref json))
+    (result (vec ready-item) string)))
+
+(defn parse-ready-response (document)
+  (let-try (items (required-array document "ready"))
+    (parse-ready-items items)))
+
+(type with-item!
+  (fn ((vec ready-item) ready-item)
+    (vec ready-item)))
+
+(defn with-item! (items item)
+  (do (push! items item) items))
+
+(defenum ready-item-step
+  (item ready-item)
+  (failure string)
+  done)
+
+(defn parse-ready-items (values)
+  (loop (index 0
+         items (vec))
+    (match (ready-item-step-at values index)
+      ((item item) (recur (inc index) (with-item! items item)))
+      ((failure reason) (err reason))
+      (done (ok items)))))
+
+(defn ready-item-step-at (values index)
+  (if (>= index (len values))
+    ready-item-step/done
+    (parsed-ready-item (parse-ready-item (at values index)))))
+
+(defn parsed-ready-item (parsed)
+  (match parsed
+    ((ok item) (ready-item-step/item item))
+    ((err failure) (ready-item-step/failure failure))))
+
+(type parse-ready-item
+  (fn ((ref json))
+    (result ready-item string)))
+
+(defn parse-ready-item (value)
+  (let-try (id (required-text value "id"))
+    (let-try (kind-text (required-text value "kind"))
+      (ok (->ready-item :id id :kind (item-kind-of kind-text))))))
+
+(type first-build
+  (fn ((ref (vec ready-item)))
+    (option ready-item)))
+
+(defenum build-step
+  (found ready-item)
+  absent
+  done)
+
+(defn first-build (items)
+  (loop (index 0)
+    (match (build-step-at items index)
+      ((found item) (some item))
+      (absent (recur (inc index)))
+      (done none))))
+
+(defn build-step-at (items index)
+  (if (>= index (len items))
+    build-step/done
+    (build-step-of (at items index))))
+
+(type build-step-of
+  (fn ((ref ready-item)) build-step))
+
+(defn build-step-of (item)
+  (match (:kind item)
+    (build (build-step/found (clone item)))
+    (_ build-step/absent)))

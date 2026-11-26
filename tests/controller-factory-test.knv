@@ -1,0 +1,39 @@
+(use controller/factory read-factory)
+(use controller/failure factory-error)
+
+(use fixtures/controller-fixture prepare-repo
+                                 reset-directory write-text)
+
+(deftest read-factory-reads-the-manager-roadmap-and-worker
+  (let (root (str "target/knave/controller-tests/factory-read"))
+    (unwrap-ok (prepare-repo (as-str root)))
+    (match (read-factory (as-str (str root "/repo")))
+      ((ok config)
+       (assert (= (:manager config) (str "fake-manager")))
+       (assert (= (:roadmap config) (str "fake-roadmap")))
+       (assert (= (:agent (:worker config))
+                  (str "fake-agent")))
+       (assert (= (:skill (:worker config))
+                  (str "fake-skill")))
+       (assert (= (:brief (:worker config))
+                  (str ".kogworks/briefs/worker.md"))))
+      ((err _) (assert false)))))
+
+(deftest read-factory-reports-a-missing-factory
+  (let (root (str "target/knave/controller-tests/factory-missing"))
+    (unwrap-ok (reset-directory (as-str root)))
+    (match (read-factory (as-str (str root "/repo")))
+      ((err (missing-factory path))
+       (assert (contains? path "factory.json")))
+      (_ (assert false)))))
+
+(deftest read-factory-reports-malformed-json
+  (let (root (str "target/knave/controller-tests/factory-malformed"))
+    (unwrap-ok (prepare-repo (as-str root)))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{"))))
+    (match (read-factory (as-str (str root "/repo")))
+      ((err (malformed-factory path reason))
+       (assert (contains? path "factory.json"))
+       (assert (contains? reason "unexpected end")))
+      (_ (assert false)))))

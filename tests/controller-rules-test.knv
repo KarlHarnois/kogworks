@@ -1,0 +1,157 @@
+(use controller/json parse-json)
+
+(use controller/rules action-kind action-kind->text actor
+                      first-build first-controller-action
+                      parse-next-response
+                      parse-ready-response)
+
+(defn controller-next (action item)
+  (str "{\"next\":[{\"item\":\"" item "\",\"actions\":["
+       "{\"action\":\"" action
+       "\",\"actor\":\"controller\"}]}]}"))
+
+(defn ignored-next ()
+  (str "{\"next\":["
+       "{\"item\":\"rm-1\",\"actions\":[{\"action\":\"review\","
+       "\"actor\":\"worker\",\"session\":\"review-rm-1\"}]},"
+       "{\"item\":\"rm-2\",\"actions\":[{\"action\":\"wait\","
+       "\"actor\":\"controller\"}]},"
+       "{\"item\":\"rm-3\",\"actions\":[{\"action\":\"send-fixes\","
+       "\"actor\":\"manager\"}]},"
+       "{\"item\":\"rm-4\",\"actions\":[{\"action\":\"dispatch\","
+       "\"actor\":\"controller\"}]}" "]}"))
+
+(defn next-lines-from (text)
+  (match (parse-json (as-str text))
+    ((ok document) (parse-next-response document))
+    ((err _) (err (str "invalid JSON")))))
+
+(defn ready-items-from (text)
+  (match (parse-json (as-str text))
+    ((ok document) (parse-ready-response document))
+    ((err _) (err (str "invalid JSON")))))
+
+(defn assert-action (found action item)
+  (assert (= (as-str (action-kind->text (:kind found)))
+             (as-str action)))
+  (assert (= (as-str (:item found)) (as-str item))))
+
+(defn assert-found-action (found action item)
+  (match found
+    ((some value) (assert-action value action item))
+    (none (assert false))))
+
+(defn assert-controller-action (next-text action item)
+  (match (next-lines-from next-text)
+    ((ok lines)
+     (assert-found-action (first-controller-action lines)
+                          action item))
+    ((err _) (assert false))))
+
+(defn assert-no-action (found)
+  (match found
+    (none (assert true))
+    (_ (assert false))))
+
+(defn assert-no-controller-action (next-text)
+  (match (next-lines-from next-text)
+    ((ok lines)
+     (assert-no-action (first-controller-action lines)))
+    ((err _) (assert false))))
+
+(defn assert-controller-actor (actor-value)
+  (match actor-value
+    ((some controller) (assert true))
+    (_ (assert false))))
+
+(defn assert-build-item (found id)
+  (match found
+    ((some item) (assert (= (as-str (:id item)) (as-str id))))
+    (none (assert false))))
+
+(defn assert-no-build (found)
+  (match found
+    (none (assert true))
+    (_ (assert false))))
+
+(deftest parse-next-response-reads-a-line
+  (match (next-lines-from (controller-next (str "review") (str "rm-1")))
+    ((ok lines)
+     (assert (= (len lines) 1))
+     (let (line (clone (at lines 0)))
+       (assert (= (:item line) (str "rm-1")))
+       (assert (= (len (:actions line)) 1))
+       (let (action (clone (at (:actions line) 0)))
+         (assert (= (action-kind->text (:kind action))
+                    (str "review")))
+         (assert-controller-actor (:actor action)))))
+    ((err _) (assert false))))
+
+(deftest parse-next-response-rejects-a-missing-next
+  (let (document (unwrap-ok (parse-json (as-str (str "{}")))))
+    (match (parse-next-response document)
+      ((err reason) (assert (= reason (str "missing `next`"))))
+      ((ok _) (assert false)))))
+
+(deftest first-controller-action-finds-a-controller-review
+  (assert-controller-action (controller-next (str "review") (str "rm-1"))
+                            (str "review")
+                            (str "rm-1")))
+
+(deftest first-controller-action-finds-a-controller-verify
+  (assert-controller-action (controller-next (str "verify") (str "rm-2"))
+                            (str "verify")
+                            (str "rm-2")))
+
+(deftest first-controller-action-finds-a-controller-merge
+  (assert-controller-action (controller-next (str "merge") (str "rm-3"))
+                            (str "merge")
+                            (str "rm-3")))
+
+(deftest first-controller-action-ignores-other-actors
+  (assert-no-controller-action (ignored-next)))
+
+(deftest parse-ready-response-reads-items
+  (match (ready-items-from (str "{\"ready\":["
+                                "{\"id\":\"rm-1\",\"kind\":\"research\"},"
+                                "{\"id\":\"rm-2\",\"kind\":\"build\"}]}"))
+    ((ok items)
+     (assert (= (len items) 2))
+     (let (first-item (clone (at items 0)))
+       (assert (= (:id first-item) (str "rm-1")))))
+    ((err _) (assert false))))
+
+(deftest parse-ready-response-rejects-a-missing-ready
+  (let (document (unwrap-ok (parse-json (as-str (str "{}")))))
+    (match (parse-ready-response document)
+      ((err reason) (assert (= reason (str "missing `ready`"))))
+      ((ok _) (assert false)))))
+
+(deftest first-build-takes-the-first-build
+  (match (ready-items-from (str "{\"ready\":["
+                                "{\"id\":\"rm-1\",\"kind\":\"research\"},"
+                                "{\"id\":\"rm-2\",\"kind\":\"build\"},"
+                                "{\"id\":\"rm-3\",\"kind\":\"build\"}]}"))
+    ((ok items)
+     (assert-build-item (first-build items) (str "rm-2")))
+    ((err _) (assert false))))
+
+(deftest first-build-is-none-without-a-build
+  (match (ready-items-from (str "{\"ready\":["
+                                "{\"id\":\"rm-1\",\"kind\":\"research\"},"
+                                "{\"id\":\"rm-2\",\"kind\":\"design\"}]}"))
+    ((ok items) (assert-no-build (first-build items)))
+    ((err _) (assert false))))
+
+(deftest action-kind->text-names-each-action
+  (assert (= (action-kind->text action-kind/work) (str "work")))
+  (assert (= (action-kind->text action-kind/dispatch)
+             (str "dispatch")))
+  (assert (= (action-kind->text action-kind/review) (str "review")))
+  (assert (= (action-kind->text action-kind/verify) (str "verify")))
+  (assert (= (action-kind->text action-kind/merge) (str "merge")))
+  (assert (= (action-kind->text action-kind/send-fixes)
+             (str "send-fixes")))
+  (assert (= (action-kind->text action-kind/wait) (str "wait")))
+  (assert (= (action-kind->text (action-kind/other (str "custom")))
+             (str "custom"))))

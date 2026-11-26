@@ -1,0 +1,93 @@
+(module
+  "Runs the programs the controller calls, and reads the files it needs.")
+
+(export ->command ->outcome canonical-path command
+        command-detail execute join-path outcome
+        read-text-file successful? text-file?)
+
+(defstruct command
+  :program string
+  :arguments (vec string)
+  :label string)
+
+(defstruct outcome
+  :code int
+  :stdout string
+  :stderr string)
+
+(deftype process-output (rust "std::process::Output"))
+
+(def run
+  (rust "{{
+    let mut child = std::process::Command::new({0});
+    child.args({1}.iter().map(|argument| argument.as_str()));
+    child.current_dir({2});
+    child.output().map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref (vec string)) (ref str))
+      (result process-output string))))
+
+(def exit-code
+  (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
+    (fn ((ref process-output)) int)))
+
+(def stdout-text
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def stderr-text
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(type execute
+  (fn ((ref str) (ref command)) outcome))
+
+(defn execute (directory command)
+  (match (run (as-str (:program command))
+              (:arguments command)
+              directory)
+    ((ok output)
+     (->outcome :code (exit-code output)
+                :stdout (stdout-text output)
+                :stderr (stderr-text output)))
+    ((err reason)
+     (->outcome :code -1 :stdout (str) :stderr reason))))
+
+(defn successful? (outcome)
+  (= (:code outcome) 0))
+
+(defn non-blank? (line)
+  (not (empty? (trim line))))
+
+(type last-line (fn ((ref str)) string))
+
+(defn last-line (text)
+  (let (found (last (collect (filter (lines text) non-blank?))))
+    (match found
+      ((some line) (str (trim line)))
+      (none (str)))))
+
+(type command-detail
+  (fn ((ref outcome)) string))
+
+(defn command-detail (outcome)
+  (let (stderr-line (last-line (as-str (:stderr outcome))))
+    (if (empty? stderr-line)
+      (last-line (as-str (:stdout outcome)))
+      stderr-line)))
+
+(def canonical-path
+  (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
+(def read-text-file
+  (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result string string))))
+
+(def text-file?
+  (rust "std::path::Path::new({0}).is_file()"
+    (fn ((ref str)) bool)))
+
+(def join-path
+  (rust "std::path::Path::new({0}).join({1}).to_string_lossy().into_owned()"
+    (fn ((ref str) (ref str)) string)))

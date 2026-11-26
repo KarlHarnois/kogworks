@@ -1,0 +1,73 @@
+(module
+  "Fills the worker brief that the factory points at.")
+
+(use controller/failure controller-error)
+(use controller/process read-text-file)
+
+(export ->brief-values brief-values fill-brief)
+
+(defstruct brief-values
+  :item string
+  :roadmap string
+  :session string
+  :branch string
+  :base string
+  :skill string)
+
+(defstruct placeholder
+  :token string
+  :value string)
+
+(type placeholders
+  (fn ((ref brief-values))
+    (vec placeholder)))
+
+(defn placeholders (values)
+  (vec (->placeholder :token (str "{{item}}")
+                      :value (clone (:item values)))
+       (->placeholder :token (str "{{roadmap}}")
+                      :value (clone (:roadmap values)))
+       (->placeholder :token (str "{{session}}")
+                      :value (clone (:session values)))
+       (->placeholder :token (str "{{branch}}")
+                      :value (clone (:branch values)))
+       (->placeholder :token (str "{{base}}")
+                      :value (clone (:base values)))
+       (->placeholder :token (str "{{skill}}")
+                      :value (clone (:skill values)))))
+
+(type fill-placeholder
+  (fn (string (ref placeholder)) string))
+
+(defn fill-placeholder (text placeholder)
+  (-> text as-str
+      (split (as-str (:token placeholder)))
+      collect
+      (join (as-str (:value placeholder)))))
+
+(type fill
+  (fn (string (ref (vec placeholder)))
+    string))
+
+(defn fill (text values)
+  (reduce values text fill-placeholder))
+
+(defn leftover? (text)
+  (or (contains? text "{{") (contains? text "}}")))
+
+(type fill-brief
+  (fn ((ref str) (ref brief-values))
+    (result string controller-error)))
+
+(defn fill-brief (path values)
+  (match (read-text-file path)
+    ((err reason)
+     (err (controller-error/unreadable-brief (str path) reason)))
+    ((ok text)
+     (checked-brief (fill text (placeholders values)) values))))
+
+(defn checked-brief (filled values)
+  (if (leftover? filled)
+    (err (controller-error/placeholder-left (clone (:item values))
+                                            (str "{{")))
+    (ok filled)))
