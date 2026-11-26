@@ -42,7 +42,7 @@
        (ref factory-config)
        (ref merge-settings)
        (ref string))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
@@ -132,7 +132,7 @@
        (ref merge-settings)
        (ref string)
        (ref merge-target))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn prepare-merge (repo config settings item target)
   (match (preflight repo item)
@@ -247,7 +247,7 @@
        (ref merge-settings)
        (ref string)
        (ref merge-target))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn advance-and-enable (repo config settings item target)
   (match (advance-item repo item)
@@ -272,7 +272,7 @@
        (ref merge-settings)
        (ref string)
        (ref merge-target))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn enable-auto-merge (repo config settings item target)
   (let (command (merge-command (:merge config) target))
@@ -286,7 +286,7 @@
        (ref string)
        (ref merge-target)
        (ref merge-settings))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn poll-merge (repo item target settings)
   (let (start (now))
@@ -298,7 +298,7 @@
        (ref merge-target)
        (ref merge-settings)
        instant)
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn poll-iteration (repo item target settings start)
   (match (read-poll-state repo item target)
@@ -366,11 +366,11 @@
        (ref merge-settings)
        instant
        (ref merge-state))
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn handle-poll (repo item target settings start state)
   (match (poll-verdict-of target state)
-    (merged (close-item repo item target))
+    (merged (close-item repo item))
     (moved (err (head-change-error item target state)))
     (waiting (retry-poll repo item target settings start))))
 
@@ -415,7 +415,7 @@
        (ref merge-target)
        (ref merge-settings)
        instant)
-    (result string controller-error)))
+    (result unit controller-error)))
 
 (defn retry-poll (repo item target settings start)
   (if (elapsed? settings start)
@@ -435,16 +435,14 @@
       (seconds (:timeout-seconds settings))))
 
 (type close-item
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target))
-    (result string controller-error)))
+  (fn ((ref str) (ref string))
+    (result unit controller-error)))
 
-(defn close-item (repo item target)
+(defn close-item (repo item)
   (let (command (close-command item))
     (let (outcome (execute repo command))
       (if (successful? outcome)
-        (ok (clone (:pull-request target)))
+        (ok (do))
         (err (merge-command-failure item command outcome))))))
 
 (type invalid-item-output
