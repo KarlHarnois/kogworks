@@ -1,0 +1,61 @@
+(module
+  "Defines the roles form of a factory.")
+
+(use code bool-not empty? fail first keyword-name keyword?
+          len list list? nth prepend rest symbol symbol-name
+          symbol? value-eq)
+
+(use factory/types ->role role-name)
+(use prelude/macros template)
+
+(export roles)
+
+(defmacro roles (clause ...)
+  "Builds a vector of roles from role clauses, as in
+  `(roles (worker :agent \"opencode\" :skill \"writing-knave\" :brief \"brief.md\"))`."
+  (template (vec (splice (role-forms clause)))))
+
+(defn role-forms (clauses)
+  (if (empty? clauses)
+    (list)
+    (prepend (role-form (first clauses))
+             (role-forms (rest clauses)))))
+
+(defn role-form (clause)
+  (check-role-clause clause)
+  (let (name (first clause)
+        agent (nth clause 2)
+        skill (nth clause 4)
+        brief (nth clause 6))
+    (template (->role :name (unquote (role-name-symbol name))
+                      :agent (str (unquote agent))
+                      :skill (str (unquote skill))
+                      :brief (str (unquote brief))))))
+
+(defn check-role-clause (clause)
+  (cond
+    ((bool-not (list? clause)) (malformed-role-clause clause))
+    ((bool-not (value-eq (len clause) 7))
+     (malformed-role-clause clause))
+    ((bool-not (symbol? (first clause)))
+     (malformed-role-clause clause))
+    ((bool-not (key-named? (nth clause 1) "agent"))
+     (malformed-role-clause clause))
+    ((bool-not (key-named? (nth clause 3) "skill"))
+     (malformed-role-clause clause))
+    ((bool-not (key-named? (nth clause 5) "brief"))
+     (malformed-role-clause clause))
+    (else (do))))
+
+(defn key-named? (part name)
+  (if (keyword? part)
+    (value-eq (keyword-name part) name)
+    false))
+
+(defn malformed-role-clause (clause)
+  (fail "a role clause is `(name :agent ... :skill ... :brief ...)`"
+    clause
+    "write the role name, then `:agent`, `:skill` and `:brief`, each before its value"))
+
+(defn role-name-symbol (name)
+  (symbol (quote role-name) "role-name/" (symbol-name name)))

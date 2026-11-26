@@ -1,0 +1,85 @@
+(module
+  "Defines deffactory, the form a factory file holds.")
+
+(use code bool-not empty? fail first keyword-name keyword?
+          list? nth rest string symbol symbol-name symbol?
+          value-eq)
+
+(use factory/json factory->json)
+(use factory/roles roles)
+(use factory/types ->factory merge-method)
+(use prelude/macros header-shape template)
+
+(export deffactory)
+
+(defmacro deffactory (name parts ...)
+  "Defines `factory-value` and `factory-json` from a factory definition, as in
+  `(deffactory acme :manager \"manager\" :roadmap \"roadmap\" :max-active 1
+     :merge gh-auto (roles (worker ...)))`."
+  (template (do
+              (export (unquote (symbol name "factory-json"))
+                      (unquote (symbol name "factory-value")))
+              (def (unquote (symbol name "factory-value"))
+                (->factory :schema 0
+                           :name (str (unquote (symbol-name name)))
+                           :manager (str (unquote (setting parts "manager")))
+                           :roadmap (str (unquote (setting parts "roadmap")))
+                           :max-active (unquote (setting parts "max-active"))
+                           :merge (unquote (merge->symbol (setting parts
+                                                                   "merge")))
+                           :roles (unquote (roles-form parts))))
+              (defn (unquote (symbol name "factory-json")) ()
+                (factory->json (unquote (symbol name "factory-value")))))))
+
+(defn setting (parts key)
+  (cond
+    ((empty? parts) (missing-setting parts key))
+    ((setting-key? (first parts) key) (setting-value parts key))
+    ((keyword? (first parts)) (setting (rest (rest parts)) key))
+    (else (setting (rest parts) key))))
+
+(defn setting-key? (part key)
+  (if (keyword? part)
+    (value-eq (keyword-name part) key)
+    false))
+
+(defn setting-value (parts key)
+  (cond
+    ((empty? (rest parts)) (missing-setting parts key))
+    ((keyword? (nth parts 1)) (missing-setting parts key))
+    (else (nth parts 1))))
+
+(defn missing-setting (parts key)
+  (fail (string "deffactory needs `:" key "`")
+    parts
+    (string "write `:" key " value` after the factory name")))
+
+(defn roles-form (parts)
+  (cond
+    ((empty? parts) (missing-roles parts))
+    ((list? (first parts)) (role-vector-form (first parts)))
+    (else (roles-form (rest parts)))))
+
+(defn missing-roles (parts)
+  (fail "deffactory needs a `roles` form"
+    parts
+    "write `(roles (worker ...) (reviewer ...))` after the settings"))
+
+(defn role-vector-form (form)
+  (if (named? form "roles")
+    (template (roles (splice (rest form))))
+    (fail "deffactory needs a `roles` form"
+      form
+      "write `(roles (worker ...) (reviewer ...))` after the settings")))
+
+(defn named? (form word)
+  (and (bool-not (empty? form))
+       (symbol? (first form))
+       (value-eq (symbol-name (first form)) word)))
+
+(defn merge->symbol (merge)
+  (symbol (quote merge-method)
+          "merge-method/"
+          (symbol-name merge)))
+
+(header-shape (deffactory name))

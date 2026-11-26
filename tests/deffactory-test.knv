@@ -1,0 +1,35 @@
+(use fixtures/factory-fixture prepare-factory)
+(use synth synth-factory)
+
+(deftest deffactory-writes-the-factory-json
+  (let (directory (str "target/knave/test-factories/deffactory-sample"))
+    (unwrap-ok (prepare-factory directory
+                                (str
+                                  "(deffactory sample\n"
+                                  "  :manager \"sample-manager\"\n"
+                                  "  :roadmap \"sample-roadmap\"\n"
+                                  "  :max-active 2\n"
+                                  "  :merge gh-auto\n"
+                                  "  (roles (worker :agent \"sample-worker\"\n"
+                                  "                  :skill \"sample:worker-skill\"\n"
+                                  "                  :brief \"sample/briefs/worker.md\")\n"
+                                  "          (reviewer :agent \"sample-reviewer\"\n"
+                                  "                    :skill \"sample:reviewer-skill\"\n"
+                                  "                    :brief \"sample/briefs/reviewer.md\")))\n")))
+    (unwrap-ok (synth-factory (as-str directory)))
+    (assert (= (unwrap-ok (slurp (as-str (str directory "/factory.json"))))
+               (str "{\n" "  \"schema\": 0,\n"
+                    "  \"name\": \"sample\",\n"
+                    "  \"manager\": \"sample-manager\",\n"
+                    "  \"roadmap\": \"sample-roadmap\",\n"
+                    "  \"max_active\": 2,\n"
+                    "  \"merge\": \"gh-auto\",\n"
+                    "  \"roles\": {\n" "    \"worker\": {\n"
+                    "      \"agent\": \"sample-worker\",\n"
+                    "      \"skill\": \"sample:worker-skill\",\n"
+                    "      \"brief\": \"sample/briefs/worker.md\"\n"
+                    "    },\n" "    \"reviewer\": {\n"
+                    "      \"agent\": \"sample-reviewer\",\n"
+                    "      \"skill\": \"sample:reviewer-skill\",\n"
+                    "      \"brief\": \"sample/briefs/reviewer.md\"\n"
+                    "    }\n" "  }\n" "}\n")))))

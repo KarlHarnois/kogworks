@@ -3,9 +3,37 @@
 
 (deftest fake-factory-becomes-json
   (assert (= (factory->json fake-factory)
-             (str "{\"schema\":0,\"name\":\"fake\",\"manager\":\"fake-manager\",\"roadmap\":\"fake-roadmap\",\"max_active\":1,\"merge\":\"gh-auto\",\"roles\":{\"worker\":{\"agent\":\"fake-worker-agent\",\"skill\":\"fake:worker-skill\",\"brief\":\"fake/briefs/worker.md\"},\"reviewer\":{\"agent\":\"fake-reviewer-agent\",\"skill\":\"fake:reviewer-skill\",\"brief\":\"fake/briefs/reviewer.md\"}}}"))))
+             (str "{\n" "  \"schema\": 0,\n"
+                  "  \"name\": \"fake\",\n"
+                  "  \"manager\": \"fake-manager\",\n"
+                  "  \"roadmap\": \"fake-roadmap\",\n"
+                  "  \"max_active\": 1,\n"
+                  "  \"merge\": \"gh-auto\",\n"
+                  "  \"roles\": {\n" "    \"worker\": {\n"
+                  "      \"agent\": \"fake-worker-agent\",\n"
+                  "      \"skill\": \"fake:worker-skill\",\n"
+                  "      \"brief\": \"fake/briefs/worker.md\"\n"
+                  "    },\n" "    \"reviewer\": {\n"
+                  "      \"agent\": \"fake-reviewer-agent\",\n"
+                  "      \"skill\": \"fake:reviewer-skill\",\n"
+                  "      \"brief\": \"fake/briefs/reviewer.md\"\n"
+                  "    }\n" "  }\n" "}\n"))))
 
 (deftest text-with-json-escapes-is-escaped
   (assert (= (factory->json (assoc (clone fake-factory)
                                    :name (str "a\"b\\c\nd")))
-             (str "{\"schema\":0,\"name\":\"a\\\"b\\\\c\\nd\",\"manager\":\"fake-manager\",\"roadmap\":\"fake-roadmap\",\"max_active\":1,\"merge\":\"gh-auto\",\"roles\":{\"worker\":{\"agent\":\"fake-worker-agent\",\"skill\":\"fake:worker-skill\",\"brief\":\"fake/briefs/worker.md\"},\"reviewer\":{\"agent\":\"fake-reviewer-agent\",\"skill\":\"fake:reviewer-skill\",\"brief\":\"fake/briefs/reviewer.md\"}}}"))))
+             (str "{\n" "  \"schema\": 0,\n"
+                  "  \"name\": \"a\\\"b\\\\c\\nd\",\n"
+                  "  \"manager\": \"fake-manager\",\n"
+                  "  \"roadmap\": \"fake-roadmap\",\n"
+                  "  \"max_active\": 1,\n"
+                  "  \"merge\": \"gh-auto\",\n"
+                  "  \"roles\": {\n" "    \"worker\": {\n"
+                  "      \"agent\": \"fake-worker-agent\",\n"
+                  "      \"skill\": \"fake:worker-skill\",\n"
+                  "      \"brief\": \"fake/briefs/worker.md\"\n"
+                  "    },\n" "    \"reviewer\": {\n"
+                  "      \"agent\": \"fake-reviewer-agent\",\n"
+                  "      \"skill\": \"fake:reviewer-skill\",\n"
+                  "      \"brief\": \"fake/briefs/reviewer.md\"\n"
+                  "    }\n" "  }\n" "}\n"))))
