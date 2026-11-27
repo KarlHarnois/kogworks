@@ -6,8 +6,8 @@
 (use fixtures/fake-factory fake-factory)
 
 (export ->fake-settings absolute-path default-settings
-        exit-code fake-settings make-directory prepare-repo
-        read-text reset-directory run-controller stderr-text
+        exit-code fake-settings make-dir prepare-repo
+        read-text reset-dir run-controller stderr-text
         stdout-text write-fakes write-text)
 
 (def controller-factory
@@ -39,11 +39,11 @@
   (rust "std::fs::read_to_string({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result string string))))
 
-(def make-directory
+(def make-dir
   (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result unit string))))
 
-(def reset-directory
+(def reset-dir
   (rust "{{
     match std::fs::remove_dir_all({0}) {{
       Ok(_) => Ok(()),
@@ -269,8 +269,8 @@
   (fn ((ref str)) (result unit string)))
 
 (defn prepare-repo (root)
-  (let-try (_ (reset-directory root))
-    (let-try (_ (make-directory (as-str (str root "/repo/.kogworks/briefs"))))
+  (let-try (_ (reset-dir root))
+    (let-try (_ (make-dir (as-str (str root "/repo/.kogworks/briefs"))))
       (let-try (_ (write-text (as-str (str root "/repo/.kogworks/factory.json"))
                               (as-str (factory->json controller-factory))))
         (let-try (_ (write-text (as-str
@@ -280,7 +280,7 @@
                       (as-str reviewer-brief)))))))
 
 (defn write-fakes (root settings)
-  (let-try (_ (make-directory (as-str (str root "/bin"))))
+  (let-try (_ (make-dir (as-str (str root "/bin"))))
     (let-try (_ (write-value-files root settings))
       (let-try (_ (write-script (str root "/bin/rmap")
                                 (replaced-script rmap-script settings)))

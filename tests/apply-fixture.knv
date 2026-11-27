@@ -10,10 +10,9 @@
 (export ->fake-rmap exit-code export-document factory-json
         prepare-real-repo prepare-repo
         prepare-repo-without-factory recorded-command
-        recorded-directory repo-directory rmap-call-count
-        rmap-path roadmap-max-active run-apply stderr-text
-        stdout-text stored-max-active
-        write-unreadable-factory)
+        recorded-dir repo-dir rmap-call-count rmap-path
+        roadmap-max-active run-apply stderr-text stdout-text
+        stored-max-active write-unreadable-factory)
 
 (def factory-json
   (str "{\"schema\": 0,\n" " \"name\": \"apply-fixture\",\n"
@@ -22,7 +21,7 @@
        " \"max_active\": 3,\n" " \"merge\": \"gh-auto\",\n"
        " \"roles\": {}}\n"))
 
-(def reset-directory
+(def reset-dir
   (rust "{{
     match std::fs::remove_dir_all({0}) {{
       Ok(_) => Ok(()),
@@ -32,7 +31,7 @@
   }}"
     (fn ((ref str)) (result unit string))))
 
-(def make-directory
+(def make-dir
   (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result unit string))))
 
@@ -69,7 +68,7 @@
   (str "#!/bin/sh\n"
        "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
        "printf '%s\n' \"$*\" >> \"$root/rmap-commands\"\n"
-       "printf '%s' \"$(pwd -P)\" > \"$root/rmap-directory\"\n"
+       "printf '%s' \"$(pwd -P)\" > \"$root/rmap-dir\"\n"
        "if [ [CODE] -eq 0 ] && [ \"$1 $2\" = \"roadmap set\" ]; then\n"
        "  printf '%s' \"$5\" > \"$root/stored-max-active\"\n"
        "fi\n" "printf '%s' '[STDOUT]'\n"
@@ -135,9 +134,9 @@
   (fn ((ref str)) (result unit string)))
 
 (defn prepare-repo-without-factory (root)
-  (let-try (_ (reset-directory root))
-    (let-try (_ (make-directory (as-str (str root "/bin"))))
-      (make-directory (as-str (str root "/repo"))))))
+  (let-try (_ (reset-dir root))
+    (let-try (_ (make-dir (as-str (str root "/bin"))))
+      (make-dir (as-str (str root "/repo"))))))
 
 (type write-unreadable-factory
   (fn ((ref str)) (result unit string)))
@@ -167,11 +166,11 @@
     ((some text) (len (collect (lines (as-str text)))))
     (none 0)))
 
-(type recorded-directory
+(type recorded-dir
   (fn ((ref str)) (option string)))
 
-(defn recorded-directory (root)
-  (read-option (as-str (str root "/rmap-directory"))))
+(defn recorded-dir (root)
+  (read-option (as-str (str root "/rmap-dir"))))
 
 (type stored-max-active
   (fn ((ref str)) (option string)))
@@ -179,10 +178,10 @@
 (defn stored-max-active (root)
   (read-option (as-str (str root "/stored-max-active"))))
 
-(type repo-directory
+(type repo-dir
   (fn ((ref str)) (result string string)))
 
-(defn repo-directory (root)
+(defn repo-dir (root)
   (canonical-path (as-str (str root "/repo"))))
 
 (type export-document
@@ -211,9 +210,9 @@
   (fn ((ref str)) (result unit string)))
 
 (defn prepare-directories (root)
-  (let-try (_ (reset-directory root))
-    (let-try (_ (make-directory (as-str (str root "/repo/.kogworks"))))
-      (make-directory (as-str (str root "/bin"))))))
+  (let-try (_ (reset-dir root))
+    (let-try (_ (make-dir (as-str (str root "/repo/.kogworks"))))
+      (make-dir (as-str (str root "/bin"))))))
 
 (type write-factory
   (fn ((ref str) (ref str))

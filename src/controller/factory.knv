@@ -59,8 +59,8 @@
   (fn ((ref str)) string))
 
 (defn factory-path (repo)
-  (let (directory (join-path repo ".kogworks"))
-    (join-path (as-str directory) "factory.json")))
+  (let (dir (join-path repo ".kogworks"))
+    (join-path (as-str dir) "factory.json")))
 
 (type document-from-file
   (fn ((ref string))

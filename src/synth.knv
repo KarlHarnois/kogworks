@@ -90,20 +90,19 @@
 (defn factory-format-module-text (factory-text)
   (str deffactory-format-import factory-text))
 
-(defn factory-format-module (directory)
-  (factory-module-in directory
-                     factory-module-layout/separated))
+(defn factory-format-module (dir)
+  (factory-module-in dir factory-module-layout/separated))
 
-(defn synth-factory (directory)
-  (let (factory-file (join-path directory "factory.knv")
-        module-text (try (factory-module directory))
+(defn synth-factory (dir)
+  (let (factory-file (join-path dir "factory.knv")
+        module-text (try (factory-module dir))
         json (try (eval-factory-json (as-str factory-file)
                                      (as-str module-text)))
-        filepath (join-path directory "factory.json"))
-    (write-factory-json (as-str filepath) (as-str json))))
+        json-path (join-path dir "factory.json"))
+    (write-factory-json (as-str json-path) (as-str json))))
 
-(defn factory-module (directory)
-  (factory-module-in directory factory-module-layout/inline))
+(defn factory-module (dir)
+  (factory-module-in dir factory-module-layout/inline))
 
 (defn eval-factory-json (factory-file module-text)
   (match (run-knave-eval factory-file module-text)
@@ -123,8 +122,8 @@
     ((err reason)
      (err (synth-error/unwritable-factory-json (str json-file) reason)))))
 
-(defn factory-module-in (directory layout)
-  (let (factory-file (join-path directory "factory.knv"))
+(defn factory-module-in (dir layout)
+  (let (factory-file (join-path dir "factory.knv"))
     (if (holds-file? (as-str factory-file))
       (factory-file->module (as-str factory-file) layout)
       (err (synth-error/missing-factory (str factory-file))))))

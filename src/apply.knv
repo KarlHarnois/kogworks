@@ -27,7 +27,7 @@
   (unreadable-repository string string))
 
 (defstruct apply-target
-  :directory string
+  :dir string
   :cap roadmap-cap)
 
 (type apply-and-exit
@@ -68,9 +68,9 @@
     (result apply-target apply-error)))
 
 (defn read-target (repo)
-  (let-try (directory (absolute-repo repo))
-    (let-try (cap (read-cap (as-str directory)))
-      (ok (->apply-target :directory directory :cap cap)))))
+  (let-try (dir (absolute-repo repo))
+    (let-try (cap (read-cap (as-str dir)))
+      (ok (->apply-target :dir dir :cap cap)))))
 
 (type absolute-repo
   (fn ((ref str))
@@ -147,7 +147,7 @@
   (fn ((ref apply-target)) unit))
 
 (defn apply-cap (target)
-  (let (outcome (execute (:directory target)
+  (let (outcome (execute (:dir target)
                          (set-command (:cap target))))
     (print (as-str (:stdout outcome)))
     (eprint (as-str (:stderr outcome)))

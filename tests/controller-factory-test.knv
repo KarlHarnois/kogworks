@@ -3,8 +3,8 @@
 (use controller/failure factory-error
                         factory-error->message)
 
-(use fixtures/controller-fixture prepare-repo
-                                 reset-directory write-text)
+(use fixtures/controller-fixture prepare-repo reset-dir
+                                 write-text)
 
 (deftest read-factory-reads-the-manager-roadmap-and-roles
   (let (root (str "target/knave/controller-tests/factory-read"))
@@ -30,7 +30,7 @@
 
 (deftest read-factory-reports-a-missing-factory
   (let (root (str "target/knave/controller-tests/factory-missing"))
-    (unwrap-ok (reset-directory (as-str root)))
+    (unwrap-ok (reset-dir (as-str root)))
     (match (read-factory (as-str (str root "/repo")))
       ((err (missing-factory path))
        (assert (contains? path "factory.json")))

@@ -58,10 +58,10 @@
 (type execute
   (fn ((ref str) (ref command)) outcome))
 
-(defn execute (directory command)
+(defn execute (dir command)
   (match (run (as-str (:program command))
               (:arguments command)
-              directory)
+              dir)
     ((ok output)
      (->outcome :code (exit-code output)
                 :stdout (stdout-text output)

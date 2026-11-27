@@ -7,8 +7,8 @@
 (use apply-fixture ->fake-rmap exit-code export-document
                    factory-json prepare-real-repo
                    prepare-repo prepare-repo-without-factory
-                   recorded-command recorded-directory
-                   repo-directory rmap-call-count rmap-path
+                   recorded-command recorded-dir repo-dir
+                   rmap-call-count rmap-path
                    roadmap-max-active run-apply stderr-text
                    stdout-text stored-max-active
                    write-unreadable-factory)
@@ -108,8 +108,8 @@
       (assert (empty? (stderr-text outcome)))
       (assert (= (recorded-command (as-str root))
                  (some (str "roadmap set factory-mvp --max-active 5"))))
-      (assert (= (recorded-directory (as-str root))
-                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (recorded-dir (as-str root))
+                 (some (unwrap-ok (repo-dir (as-str root))))))
       (assert (= (stored-max-active (as-str root))
                  (some (str "5"))))
       (assert (= (rmap-call-count (as-str root)) 1)))))
@@ -129,8 +129,8 @@
                  (str "error: no roadmap is named missing-roadmap (roadmap-not-found)")))
       (assert (= (recorded-command (as-str root))
                  (some (str "roadmap set missing-roadmap --max-active 4"))))
-      (assert (= (recorded-directory (as-str root))
-                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (recorded-dir (as-str root))
+                 (some (unwrap-ok (repo-dir (as-str root))))))
       (assert (= (stored-max-active (as-str root)) none))
       (assert (= (rmap-call-count (as-str root)) 1)))))
 
