@@ -94,10 +94,6 @@
   (factory-module-in directory
                      factory-module-layout/separated))
 
-(type synth-factory
-  (fn ((ref str))
-    (result string synth-error)))
-
 (defn synth-factory (directory)
   (let (factory-file (join-path directory "factory.knv"))
     (let-try (module-text (factory-module directory))
@@ -106,16 +102,8 @@
         (write-factory-json (as-str (join-path directory "factory.json"))
                             (as-str json))))))
 
-(type factory-module
-  (fn ((ref str))
-    (result string synth-error)))
-
 (defn factory-module (directory)
   (factory-module-in directory factory-module-layout/inline))
-
-(type eval-factory-json
-  (fn ((ref str) (ref str))
-    (result string synth-error)))
 
 (defn eval-factory-json (factory-file module-text)
   (match (run-knave-eval factory-file module-text)
@@ -123,19 +111,11 @@
     ((err reason)
      (err (synth-error/factory-eval-failed (str factory-file) reason)))))
 
-(type checked-factory-json
-  (fn ((ref str) (ref process-output))
-    (result string synth-error)))
-
 (defn checked-factory-json (factory-file output)
   (match (succeeded? output)
     (true (ok (output-text output)))
     (false (err (synth-error/factory-eval-failed (str factory-file)
                                                  (output-failure output))))))
-
-(type write-factory-json
-  (fn ((ref str) (ref str))
-    (result string synth-error)))
 
 (defn write-factory-json (json-file json)
   (match (write-text json-file json)
@@ -143,19 +123,11 @@
     ((err reason)
      (err (synth-error/unwritable-factory-json (str json-file) reason)))))
 
-(type factory-module-in
-  (fn ((ref str) factory-module-layout)
-    (result string synth-error)))
-
 (defn factory-module-in (directory layout)
   (let (factory-file (join-path directory "factory.knv"))
     (if (holds-file? (as-str factory-file))
       (factory-file->module (as-str factory-file) layout)
       (err (synth-error/missing-factory (str factory-file))))))
-
-(type factory-file->module
-  (fn ((ref str) factory-module-layout)
-    (result string synth-error)))
 
 (defn factory-file->module (factory-file layout)
   (match (read-text factory-file)
