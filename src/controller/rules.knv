@@ -157,10 +157,10 @@
     (result next-line string)))
 
 (defn parse-next-line (value)
-  (let-try (item (required-text value "item"))
-    (let-try (action-values (required-array value "actions"))
-      (let-try (actions (parse-next-actions action-values))
-        (ok (->next-line :item item :actions actions))))))
+  (let-try (item (required-text value "item")
+            action-values (required-array value "actions")
+            actions (parse-next-actions action-values))
+    (ok (->next-line :item item :actions actions))))
 
 (type required-array
   (fn ((ref json) (ref str))
@@ -214,10 +214,10 @@
     (result next-action string)))
 
 (defn parse-next-action (value)
-  (let-try (text (required-text value "action"))
-    (let-try (actor-value (optional-actor value))
-      (ok (->next-action :kind (action-kind-of text)
-                         :actor actor-value)))))
+  (let-try (text (required-text value "action")
+            actor-value (optional-actor value))
+    (ok (->next-action :kind (action-kind-of text)
+                       :actor actor-value))))
 
 (defn action-kind-of (text)
   (cond
@@ -332,9 +332,9 @@
     (result ready-item string)))
 
 (defn parse-ready-item (value)
-  (let-try (id (required-text value "id"))
-    (let-try (kind-text (required-text value "kind"))
-      (ok (->ready-item :id id :kind (item-kind-of kind-text))))))
+  (let-try (id (required-text value "id")
+            kind-text (required-text value "kind"))
+    (ok (->ready-item :id id :kind (item-kind-of kind-text)))))
 
 (defn item-kind-of (text)
   (cond

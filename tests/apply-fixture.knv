@@ -113,30 +113,30 @@
     (result unit string)))
 
 (defn prepare-repo (root factory-text settings)
-  (let-try (_ (prepare-directories root))
-    (let-try (_ (write-factory root factory-text))
-      (write-fake-rmap root settings))))
+  (let-try (_ (prepare-directories root)
+            _ (write-factory root factory-text))
+    (write-fake-rmap root settings)))
 
 (type prepare-real-repo
   (fn ((ref str) (ref str) (ref str))
     (result unit string)))
 
 (defn prepare-real-repo (root factory-text roadmap)
-  (let-try (_ (prepare-directories root))
-    (let-try (_ (write-factory root factory-text))
-      (let-try (_ (run-in root "git"
-                          (vec (str "init") (str "-q"))
-                          "git init"))
-        (let-try (_ (run-in root "rmap" (vec (str "init")) "rmap init"))
-          (rmap-new root roadmap))))))
+  (let-try (_ (prepare-directories root)
+            _ (write-factory root factory-text)
+            _ (run-in root "git"
+                      (vec (str "init") (str "-q"))
+                      "git init")
+            _ (run-in root "rmap" (vec (str "init")) "rmap init"))
+    (rmap-new root roadmap)))
 
 (type prepare-repo-without-factory
   (fn ((ref str)) (result unit string)))
 
 (defn prepare-repo-without-factory (root)
-  (let-try (_ (reset-dir root))
-    (let-try (_ (make-dir (as-str (str root "/bin"))))
-      (make-dir (as-str (str root "/repo"))))))
+  (let-try (_ (reset-dir root)
+            _ (make-dir (as-str (str root "/bin"))))
+    (make-dir (as-str (str root "/repo")))))
 
 (type write-unreadable-factory
   (fn ((ref str)) (result unit string)))
@@ -210,9 +210,9 @@
   (fn ((ref str)) (result unit string)))
 
 (defn prepare-directories (root)
-  (let-try (_ (reset-dir root))
-    (let-try (_ (make-dir (as-str (str root "/repo/.kogworks"))))
-      (make-dir (as-str (str root "/bin"))))))
+  (let-try (_ (reset-dir root)
+            _ (make-dir (as-str (str root "/repo/.kogworks"))))
+    (make-dir (as-str (str root "/bin")))))
 
 (type write-factory
   (fn ((ref str) (ref str))

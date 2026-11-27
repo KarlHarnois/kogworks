@@ -64,9 +64,9 @@
     (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
 
 (defn read-target (repo)
-  (let-try (dir (absolute-repo repo))
-    (let-try (cap (read-cap (as-str dir)))
-      (ok (->apply-target :dir dir :cap cap)))))
+  (let-try (dir (absolute-repo repo)
+            cap (read-cap (as-str dir)))
+    (ok (->apply-target :dir dir :cap cap))))
 
 (type absolute-repo
   (fn ((ref str))

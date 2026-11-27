@@ -67,12 +67,12 @@
     (result json json-error)))
 
 (defn parse-json (text)
-  (let (characters (collect (chars text)))
-    (let-try (found (parse-value (ref characters) 0))
-      (let (end (skip-space (ref characters) (:position found)))
-        (if (= end (len characters))
-          (ok (clone (:value found)))
-          (err (json-error/trailing-input end)))))))
+  (let (characters (collect (chars text))
+        found (try (parse-value (ref characters) 0))
+        end (skip-space (ref characters) (:position found)))
+    (if (= end (len characters))
+      (ok (clone (:value found)))
+      (err (json-error/trailing-input end)))))
 
 (type json-field
   (fn ((ref json) (ref str))

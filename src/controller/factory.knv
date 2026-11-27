@@ -92,20 +92,18 @@
     (result factory-config factory-error)))
 
 (defn config-from-json (document)
-  (let-try (manager (factory-text document "manager" "manager"))
-    (let-try (roadmap (factory-text document "roadmap" "roadmap"))
-      (let-try (merge-text (factory-text document "merge" "merge"))
-        (let-try (merge (merge-method-of merge-text))
-          (let-try (roles (factory-object document "roles" "roles"))
-            (let-try (worker (required-role roles "worker" "roles.worker"))
-              (let-try (reviewer (required-role roles
-                                                "reviewer"
-                                                "roles.reviewer"))
-                (ok (->factory-config :manager manager
-                                      :roadmap roadmap
-                                      :merge merge
-                                      :worker worker
-                                      :reviewer reviewer))))))))))
+  (let-try (manager (factory-text document "manager" "manager")
+            roadmap (factory-text document "roadmap" "roadmap")
+            merge-text (factory-text document "merge" "merge")
+            merge (merge-method-of merge-text)
+            roles (factory-object document "roles" "roles")
+            worker (required-role roles "worker" "roles.worker")
+            reviewer (required-role roles "reviewer" "roles.reviewer"))
+    (ok (->factory-config :manager manager
+                          :roadmap roadmap
+                          :merge merge
+                          :worker worker
+                          :reviewer reviewer))))
 
 (type merge-method-of
   (fn ((ref string))
@@ -121,12 +119,11 @@
     (result role factory-error)))
 
 (defn required-role (roles name path)
-  (let-try (value (factory-object roles name path))
-    (let-try (agent (factory-text value "agent" (as-str (str path ".agent"))))
-      (let-try (skill (factory-text value "skill" (as-str (str path ".skill"))))
-        (let-try (brief (factory-text value "brief"
-                                      (as-str (str path ".brief"))))
-          (ok (->role :agent agent :skill skill :brief brief)))))))
+  (let-try (value (factory-object roles name path)
+            agent (factory-text value "agent" (as-str (str path ".agent")))
+            skill (factory-text value "skill" (as-str (str path ".skill")))
+            brief (factory-text value "brief" (as-str (str path ".brief"))))
+    (ok (->role :agent agent :skill skill :brief brief))))
 
 (type factory-text
   (fn ((ref json) (ref str) (ref str))
