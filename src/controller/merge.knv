@@ -13,7 +13,7 @@
 (use controller/merge-commands advance-command
                                auto-merge-command
                                close-command merge-command
-                               repo-view-command
+                               merge-mode repo-view-command
                                required-checks-command
                                show-command view-command)
 
@@ -23,6 +23,9 @@
                         outcome successful?)
 
 (export ->merge-settings merge-settings start-merge)
+
+(def clean-status-message
+  (str "Pull request is in clean status"))
 
 (defstruct merge-settings
   :poll-seconds int
@@ -275,11 +278,48 @@
     (result unit controller-error)))
 
 (defn enable-auto-merge (repo config settings item target)
-  (let (command (merge-command (:merge config) target))
+  (let (command (merge-command (:merge config) merge-mode/auto target))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (poll-merge repo item target settings)
+        (handle-merge-failure repo config settings item
+                              target command outcome)))))
+
+(type handle-merge-failure
+  (fn ((ref str)
+       (ref factory-config)
+       (ref merge-settings)
+       (ref string)
+       (ref merge-target)
+       (ref command)
+       (ref outcome))
+    (result unit controller-error)))
+
+(defn handle-merge-failure (repo config settings item target command outcome)
+  (if (clean-status-refusal? outcome)
+    (merge-directly repo config settings item target)
+    (err (merge-command-failure item command outcome))))
+
+(type merge-directly
+  (fn ((ref str)
+       (ref factory-config)
+       (ref merge-settings)
+       (ref string)
+       (ref merge-target))
+    (result unit controller-error)))
+
+(defn merge-directly (repo config settings item target)
+  (let (command (merge-command (:merge config) merge-mode/direct target))
     (let (outcome (execute repo command))
       (if (successful? outcome)
         (poll-merge repo item target settings)
         (err (merge-command-failure item command outcome))))))
+
+(type clean-status-refusal?
+  (fn ((ref outcome)) bool))
+
+(defn clean-status-refusal? (outcome)
+  (contains? (:stderr outcome) (as-str clean-status-message)))
 
 (type poll-merge
   (fn ((ref str)

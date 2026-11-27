@@ -158,10 +158,16 @@
        "      printf '%s\\n' '[API_ERROR]' >&2\n"
        "      exit [API_EXIT]\n" "    fi\n"
        "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
-       "  \"pr merge\")\n"
-       "    if [ [MERGE_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[MERGE_ERROR]' >&2\n"
-       "      exit [MERGE_EXIT]\n" "    fi\n" "    ;;\n"
+       "  \"pr merge\")\n" "    case \" $* \" in\n"
+       "      *\" --auto \"*)\n"
+       "        if [ [MERGE_EXIT] -ne 0 ]; then\n"
+       "          printf '%s\\n' '[MERGE_ERROR]' >&2\n"
+       "          exit [MERGE_EXIT]\n" "        fi\n"
+       "        ;;\n" "      *)\n"
+       "        if [ [DIRECT_MERGE_EXIT] -ne 0 ]; then\n"
+       "          printf '%s\\n' '[DIRECT_MERGE_ERROR]' >&2\n"
+       "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
+       "        ;;\n" "    esac\n" "    ;;\n"
        "  \"pr view\")\n" "    views=0\n"
        "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
        "    views=$((views + 1))\n"
@@ -220,6 +226,8 @@
   :new-error string
   :merge-exit int
   :merge-error string
+  :direct-merge-exit int
+  :direct-merge-error string
   :close-exit int
   :close-error string
   :repo-view-exit int
@@ -251,6 +259,8 @@
                    :new-error (str)
                    :merge-exit 0
                    :merge-error (str)
+                   :direct-merge-exit 0
+                   :direct-merge-error (str)
                    :close-exit 0
                    :close-error (str)
                    :repo-view-exit 0
@@ -314,6 +324,10 @@
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")
                      (clone (:merge-error settings)))
+      (replace-token (str "[DIRECT_MERGE_EXIT]")
+                     (str (:direct-merge-exit settings)))
+      (replace-token (str "[DIRECT_MERGE_ERROR]")
+                     (clone (:direct-merge-error settings)))
       (replace-token (str "[CLOSE_EXIT]")
                      (str (:close-exit settings)))
       (replace-token (str "[CLOSE_ERROR]")
