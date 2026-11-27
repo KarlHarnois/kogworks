@@ -59,13 +59,9 @@
     (result roadmap-cap apply-error)))
 
 (defn cap-from-document (document)
-  (let-try (roadmap (required-text document "roadmap" "roadmap"))
-    (let-try (max-active (required-number document "max_active" "max_active"))
-      (ok (->roadmap-cap :roadmap roadmap :max-active max-active)))))
-
-(type read-target
-  (fn ((ref str))
-    (result apply-target apply-error)))
+  (let-try (roadmap (required-text document "roadmap" "roadmap")
+            max-active (required-number document "max_active" "max_active"))
+    (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
 
 (defn read-target (repo)
   (let-try (dir (absolute-repo repo))
