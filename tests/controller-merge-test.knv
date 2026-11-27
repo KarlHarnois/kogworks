@@ -59,6 +59,10 @@
   (str "failed to enable auto-merge: Pull request is in clean status"
        " (enablePullRequestAutoMerge)"))
 
+(def already-disarmed-error
+  (str "failed to disable auto-merge: Pull request is not in auto merge state"
+       " (disablePullRequestAutoMerge)"))
+
 (def network-error
   (str "Post \"https://api.github.com/graphql\":"
        " net/http: TLS handshake timeout"))
@@ -410,6 +414,23 @@
                         approved-head))))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
+(deftest keeps-the-intended-message-when-auto-merge-is-already-off
+  (let (root (unwrap-ok (setup "merge-disarm-already-off"
+                               (assoc (merge-settings)
+                                      :item-later-json (clone fixing-item-json)
+                                      :disarm-exit 1
+                                      :disarm-error (clone already-disarmed-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface) (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": the item is fixing, so auto-merge on PR "
+                                        merge-pr
+                                        " is disarmed"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
 (deftest disarms-when-the-item-returns-to-fixing
   (let (root (unwrap-ok (setup "merge-fixing"
                                (assoc (merge-settings)
@@ -452,13 +473,13 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (next-line)
-                        (show-line)
-                        (disarm-line))
-                   (str "merge: " merge-item ": PR "
-                        merge-pr " head " approved-head
-                        " has no approving review"))))
+                 (refusal-sequence (str (next-line)
+                                        (show-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": PR " merge-pr
+                                        " is not approved at head "
+                                        approved-head))))
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (not (contains? (sequence-text root) "--auto"))))))
 

@@ -1,35 +1,34 @@
 (module
   "Merges an approved pull request through GitHub auto-merge and closes its item.")
 
-(use controller/failure ->action-failure controller-error
-                        merge-error)
-
+(use controller/failure controller-error merge-error)
 (use controller/factory factory-config)
-
-(use controller/fields field-error->message required-bool
-                       required-number required-object
-                       required-text)
 
 (use controller/json json-error->message json-field
                      json-text parse-json)
 
 (use controller/merge-commands advance-command
                                auto-merge-command
-                               close-command disarm-command
                                fixing-command merge-command
                                merge-mode
                                record-head-command
                                repo-view-command
                                required-checks-command
                                send-command show-command
-                               update-branch-command
-                               view-command)
+                               update-branch-command)
+
+(use controller/merge-poll disarm-and-stop item-fixing-error
+                           poll-merge read-poll-state)
 
 (use controller/merge-retry execute-github)
 
-(use controller/merge-target ->merge-target item-status-of
+(use controller/merge-target ->merge-settings
+                             invalid-item-output
                              merge-approval
-                             merge-item-status merge-target)
+                             merge-command-failure
+                             merge-item-status
+                             merge-settings merge-target
+                             read-merge-target)
 
 (use controller/process command command-detail execute
                         successful?)
@@ -38,20 +37,6 @@
 
 (def clean-status-message
   (str "Pull request is in clean status"))
-
-(defstruct merge-settings
-  :poll-seconds int
-  :retry-delay-seconds int
-  :timeout-seconds int)
-
-(defstruct merge-state
-  :state string
-  :head string)
-
-(defenum poll-verdict
-  merged
-  moved
-  waiting)
 
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
@@ -70,47 +55,6 @@
     (approved (prepare-merge repo config settings item target))
     (not-approved (disarm-and-stop repo settings item target
                                    (not-approved-error item target)))))
-
-(defn read-merge-target (repo item)
-  (let (command (show-command item))
-    (let (outcome (execute repo command))
-      (if (successful? outcome)
-        (parse-merge-target item command (:stdout outcome))
-        (err (merge-command-failure item command outcome))))))
-
-(defn parse-merge-target (item command text)
-  (match (parse-json (as-str text))
-    ((ok document) (target-from-json item command document))
-    ((err failure)
-     (err (invalid-item-output item command
-                               (json-error->message failure))))))
-
-(defn target-from-json (item command document)
-  (map-err (target-fields document)
-    (fn (failure)
-      (invalid-item-output item command
-                           (field-error->message failure)))))
-
-(defn target-fields (document)
-  (let-try (status (item-status-field document)
-            pull (required-object document "pull_request" "pull_request")
-            pr (required-number pull "number" "pull_request.number")
-            approved (required-bool pull "approved" "pull_request.approved")
-            approval (required-object pull "approval" "pull_request.approval")
-            head (required-text approval "head" "pull_request.approval.head"))
-    (ok (->merge-target :pull-request pr
-                        :head head
-                        :item-status status
-                        :approval (approval-of approved)))))
-
-(defn item-status-field (document)
-  (let-try (record (required-object document "item" "item")
-            status (required-text record "status" "item.status"))
-    (ok (item-status-of status))))
-
-(defn approval-of (approved)
-  (if approved
-    merge-approval/approved merge-approval/not-approved))
 
 (defn prepare-merge (repo config settings item target)
   (match (preflight repo settings item)
@@ -365,187 +309,11 @@
 (defn clean-status-refusal? (outcome)
   (contains? (:stderr outcome) (as-str clean-status-message)))
 
-(defn poll-merge (repo item target settings)
-  (let (start (now))
-    (poll-iteration repo item target settings start)))
-
-(defn poll-iteration (repo item target settings start)
-  (match (read-item-status repo item)
-    ((err failure)
-     (disarm-and-stop repo settings item target failure))
-    ((ok status)
-     (poll-after-status repo item target settings start status))))
-
-(defn poll-after-status (repo item target settings start status)
-  (match status
-    (fixing (disarm-and-stop repo settings item target
-                             (item-fixing-error item target)))
-    (_ (poll-pull-state repo item target settings start))))
-
-(defn poll-pull-state (repo item target settings start)
-  (match (read-poll-state repo settings item target)
-    ((err failure)
-     (disarm-and-stop repo settings item target failure))
-    ((ok state)
-     (handle-poll repo item target settings start state))))
-
-(defn read-item-status (repo item)
-  (let (command (show-command item))
-    (let (outcome (execute repo command))
-      (if (successful? outcome)
-        (parse-item-status item command (:stdout outcome))
-        (err (merge-command-failure item command outcome))))))
-
-(defn parse-item-status (item command text)
-  (match (parse-json (as-str text))
-    ((ok document)
-     (item-status-from-json item command document))
-    ((err failure)
-     (err (invalid-item-output item command
-                               (json-error->message failure))))))
-
-(defn item-status-from-json (item command document)
-  (map-err (item-status-field document)
-    (fn (failure)
-      (invalid-item-output item command
-                           (field-error->message failure)))))
-
-(defn read-poll-state (repo settings item target)
-  (let (command (view-command (:pull-request target)))
-    (let (outcome (execute-github repo command
-                                  (:retry-delay-seconds settings)))
-      (if (successful? outcome)
-        (parse-poll-state item command (:stdout outcome))
-        (err (merge-command-failure item command outcome))))))
-
-(defn parse-poll-state (item command text)
-  (match (parse-json (as-str text))
-    ((ok document) (state-from-json item command document))
-    ((err failure)
-     (err (invalid-poll-output item command
-                               (json-error->message failure))))))
-
-(defn state-from-json (item command document)
-  (match (required-text document "state" "state")
-    ((err failure)
-     (err (invalid-poll-output item command
-                               (field-error->message failure))))
-    ((ok state)
-     (poll-head-from-json item command document state))))
-
-(defn poll-head-from-json (item command document state)
-  (match (required-text document "headRefOid" "headRefOid")
-    ((err failure)
-     (err (invalid-poll-output item command
-                               (field-error->message failure))))
-    ((ok head)
-     (ok (->merge-state :state (clone state) :head head)))))
-
-(defn handle-poll (repo item target settings start state)
-  (match (poll-verdict-of target state)
-    (merged (close-item repo item))
-    (moved (disarm-and-stop repo settings item target
-                            (head-change-error item target state)))
-    (waiting (retry-poll repo item target settings start))))
-
-(defn poll-verdict-of (target state)
-  (if (= (:head state) (:head target))
-    (merged-verdict (:state state))
-    poll-verdict/moved))
-
-(defn merged-verdict (state)
-  (if (= (as-str state) (str "MERGED"))
-    poll-verdict/merged poll-verdict/waiting))
-
 (defn settings-refused-error (item detail)
   (controller-error/merge-failed (merge-error/settings-refused item detail)))
-
-(defn head-change-error (item target state)
-  (controller-error/merge-failed (merge-error/head-changed
-                                   (clone item)
-                                   (clone (:pull-request target))
-                                   (clone (:head target))
-                                   (clone (:head state)))))
-
-(defn item-fixing-error (item target)
-  (let (pull-request (clone (:pull-request target)))
-    (controller-error/merge-failed (merge-error/item-fixing (clone item)
-                                                            pull-request))))
 
 (defn not-approved-error (item target)
   (controller-error/merge-failed (merge-error/not-approved
                                    (clone item)
                                    (clone (:pull-request target))
                                    (clone (:head target)))))
-
-(defn disarm-and-stop (repo settings item target failure)
-  (match (disarm repo settings item target)
-    ((err disarm-failure) (err disarm-failure))
-    ((ok _) (err failure))))
-
-(defn disarm (repo settings item target)
-  (let (command (disarm-command (:pull-request target)))
-    (let (outcome (execute-github repo command
-                                  (:retry-delay-seconds settings)))
-      (if (successful? outcome)
-        (ok (do))
-        (err (merge-command-failure item command outcome))))))
-
-(defn retry-poll (repo item target settings start)
-  (if (elapsed? settings start)
-    (disarm-and-stop repo settings item target
-                     (timed-out-error item target settings))
-    (do
-      (sleep (seconds (:poll-seconds settings)))
-      (poll-iteration repo item target settings start))))
-
-(defn timed-out-error (item target settings)
-  (controller-error/merge-failed (merge-error/timed-out
-                                   (clone item)
-                                   (clone (:pull-request target))
-                                   (:timeout-seconds settings))))
-
-(defn elapsed? (settings start)
-  (>= (elapsed start)
-      (seconds (:timeout-seconds settings))))
-
-(defn close-item (repo item)
-  (let (command (close-command item))
-    (let (outcome (execute repo command))
-      (if (successful? outcome)
-        (ok (do))
-        (err (merge-command-failure item command outcome))))))
-
-(type invalid-item-output
-  (fn ((ref string) (ref command) string)
-    controller-error))
-
-(defn invalid-item-output (item command reason)
-  (invalid-output item command
-                  (str "invalid item JSON")
-                  reason))
-
-(type invalid-poll-output
-  (fn ((ref string) (ref command) string)
-    controller-error))
-
-(defn invalid-poll-output (item command reason)
-  (invalid-output item command
-                  (str "invalid poll JSON")
-                  reason))
-
-(defn invalid-output (item command description reason)
-  (controller-error/command-failed (->action-failure
-                                     :action (str "merge")
-                                     :item (clone item)
-                                     :command (clone (:label command))
-                                     :code 0
-                                     :detail (str description ": " reason))))
-
-(defn merge-command-failure (item command outcome)
-  (controller-error/command-failed (->action-failure
-                                     :action (str "merge")
-                                     :item (clone item)
-                                     :command (clone (:label command))
-                                     :code (:code outcome)
-                                     :detail (command-detail outcome))))

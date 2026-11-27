@@ -92,8 +92,8 @@
           ": the item is fixing, so auto-merge on PR "
           pull-request " is disarmed"))
     ((not-approved item pull-request head)
-     (str "merge: " item ": PR " pull-request " head " head
-          " has no approving review"))
+     (str "merge: " item ": PR " pull-request
+          " is not approved at head " head))
     ((timed-out item pull-request seconds)
      (str "merge: " item ": PR " pull-request
           " did not merge within " seconds " seconds"))))
