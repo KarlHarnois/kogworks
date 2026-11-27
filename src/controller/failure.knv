@@ -1,6 +1,8 @@
 (module
   "Names the failures the controller reports to its manager.")
 
+(use controller/fields field-error field-error->message)
+
 (export ->action-failure ->failure-report action-failure
         controller-error error->message factory-error
         factory-error->message failure-report merge-error
@@ -23,10 +25,7 @@
   (missing-factory string)
   (unreadable-factory string string)
   (malformed-factory string string)
-  (missing-field string)
-  (non-text-field string)
-  (non-object-field string)
-  (non-number-field string)
+  (field field-error)
   (unsupported-merge-method string))
 
 (defenum merge-error
@@ -73,13 +72,8 @@
      (str "cannot read " path ": " reason))
     ((malformed-factory path reason)
      (str "cannot parse " path ": " reason))
-    ((missing-field path) (str "the factory has no `" path "`"))
-    ((non-text-field path)
-     (str "the factory field `" path "` is not text"))
-    ((non-object-field path)
-     (str "the factory field `" path "` is not an object"))
-    ((non-number-field path)
-     (str "the factory field `" path "` is not a number"))
+    ((field cause)
+     (str "the factory field " (field-error->message cause)))
     ((unsupported-merge-method method)
      (str "the factory merge method `" method
           "` is not supported"))))

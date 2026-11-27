@@ -6,7 +6,7 @@
 (use controller/failure factory-error
                         factory-error->message)
 
-(use controller/json json json-field)
+(use controller/fields required-number required-text)
 
 (use controller/process ->command canonical-path command
                         execute)
@@ -20,9 +20,6 @@
 
 (defenum apply-error
   (factory factory-error)
-  (missing-field string)
-  (non-text-field string)
-  (non-number-field string)
   (invalid-max-active string (parse-error int))
   (unreadable-repo string string))
 
@@ -40,11 +37,6 @@
 (defn apply-error->message (failure)
   (match failure
     ((factory cause) (factory-error->message cause))
-    ((missing-field path) (str "the factory has no `" path "`"))
-    ((non-text-field path)
-     (str "the factory field `" path "` is not text"))
-    ((non-number-field path)
-     (str "the factory field `" path "` is not a number"))
     ((invalid-max-active path cause)
      (str "the factory field `" path
           "` is not a whole number: " cause))
@@ -52,8 +44,11 @@
      (str "cannot resolve the repository " path ": " reason))))
 
 (defn cap-from-document (document)
-  (let-try (roadmap (required-text document "roadmap" "roadmap")
-            max-active (required-number document "max_active" "max_active"))
+  (let-try (roadmap (factory-field (required-text document "roadmap" "roadmap"))
+            max-active-text (factory-field (required-number document
+                                                            "max_active"
+                                                            "max_active"))
+            max-active (whole-number max-active-text "max_active"))
     (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
 
 (defn read-target (repo)
@@ -74,25 +69,10 @@
   (map-err (read-factory-document repo)
     (fn (failure) (apply-error/factory failure))))
 
-(defn required-text (value key path)
-  (match (json-field value key)
-    (none (err (apply-error/missing-field (str path))))
-    ((some found) (field-text found path))))
-
-(defn field-text (found path)
-  (match found
-    ((text text) (ok (clone text)))
-    (_ (err (apply-error/non-text-field (str path))))))
-
-(defn required-number (value key path)
-  (match (json-field value key)
-    (none (err (apply-error/missing-field (str path))))
-    ((some found) (field-number found path))))
-
-(defn field-number (found path)
-  (match found
-    ((number text) (whole-number text path))
-    (_ (err (apply-error/non-number-field (str path))))))
+(defn factory-field (found)
+  (map-err found
+    (fn (failure)
+      (apply-error/factory (factory-error/field failure)))))
 
 (type whole-number
   (fn ((ref string) (ref str))

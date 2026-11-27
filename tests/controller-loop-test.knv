@@ -174,7 +174,7 @@
        (send-line (str "review: " review-item
                        ": `rmap item show " review-item
                        " --json` exited 0: invalid item JSON: "
-                       "missing `pull_request`"))))
+                       "`pull_request` is missing"))))
 
 (defn claim-refusal-sequence ()
   (str
@@ -379,6 +379,6 @@
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
                  (str "ringleader send fake-manager "
-                      "controller: the factory has no `roles`\n")))
+                      "controller: the factory field `roles` is missing\n")))
       (assert (contains? (stderr-text output)
-                         "the factory has no `roles`")))))
+                         "the factory field `roles` is missing")))))

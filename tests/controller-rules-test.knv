@@ -90,7 +90,7 @@
 (deftest parse-next-response-rejects-a-missing-next
   (let (document (unwrap-ok (parse-json (as-str (str "{}")))))
     (match (parse-next-response document)
-      ((err reason) (assert (= reason (str "missing `next`"))))
+      ((err reason) (assert (= reason (str "`next` is missing"))))
       ((ok _) (assert false)))))
 
 (deftest first-controller-action-finds-a-controller-review
@@ -124,7 +124,8 @@
 (deftest parse-ready-response-rejects-a-missing-ready
   (let (document (unwrap-ok (parse-json (as-str (str "{}")))))
     (match (parse-ready-response document)
-      ((err reason) (assert (= reason (str "missing `ready`"))))
+      ((err reason)
+       (assert (= reason (str "`ready` is missing"))))
       ((ok _) (assert false)))))
 
 (deftest first-build-takes-the-first-build

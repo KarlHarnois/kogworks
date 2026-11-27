@@ -1,4 +1,5 @@
 (use controller/factory merge-method read-factory)
+(use controller/fields field-error)
 
 (use controller/failure factory-error
                         factory-error->message)
@@ -60,5 +61,6 @@
       (_ (assert false)))))
 
 (deftest names-a-non-number-factory-field
-  (assert (= (factory-error->message (factory-error/non-number-field (str "worker.weight")))
+  (assert (= (factory-error->message (factory-error/field (field-error/non-number-field
+                                                            (str "worker.weight"))))
              (str "the factory field `worker.weight` is not a number"))))

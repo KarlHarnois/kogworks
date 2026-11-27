@@ -14,7 +14,7 @@
 
 (defn field-error->message (failure)
   (match failure
-    ((missing-field path) (str "missing `" path "`"))
+    ((missing-field path) (str "`" path "` is missing"))
     ((non-text-field path) (str "`" path "` is not text"))
     ((non-object-field path)
      (str "`" path "` is not an object"))
