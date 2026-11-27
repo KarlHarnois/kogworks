@@ -7,8 +7,7 @@
 (use controller/fields field-error->message required-number
                        required-object required-text)
 
-(use controller/factory factory-config)
-(use controller/json json json-error->message parse-json)
+(use controller/json json-error->message parse-json)
 
 (use controller/merge-commands advance-command
                                auto-merge-command
@@ -17,10 +16,10 @@
                                required-checks-command
                                show-command view-command)
 
-(use controller/merge-target ->merge-target merge-target)
+(use controller/merge-target ->merge-target)
 
 (use controller/process command command-detail execute
-                        outcome successful?)
+                        successful?)
 
 (export ->merge-settings merge-settings start-merge)
 
@@ -186,25 +185,11 @@
   (let (start (now))
     (poll-iteration repo item target settings start)))
 
-(type poll-iteration
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target)
-       (ref merge-settings)
-       instant)
-    (result unit controller-error)))
-
 (defn poll-iteration (repo item target settings start)
   (match (read-poll-state repo item target)
     ((err failure) (err failure))
     ((ok state)
      (handle-poll repo item target settings start state))))
-
-(type read-poll-state
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target))
-    (result merge-state controller-error)))
 
 (defn read-poll-state (repo item target)
   (let (command (view-command (:pull-request target)))
@@ -213,22 +198,12 @@
         (parse-poll-state item command (:stdout outcome))
         (err (merge-command-failure item command outcome))))))
 
-(type parse-poll-state
-  (fn ((ref string)
-       (ref command)
-       (ref string))
-    (result merge-state controller-error)))
-
 (defn parse-poll-state (item command text)
   (match (parse-json (as-str text))
     ((ok document) (state-from-json item command document))
     ((err failure)
      (err (invalid-poll-output item command
                                (json-error->message failure))))))
-
-(type state-from-json
-  (fn ((ref string) (ref command) (ref json))
-    (result merge-state controller-error)))
 
 (defn state-from-json (item command document)
   (match (required-text document "state" "state")
@@ -238,13 +213,6 @@
     ((ok state)
      (poll-head-from-json item command document state))))
 
-(type poll-head-from-json
-  (fn ((ref string)
-       (ref command)
-       (ref json)
-       (ref string))
-    (result merge-state controller-error)))
-
 (defn poll-head-from-json (item command document state)
   (match (required-text document "headRefOid" "headRefOid")
     ((err failure)
@@ -253,48 +221,23 @@
     ((ok head)
      (ok (->merge-state :state (clone state) :head head)))))
 
-(type handle-poll
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target)
-       (ref merge-settings)
-       instant
-       (ref merge-state))
-    (result unit controller-error)))
-
 (defn handle-poll (repo item target settings start state)
   (match (poll-verdict-of target state)
     (merged (close-item repo item))
     (moved (err (head-change-error item target state)))
     (waiting (retry-poll repo item target settings start))))
 
-(type poll-verdict-of
-  (fn ((ref merge-target) (ref merge-state))
-    poll-verdict))
-
 (defn poll-verdict-of (target state)
   (if (= (:head state) (:head target))
     (merged-verdict (:state state))
     poll-verdict/moved))
 
-(type merged-verdict
-  (fn ((ref string)) poll-verdict))
-
 (defn merged-verdict (state)
   (if (= (as-str state) (str "MERGED"))
     poll-verdict/merged poll-verdict/waiting))
 
-(type settings-refused-error
-  (fn (string string) controller-error))
-
 (defn settings-refused-error (item detail)
   (controller-error/merge-failed (merge-error/settings-refused item detail)))
-
-(type head-change-error
-  (fn ((ref string)
-       (ref merge-target)
-       (ref merge-state))
-    controller-error))
 
 (defn head-change-error (item target state)
   (controller-error/merge-failed (merge-error/head-changed
@@ -302,14 +245,6 @@
                                    (clone (:pull-request target))
                                    (clone (:head target))
                                    (clone (:head state)))))
-
-(type retry-poll
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target)
-       (ref merge-settings)
-       instant)
-    (result unit controller-error)))
 
 (defn retry-poll (repo item target settings start)
   (if (elapsed? settings start)
@@ -321,16 +256,9 @@
       (sleep (seconds (:poll-seconds settings)))
       (poll-iteration repo item target settings start))))
 
-(type elapsed?
-  (fn ((ref merge-settings) instant) bool))
-
 (defn elapsed? (settings start)
   (>= (elapsed start)
       (seconds (:timeout-seconds settings))))
-
-(type close-item
-  (fn ((ref str) (ref string))
-    (result unit controller-error)))
 
 (defn close-item (repo item)
   (let (command (close-command item))
@@ -357,13 +285,6 @@
                   (str "invalid poll JSON")
                   reason))
 
-(type invalid-output
-  (fn ((ref string)
-       (ref command)
-       (ref string)
-       (ref string))
-    controller-error))
-
 (defn invalid-output (item command description reason)
   (controller-error/command-failed (->action-failure
                                      :action (str "merge")
@@ -371,12 +292,6 @@
                                      :command (clone (:label command))
                                      :code 0
                                      :detail (str description ": " reason))))
-
-(type merge-command-failure
-  (fn ((ref string)
-       (ref command)
-       (ref outcome))
-    controller-error))
 
 (defn merge-command-failure (item command outcome)
   (controller-error/command-failed (->action-failure

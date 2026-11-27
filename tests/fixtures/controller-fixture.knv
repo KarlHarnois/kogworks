@@ -265,9 +265,6 @@
                    :view-json (str "{}")
                    :later-view-json (str "{}")))
 
-(type prepare-repo
-  (fn ((ref str)) (result unit string)))
-
 (defn prepare-repo (root)
   (let-try (_ (reset-dir root)
             _ (make-dir (as-str (str root "/repo/.kogworks/briefs")))

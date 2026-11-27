@@ -70,17 +70,11 @@
          (-> roles (map role-entry->json) collect (join ",\n"))
          "\n  }")))
 
-(type role-entry->json
-  (fn ((ref role)) string))
-
 (defn role-entry->json (role)
   (str "    "
        (text->json (role-name->text (:name role)))
        ": "
        (role->json role)))
-
-(type role->json
-  (fn ((ref role)) string))
 
 (defn role->json (role)
   (str "{\n      \"agent\": "

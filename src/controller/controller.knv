@@ -11,21 +11,20 @@
 (use controller/factory factory-config read-factory
                         read-manager)
 
-(use controller/json json json-error->message parse-json)
+(use controller/json json-error->message parse-json)
 
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
 (use controller/process ->command canonical-path command
-                        command-detail execute outcome
-                        successful?)
+                        command-detail execute successful?)
 
 (use controller/review review-mode start-review)
 
 (use controller/rules action-kind action-kind->text
                       first-build first-controller-action
                       item-action parse-next-response
-                      parse-ready-response ready-item)
+                      parse-ready-response)
 
 (export controller-and-exit)
 

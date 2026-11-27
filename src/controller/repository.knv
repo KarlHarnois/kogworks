@@ -3,8 +3,8 @@
 
 (use controller/failure ->action-failure controller-error)
 
-(use controller/process ->command command command-detail
-                        execute outcome successful?)
+(use controller/process ->command command-detail execute
+                        successful?)
 
 (export default-branch)
 

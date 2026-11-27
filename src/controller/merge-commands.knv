@@ -2,7 +2,6 @@
   "Builds the rmap and GitHub commands that the controller's merge action runs.")
 
 (use controller/factory merge-method)
-(use controller/merge-target merge-target)
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command

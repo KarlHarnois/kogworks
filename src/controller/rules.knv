@@ -73,9 +73,6 @@
   absent
   done)
 
-(type action-kind->text
-  (fn ((ref action-kind)) string))
-
 (defn action-kind->text (kind)
   (match kind
     (work (str "work"))
@@ -87,17 +84,9 @@
     (wait (str "wait"))
     ((other text) (clone text))))
 
-(type parse-next-response
-  (fn ((ref json))
-    (result (vec next-line) string)))
-
 (defn parse-next-response (document)
   (let-try (items (required-array document "next"))
     (parse-next-lines items)))
-
-(type first-controller-action
-  (fn ((ref (vec next-line)))
-    (option item-action)))
 
 (defn first-controller-action (lines)
   (loop (index 0)
@@ -108,17 +97,9 @@
       (absent (recur (inc index)))
       (done none))))
 
-(type parse-ready-response
-  (fn ((ref json))
-    (result (vec ready-item) string)))
-
 (defn parse-ready-response (document)
   (let-try (items (required-array document "ready"))
     (parse-ready-items items)))
-
-(type first-build
-  (fn ((ref (vec ready-item)))
-    (option ready-item)))
 
 (defn first-build (items)
   (loop (index 0)
@@ -135,10 +116,6 @@
       ((failure reason) (err reason))
       (done (ok lines)))))
 
-(type with-line!
-  (fn ((vec next-line) next-line)
-    (vec next-line)))
-
 (defn with-line! (lines line)
   (do (push! lines line) lines))
 
@@ -152,19 +129,11 @@
     ((ok line) (next-line-step/line line))
     ((err failure) (next-line-step/failure failure))))
 
-(type parse-next-line
-  (fn ((ref json))
-    (result next-line string)))
-
 (defn parse-next-line (value)
   (let-try (item (required-text value "item")
             action-values (required-array value "actions")
             actions (parse-next-actions action-values))
     (ok (->next-line :item item :actions actions))))
-
-(type required-array
-  (fn ((ref json) (ref str))
-    (result (vec json) string)))
 
 (defn required-array (value key)
   (let-try (found (required-field-value value key))
@@ -192,10 +161,6 @@
       ((failure reason) (err reason))
       (done (ok actions)))))
 
-(type with-action!
-  (fn ((vec next-action) next-action)
-    (vec next-action)))
-
 (defn with-action! (actions action)
   (do (push! actions action) actions))
 
@@ -208,10 +173,6 @@
   (match parsed
     ((ok action) (next-action-step/action action))
     ((err failure) (next-action-step/failure failure))))
-
-(type parse-next-action
-  (fn ((ref json))
-    (result next-action string)))
 
 (defn parse-next-action (value)
   (let-try (text (required-text value "action")
@@ -229,10 +190,6 @@
     ((= text (str "send-fixes")) action-kind/send-fixes)
     ((= text (str "wait")) action-kind/wait)
     (else (action-kind/other text))))
-
-(type optional-actor
-  (fn ((ref json))
-    (result (option actor) string)))
 
 (defn optional-actor (value)
   (match (json-field value "actor")
@@ -261,10 +218,6 @@
   (match found
     ((some kind) (controller-action-step/found kind))
     (none controller-action-step/absent)))
-
-(type controller-action-in
-  (fn ((ref next-line))
-    (option action-kind)))
 
 (defn controller-action-in (line)
   (loop (index 0)
@@ -310,10 +263,6 @@
       ((failure reason) (err reason))
       (done (ok items)))))
 
-(type with-item!
-  (fn ((vec ready-item) ready-item)
-    (vec ready-item)))
-
 (defn with-item! (items item)
   (do (push! items item) items))
 
@@ -327,10 +276,6 @@
     ((ok item) (ready-item-step/item item))
     ((err failure) (ready-item-step/failure failure))))
 
-(type parse-ready-item
-  (fn ((ref json))
-    (result ready-item string)))
-
 (defn parse-ready-item (value)
   (let-try (id (required-text value "id")
             kind-text (required-text value "kind"))
@@ -342,10 +287,6 @@
     ((= text (str "research")) item-kind/research)
     ((= text (str "design")) item-kind/design)
     (else (item-kind/other text))))
-
-(type required-text
-  (fn ((ref json) (ref str))
-    (result string string)))
 
 (defn required-text (value key)
   (let-try (found (required-field-value value key))

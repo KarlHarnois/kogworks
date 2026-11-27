@@ -5,14 +5,11 @@
                       worker-brief)
 
 (use controller/failure ->action-failure controller-error)
-(use controller/factory factory-config)
 
-(use controller/process ->command command command-detail
-                        execute join-path outcome
-                        successful?)
+(use controller/process ->command command-detail execute
+                        join-path successful?)
 
 (use controller/repository default-branch)
-(use controller/rules ready-item)
 (use controller/session abandon-command failed-start-detail)
 
 (export dispatch)

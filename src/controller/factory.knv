@@ -6,7 +6,7 @@
 (use controller/fields field-error required-object
                        required-text)
 
-(use controller/json json json-error->message json-field
+(use controller/json json-error->message json-field
                      json-text parse-json)
 
 (use controller/process join-path read-text-file text-file?)
@@ -29,25 +29,14 @@
   :skill string
   :brief string)
 
-(type read-factory
-  (fn ((ref str))
-    (result factory-config factory-error)))
-
 (defn read-factory (repo)
   (let-try (document (read-factory-document repo))
     (config-from-json document)))
-
-(type read-manager
-  (fn ((ref str)) (option string)))
 
 (defn read-manager (repo)
   (match (read-factory-document repo)
     ((ok document) (manager-from-document document))
     ((err _) none)))
-
-(type read-factory-document
-  (fn ((ref str))
-    (result json factory-error)))
 
 (defn read-factory-document (repo)
   (let (path (factory-path repo))
@@ -55,26 +44,15 @@
       (document-from-file path)
       (err (factory-error/missing-factory path)))))
 
-(type factory-path
-  (fn ((ref str)) string))
-
 (defn factory-path (repo)
   (let (dir (join-path repo ".kogworks"))
     (join-path (as-str dir) "factory.json")))
-
-(type document-from-file
-  (fn ((ref string))
-    (result json factory-error)))
 
 (defn document-from-file (path)
   (match (read-text-file (as-str path))
     ((ok text) (document-from-text path text))
     ((err reason)
      (err (factory-error/unreadable-factory (clone path) reason)))))
-
-(type document-from-text
-  (fn ((ref string) (ref string))
-    (result json factory-error)))
 
 (defn document-from-text (path text)
   (map-err (parse-json (as-str text))
@@ -86,10 +64,6 @@
   (match (json-field document "manager")
     ((some value) (json-text value))
     (none none)))
-
-(type config-from-json
-  (fn ((ref json))
-    (result factory-config factory-error)))
 
 (defn config-from-json (document)
   (let-try (manager (factory-text document "manager" "manager")
@@ -105,18 +79,10 @@
                           :worker worker
                           :reviewer reviewer))))
 
-(type merge-method-of
-  (fn ((ref string))
-    (result merge-method factory-error)))
-
 (defn merge-method-of (text)
   (cond
     ((= text (str "gh-auto")) (ok merge-method/gh-auto))
     (else (err (factory-error/unsupported-merge-method (clone text))))))
-
-(type required-role
-  (fn ((ref json) (ref str) (ref str))
-    (result role factory-error)))
 
 (defn required-role (roles name path)
   (let-try (value (factory-object roles name path)
@@ -125,16 +91,8 @@
             brief (factory-text value "brief" (as-str (str path ".brief"))))
     (ok (->role :agent agent :skill skill :brief brief))))
 
-(type factory-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string factory-error)))
-
 (defn factory-text (value key path)
   (map-err (required-text value key path) factory-field-error))
-
-(type factory-object
-  (fn ((ref json) (ref str) (ref str))
-    (result json factory-error)))
 
 (defn factory-object (value key path)
   (map-err (required-object value key path)
