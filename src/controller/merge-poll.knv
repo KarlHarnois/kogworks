@@ -1,0 +1,157 @@
+(module
+  "Polls a pull request that has auto-merge armed and disarms it before any stop that leaves the item open.")
+
+(use controller/failure controller-error merge-error)
+(use controller/fields field-error->message required-text)
+(use controller/json json-error->message parse-json)
+
+(use controller/merge-commands close-command disarm-command
+                               view-command)
+
+(use controller/merge-retry execute-github)
+
+(use controller/merge-target invalid-output
+                             merge-command-failure
+                             merge-item-status
+                             read-item-status)
+
+(use controller/process execute successful?)
+
+(export disarm-and-stop item-fixing-error poll-merge
+        read-poll-state)
+
+(def already-disarmed-message
+  (str "Pull request is not in auto merge state"))
+
+(defstruct merge-state
+  :state string
+  :head string)
+
+(defenum poll-verdict
+  merged
+  moved
+  waiting)
+
+(defn poll-merge (repo item target settings)
+  (let (start (now))
+    (poll-iteration repo item target settings start)))
+
+(defn read-poll-state (repo settings item target)
+  (let (command (view-command (:pull-request target))
+        outcome (execute-github repo command
+                                (:retry-delay-seconds settings)))
+    (if (successful? outcome)
+      (parse-poll-state item command (:stdout outcome))
+      (err (merge-command-failure item command outcome)))))
+
+(defn item-fixing-error (item target)
+  (let (pull-request (clone (:pull-request target)))
+    (controller-error/merge-failed (merge-error/item-fixing (clone item)
+                                                            pull-request))))
+
+(defn disarm-and-stop (repo settings item target failure)
+  (match (disarm repo settings item target)
+    ((err disarm-failure) (err disarm-failure))
+    ((ok _) (err failure))))
+
+(defn poll-iteration (repo item target settings start)
+  (match (read-item-status repo item)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok status)
+     (poll-after-status repo item target settings start status))))
+
+(defn poll-after-status (repo item target settings start status)
+  (match status
+    (fixing (disarm-and-stop repo settings item target
+                             (item-fixing-error item target)))
+    (_ (poll-pull-state repo item target settings start))))
+
+(defn poll-pull-state (repo item target settings start)
+  (match (read-poll-state repo settings item target)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok state)
+     (handle-poll repo item target settings start state))))
+
+(defn parse-poll-state (item command text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (map-err (poll-state-fields document)
+       (fn (failure)
+         (invalid-poll-output item command
+                              (field-error->message failure)))))
+    ((err failure)
+     (err (invalid-poll-output item command
+                               (json-error->message failure))))))
+
+(defn poll-state-fields (document)
+  (let-try (state (required-text document "state" "state")
+            head (required-text document "headRefOid" "headRefOid"))
+    (ok (->merge-state :state state :head head))))
+
+(defn handle-poll (repo item target settings start state)
+  (match (poll-verdict-of target state)
+    (merged (close-item repo item))
+    (moved (disarm-and-stop repo settings item target
+                            (head-change-error item target state)))
+    (waiting (retry-poll repo item target settings start))))
+
+(defn poll-verdict-of (target state)
+  (if (= (:head state) (:head target))
+    (merged-verdict (:state state))
+    poll-verdict/moved))
+
+(defn merged-verdict (state)
+  (if (= (as-str state) (str "MERGED"))
+    poll-verdict/merged poll-verdict/waiting))
+
+(defn head-change-error (item target state)
+  (controller-error/merge-failed (merge-error/head-changed
+                                   (clone item)
+                                   (clone (:pull-request target))
+                                   (clone (:head target))
+                                   (clone (:head state)))))
+
+(defn disarm (repo settings item target)
+  (let (command (disarm-command (:pull-request target))
+        outcome (execute-github repo command
+                                (:retry-delay-seconds settings)))
+    (if (or (successful? outcome) (already-disarmed? outcome))
+      (ok (do))
+      (err (merge-command-failure item command outcome)))))
+
+(defn already-disarmed? (outcome)
+  (let (stderr (lower-case (as-str (:stderr outcome)))
+        marker (lower-case (as-str already-disarmed-message)))
+    (contains? (as-str stderr) (as-str marker))))
+
+(defn retry-poll (repo item target settings start)
+  (if (elapsed? settings start)
+    (disarm-and-stop repo settings item target
+                     (timed-out-error item target settings))
+    (do
+      (sleep (seconds (:poll-seconds settings)))
+      (poll-iteration repo item target settings start))))
+
+(defn timed-out-error (item target settings)
+  (controller-error/merge-failed (merge-error/timed-out
+                                   (clone item)
+                                   (clone (:pull-request target))
+                                   (:timeout-seconds settings))))
+
+(defn elapsed? (settings start)
+  (>= (elapsed start)
+      (seconds (:timeout-seconds settings))))
+
+(defn close-item (repo item)
+  (let (command (close-command item)
+        outcome (execute repo command))
+    (if (successful? outcome)
+      (ok (do))
+      (err (merge-command-failure item command outcome)))))
+
+(defn invalid-poll-output (item command reason)
+  (invalid-output item command
+                  (str "invalid poll JSON")
+                  reason))

@@ -31,6 +31,8 @@
 (defenum merge-error
   (settings-refused string string)
   (head-changed string string string string)
+  (item-fixing string string)
+  (not-approved string string string)
   (timed-out string string int))
 
 (defstruct action-failure
@@ -85,6 +87,13 @@
     ((head-changed item pull-request approved observed)
      (str "merge: " item ": PR " pull-request " head is "
           observed ", not the approved " approved))
+    ((item-fixing item pull-request)
+     (str "merge: " item
+          ": the item is fixing, so auto-merge on PR "
+          pull-request " is disarmed"))
+    ((not-approved item pull-request head)
+     (str "merge: " item ": PR " pull-request
+          " is not approved at head " head))
     ((timed-out item pull-request seconds)
      (str "merge: " item ": PR " pull-request
           " did not merge within " seconds " seconds"))))

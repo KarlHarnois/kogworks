@@ -17,10 +17,29 @@
 
 (def merge-item-json
   (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"status\":\"in_review\","
        "\"session\":{\"name\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
-       "\"approval\":{\"head\":\"" approved-head "\"}}}"))
+       "\"approved\":true," "\"approval\":{\"head\":\""
+       approved-head "\"}}}"))
+
+(def fixing-item-json
+  (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"status\":\"fixing\"," "\"session\":{\"name\":\""
+       merge-worker "\"}}," "\"pull_request\":{\"number\":"
+       merge-pr "," "\"head\":\"" approved-head "\","
+       "\"approved\":false," "\"approval\":{\"head\":\""
+       approved-head "\"}}}"))
+
+(def unapproved-item-json
+  (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"status\":\"in_review\","
+       "\"session\":{\"name\":\"" merge-worker "\"}},"
+       "\"pull_request\":{\"number\":" merge-pr ","
+       "\"head\":\"" approved-head "\","
+       "\"approved\":false," "\"approval\":{\"head\":\""
+       approved-head "\"}}}"))
 
 (def merge-item (str "rm-0009"))
 
@@ -39,6 +58,10 @@
 (def clean-status-error
   (str "failed to enable auto-merge: Pull request is in clean status"
        " (enablePullRequestAutoMerge)"))
+
+(def already-disarmed-error
+  (str "failed to disable auto-merge: Pull request is not in auto merge state"
+       " (disablePullRequestAutoMerge)"))
 
 (def network-error
   (str "Post \"https://api.github.com/graphql\":"
@@ -60,6 +83,7 @@
       (assert (= (sequence-text root)
                  (str (merge-preface)
                       (merge-line)
+                      (show-line)
                       (view-line)
                       (close-line))))
       (assert (empty? (stderr-text output))))))
@@ -100,19 +124,26 @@
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
 
 (defn merged-sequence ()
-  (str (merge-preface)
+  (str (poll-preface)
        (view-line)
        (close-line)))
 
 (defn clean-status-sequence ()
   (str (merge-preface)
        (direct-merge-line)
+       (show-line)
        (view-line)
        (close-line)))
+
+(defn poll-preface ()
+  (str (merge-preface) (show-line)))
 
 (defn view-line ()
   (str "gh pr view " merge-pr
        " --json state,mergedAt,headRefOid\n"))
+
+(defn disarm-line ()
+  (str "gh pr merge " merge-pr " --disable-auto\n"))
 
 (defn close-line ()
   (str "rmap item close " merge-item "\n"))
@@ -225,6 +256,7 @@
                       (update-branch-line)
                       (view-line)
                       (merge-line)
+                      (show-line)
                       (view-line)
                       (close-line))))
       (assert (not (contains? (sequence-text root) "pr head")))
@@ -335,12 +367,187 @@
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
                  (refusal-sequence
-                   (str (merge-preface) (view-line))
+                   (str (poll-preface)
+                        (view-line)
+                        (disarm-line))
                    (str "merge: " merge-item ": PR "
                         merge-pr " head is " moved-head
                         ", not the approved "
                         approved-head))))
       (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest stops-when-the-disarm-after-a-head-change-is-refused
+  (let (root (unwrap-ok (setup "merge-disarm-refused"
+                               (assoc (merge-settings)
+                                      :view-json (moved-view)
+                                      :disarm-exit 9
+                                      :disarm-error (str "cannot disarm")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface)
+                                        (view-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": `gh pr merge "
+                                        merge-pr
+                                        " --disable-auto` exited 9: cannot disarm"))))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest retries-the-disarm-after-a-transient-network-error
+  (let (root (unwrap-ok (setup "merge-disarm-network-retry"
+                               (assoc (merge-settings)
+                                      :view-json (moved-view)
+                                      :disarm-network-failures 1
+                                      :network-error (clone network-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence
+                   (str (poll-preface)
+                        (view-line)
+                        (disarm-line)
+                        (disarm-line))
+                   (str "merge: " merge-item ": PR "
+                        merge-pr " head is " moved-head
+                        ", not the approved "
+                        approved-head))))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest keeps-the-intended-message-when-auto-merge-is-already-off
+  (let (root (unwrap-ok (setup "merge-disarm-already-off"
+                               (assoc (merge-settings)
+                                      :item-later-json (clone fixing-item-json)
+                                      :disarm-exit 1
+                                      :disarm-error (clone already-disarmed-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface) (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": the item is fixing, so auto-merge on PR "
+                                        merge-pr
+                                        " is disarmed"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest disarms-when-the-item-returns-to-fixing
+  (let (root (unwrap-ok (setup "merge-fixing"
+                               (assoc (merge-settings)
+                                      :item-later-json (clone
+                                                         fixing-item-json)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface) (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": the item is fixing, so auto-merge on PR "
+                                        merge-pr
+                                        " is disarmed"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest disarms-before-arming-when-the-item-is-fixing
+  (let (root (unwrap-ok (setup "merge-fixing-start"
+                               (assoc (merge-settings)
+                                      :item-json (clone fixing-item-json)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (next-line)
+                                        (show-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": the item is fixing, so auto-merge on PR "
+                                        merge-pr
+                                        " is disarmed"))))
+      (assert (not (contains? (sequence-text root) "allow_auto_merge")))
+      (assert (not (contains? (sequence-text root) "item advance")))
+      (assert (not (contains? (sequence-text root) "--auto"))))))
+
+(deftest stops-before-arming-without-an-approving-review
+  (let (root (unwrap-ok (setup "merge-not-approved"
+                               (assoc (merge-settings)
+                                      :item-json (clone
+                                                   unapproved-item-json)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (next-line)
+                                        (show-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": PR " merge-pr
+                                        " is not approved at head "
+                                        approved-head))))
+      (assert (not (contains? (sequence-text root) "item advance")))
+      (assert (not (contains? (sequence-text root) "--auto"))))))
+
+(deftest disarms-when-the-poll-view-is-refused
+  (let (root (unwrap-ok (setup "merge-view-refused"
+                               (assoc (merge-settings)
+                                      :view-exit 9
+                                      :view-error (str "view refused")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface)
+                                        (view-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": `gh pr view "
+                                        merge-pr
+                                        " --json state,mergedAt,headRefOid`"
+                                        " exited 9: view refused"))))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest disarms-when-the-poll-view-is-invalid
+  (let (root (unwrap-ok (setup "merge-view-invalid"
+                               (assoc (merge-settings) :view-json (str "{")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface)
+                                        (view-line)
+                                        (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": `gh pr view "
+                                        merge-pr
+                                        " --json state,mergedAt,headRefOid`"
+                                        " exited 0: invalid poll JSON:"
+                                        " unexpected end at 1"))))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest disarms-when-the-poll-item-show-is-refused
+  (let (root (unwrap-ok (setup "merge-show-refused"
+                               (assoc (merge-settings)
+                                      :later-show-exit 9
+                                      :later-show-error (str "show refused")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface) (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": `rmap item show "
+                                        merge-item
+                                        " --json` exited 9: show refused"))))
+      (assert (not (contains? (sequence-text root) "pr view"))))))
+
+(deftest disarms-when-the-poll-item-show-is-invalid
+  (let (root (unwrap-ok (setup "merge-show-invalid"
+                               (assoc (merge-settings)
+                                      :item-later-json (str "{")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (poll-preface) (disarm-line))
+                                   (str "merge: " merge-item
+                                        ": `rmap item show "
+                                        merge-item
+                                        " --json` exited 0:"
+                                        " invalid item JSON:"
+                                        " unexpected end at 1"))))
+      (assert (not (contains? (sequence-text root) "pr view"))))))
 
 (deftest stops-when-the-advance-is-refused
   (let (root (unwrap-ok (setup "merge-advance-refused"
@@ -409,7 +616,9 @@
                                            (str "0")))))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
-                 (refusal-sequence (str (merge-preface) (view-line))
+                 (refusal-sequence (str (poll-preface)
+                                        (view-line)
+                                        (disarm-line))
                                    (str "merge: " merge-item
                                         ": PR " merge-pr
                                         " did not merge within 0 seconds"))))
@@ -428,8 +637,9 @@
                                            (str "0")))))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root)
-                 (str (merge-preface)
+                 (str (poll-preface)
                       (view-line)
+                      (show-line)
                       (view-line)
                       (close-line))))
       (assert (empty? (stderr-text output))))))
@@ -539,6 +749,7 @@
                  (str (merge-preface)
                       (direct-merge-line)
                       (direct-merge-line)
+                      (show-line)
                       (view-line)
                       (close-line))))
       (assert (empty? (stderr-text output))))))
@@ -564,6 +775,7 @@
                       (required-checks-line)
                       (advance-line)
                       (merge-line)
+                      (show-line)
                       (view-line)
                       (view-line)
                       (close-line))))

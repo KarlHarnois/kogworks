@@ -1,0 +1,16 @@
+(use controller/fields field-error field-error->message
+                       required-bool)
+
+(use controller/json parse-json)
+
+(deftest required-bool-reads-a-boolean
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"flag\": true}")))))
+    (assert (= (required-bool document "flag" "flag") (ok true)))))
+
+(deftest required-bool-rejects-a-non-boolean
+  (let (document (unwrap-ok (parse-json (as-str (str "{\"flag\": \"yes\"}")))))
+    (assert (= (required-bool document "flag" "flag")
+               (err (field-error/non-boolean-field (str "flag")))))
+    (assert (= (field-error->message (field-error/non-boolean-field (str
+                                                                      "flag")))
+               (str "`flag` is not a boolean")))))

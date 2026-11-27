@@ -78,9 +78,19 @@
     "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
-    "    case \"$2\" in\n"
-    "      show) cat \"$root/item.json\" ;;\n"
-    "      advance)\n"
+    "    case \"$2\" in\n" "      show)\n"
+    "        shows=0\n"
+    "        if [ -f \"$root/show-count\" ]; then\n"
+    "          shows=$(cat \"$root/show-count\")\n"
+    "        fi\n" "        shows=$((shows + 1))\n"
+    "        printf '%s' \"$shows\" > \"$root/show-count\"\n"
+    "        if [ \"$shows\" -ge 2 ] && [ [LATER_SHOW_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[LATER_SHOW_ERROR]' >&2\n"
+    "          exit [LATER_SHOW_EXIT]\n" "        fi\n"
+    "        if [ \"$shows\" -ge 2 ] && [ -f \"$root/item-later.json\" ]; then\n"
+    "          cat \"$root/item-later.json\"\n"
+    "        else\n" "          cat \"$root/item.json\"\n"
+    "        fi\n" "        ;;\n" "      advance)\n"
     "        if [ [ADVANCE_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[ADVANCE_ERROR]' >&2\n"
     "          exit [ADVANCE_EXIT]\n" "        fi\n"
@@ -174,7 +184,12 @@
     "      printf '%s\\n' '[UPDATE_BRANCH_ERROR]' >&2\n"
     "      exit [UPDATE_BRANCH_EXIT]\n" "    fi\n"
     "    ;;\n" "  \"pr merge\")\n" "    case \" $* \" in\n"
-    "      *\" --auto \"*)\n"
+    "      *\" --disable-auto \"*)\n"
+    "        check_network disarm [DISARM_NETWORK_FAILURES]\n"
+    "        if [ [DISARM_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[DISARM_ERROR]' >&2\n"
+    "          exit [DISARM_EXIT]\n" "        fi\n"
+    "        ;;\n" "      *\" --auto \"*)\n"
     "        check_network merge [MERGE_NETWORK_FAILURES]\n"
     "        merges=0\n"
     "        if [ -f \"$root/merge-count\" ]; then merges=$(cat \"$root/merge-count\"); fi\n"
@@ -195,6 +210,9 @@
     "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
     "        ;;\n" "    esac\n" "    ;;\n"
     "  \"pr view\")\n"
+    "    if [ [VIEW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[VIEW_ERROR]' >&2\n"
+    "      exit [VIEW_EXIT]\n" "    fi\n"
     "    check_network view [VIEW_NETWORK_FAILURES]\n"
     "    views=0\n"
     "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
@@ -243,6 +261,7 @@
   :next-json string
   :ready-json string
   :item-json string
+  :item-later-json string
   :stop-after int
   :claim-exit int
   :claim-error string
@@ -258,12 +277,17 @@
   :later-merge-error string
   :direct-merge-exit int
   :direct-merge-error string
+  :disarm-exit int
+  :disarm-error string
+  :later-show-exit int
+  :later-show-error string
   :network-error string
   :merge-network-failures int
   :repo-view-network-failures int
   :allow-auto-merge-network-failures int
   :required-checks-network-failures int
   :direct-merge-network-failures int
+  :disarm-network-failures int
   :view-network-failures int
   :update-branch-exit int
   :update-branch-error string
@@ -278,6 +302,8 @@
   :slug string
   :allow-auto-merge string
   :required-checks string
+  :view-exit int
+  :view-error string
   :view-json string
   :later-view-json string)
 
@@ -287,6 +313,7 @@
   (->fake-settings :next-json next-json
                    :ready-json ready-json
                    :item-json (str "{}")
+                   :item-later-json (str)
                    :stop-after 0
                    :claim-exit 0
                    :claim-error (str)
@@ -302,12 +329,17 @@
                    :later-merge-error (str)
                    :direct-merge-exit 0
                    :direct-merge-error (str)
+                   :disarm-exit 0
+                   :disarm-error (str)
+                   :later-show-exit 0
+                   :later-show-error (str)
                    :network-error (str)
                    :merge-network-failures 0
                    :repo-view-network-failures 0
                    :allow-auto-merge-network-failures 0
                    :required-checks-network-failures 0
                    :direct-merge-network-failures 0
+                   :disarm-network-failures 0
                    :view-network-failures 0
                    :update-branch-exit 0
                    :update-branch-error (str)
@@ -322,6 +354,8 @@
                    :slug (str "fake-owner/fake-repo")
                    :allow-auto-merge (str "true")
                    :required-checks (str "1")
+                   :view-exit 0
+                   :view-error (str)
                    :view-json (str "{}")
                    :later-view-json (str "{}")))
 
@@ -378,6 +412,14 @@
                      (str (:direct-merge-exit settings)))
       (replace-token (str "[DIRECT_MERGE_ERROR]")
                      (clone (:direct-merge-error settings)))
+      (replace-token (str "[DISARM_EXIT]")
+                     (str (:disarm-exit settings)))
+      (replace-token (str "[DISARM_ERROR]")
+                     (clone (:disarm-error settings)))
+      (replace-token (str "[LATER_SHOW_EXIT]")
+                     (str (:later-show-exit settings)))
+      (replace-token (str "[LATER_SHOW_ERROR]")
+                     (clone (:later-show-error settings)))
       (replace-token (str "[NETWORK_ERROR]")
                      (clone (:network-error settings)))
       (replace-token (str "[MERGE_NETWORK_FAILURES]")
@@ -390,6 +432,12 @@
                      (str (:required-checks-network-failures settings)))
       (replace-token (str "[DIRECT_MERGE_NETWORK_FAILURES]")
                      (str (:direct-merge-network-failures settings)))
+      (replace-token (str "[DISARM_NETWORK_FAILURES]")
+                     (str (:disarm-network-failures settings)))
+      (replace-token (str "[VIEW_EXIT]")
+                     (str (:view-exit settings)))
+      (replace-token (str "[VIEW_ERROR]")
+                     (clone (:view-error settings)))
       (replace-token (str "[VIEW_NETWORK_FAILURES]")
                      (str (:view-network-failures settings)))
       (replace-token (str "[UPDATE_BRANCH_EXIT]")
@@ -436,6 +484,13 @@
             _ (write-text (as-str (str root "/item.json"))
                           (as-str (:item-json settings)))
             _ (write-text (as-str (str root "/view.json"))
-                          (as-str (:view-json settings))))
-    (write-text (as-str (str root "/later-view.json"))
-                (as-str (:later-view-json settings)))))
+                          (as-str (:view-json settings)))
+            _ (write-text (as-str (str root "/later-view.json"))
+                          (as-str (:later-view-json settings))))
+    (write-later-item root settings)))
+
+(defn write-later-item (root settings)
+  (if (empty? (:item-later-json settings))
+    (ok (do))
+    (write-text (as-str (str root "/item-later.json"))
+                (as-str (:item-later-json settings)))))
