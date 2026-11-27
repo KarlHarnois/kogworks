@@ -84,6 +84,9 @@
     "          count=$(cat \"$root/show-counter\")\n"
     "        fi\n" "        count=$((count + 1))\n"
     "        printf '%s' \"$count\" > \"$root/show-counter\"\n"
+    "        if [ \"$count\" -gt 1 ] && [ [LATER_SHOW_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[LATER_SHOW_ERROR]' >&2\n"
+    "          exit [LATER_SHOW_EXIT]\n" "        fi\n"
     "        if [ \"$count\" -gt 1 ] && [ -f \"$root/item-later.json\" ]; then\n"
     "          cat \"$root/item-later.json\"\n"
     "        else\n" "          cat \"$root/item.json\"\n"
@@ -173,7 +176,10 @@
     "      if [ [MERGE_EXIT] -ne 0 ]; then\n"
     "        printf '%s\\n' '[MERGE_ERROR]' >&2\n"
     "        exit [MERGE_EXIT]\n" "      fi\n" "    fi\n"
-    "    ;;\n" "  \"pr view\")\n" "    views=0\n"
+    "    ;;\n" "  \"pr view\")\n"
+    "    if [ [VIEW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[VIEW_ERROR]' >&2\n"
+    "      exit [VIEW_EXIT]\n" "    fi\n" "    views=0\n"
     "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
     "    views=$((views + 1))\n"
     "    printf '%s' \"$views\" > \"$root/view-count\"\n"
@@ -221,6 +227,8 @@
   :ready-json string
   :item-json string
   :item-later-json string
+  :later-show-exit int
+  :later-show-error string
   :stop-after int
   :claim-exit int
   :claim-error string
@@ -245,6 +253,8 @@
   :slug string
   :allow-auto-merge string
   :required-checks string
+  :view-exit int
+  :view-error string
   :view-json string
   :later-view-json string)
 
@@ -255,6 +265,8 @@
                    :ready-json ready-json
                    :item-json (str "{}")
                    :item-later-json (str)
+                   :later-show-exit 0
+                   :later-show-error (str)
                    :stop-after 0
                    :claim-exit 0
                    :claim-error (str)
@@ -279,6 +291,8 @@
                    :slug (str "fake-owner/fake-repo")
                    :allow-auto-merge (str "true")
                    :required-checks (str "1")
+                   :view-exit 0
+                   :view-error (str)
                    :view-json (str "{}")
                    :later-view-json (str "{}")))
 
@@ -327,6 +341,10 @@
       (replace-token (str "[NEW_EXIT]")
                      (str (:new-exit settings)))
       (replace-token (str "[NEW_ERROR]") (:new-error settings))
+      (replace-token (str "[LATER_SHOW_EXIT]")
+                     (str (:later-show-exit settings)))
+      (replace-token (str "[LATER_SHOW_ERROR]")
+                     (clone (:later-show-error settings)))
       (replace-token (str "[MERGE_EXIT]")
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")
@@ -355,7 +373,11 @@
       (replace-token (str "[ALLOW_AUTO_MERGE]")
                      (:allow-auto-merge settings))
       (replace-token (str "[REQUIRED_CHECKS]")
-                     (:required-checks settings))))
+                     (:required-checks settings))
+      (replace-token (str "[VIEW_EXIT]")
+                     (str (:view-exit settings)))
+      (replace-token (str "[VIEW_ERROR]")
+                     (clone (:view-error settings)))))
 
 (defn replace-token (text token value)
   (-> text as-str

@@ -33,7 +33,7 @@
 (defenum merge-error
   (settings-refused string string)
   (head-changed string string string string)
-  (returned-to-fixing string string)
+  (item-fixing string string)
   (not-approved string string string)
   (timed-out string string int))
 
@@ -96,10 +96,10 @@
     ((head-changed item pull-request approved observed)
      (str "merge: " item ": PR " pull-request " head is "
           observed ", not the approved " approved))
-    ((returned-to-fixing item pull-request)
+    ((item-fixing item pull-request)
      (str "merge: " item
-          ": the item returned to fixing, so auto-merge"
-          " on PR " pull-request " is disarmed"))
+          ": the item is fixing, so auto-merge" " on PR "
+          pull-request " is disarmed"))
     ((not-approved item pull-request head)
      (str "merge: " item ": PR " pull-request " head " head
           " has no approving review"))
