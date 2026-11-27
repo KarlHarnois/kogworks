@@ -12,7 +12,7 @@
 (use controller/merge-commands advance-command
                                auto-merge-command
                                close-command merge-command
-                               repo-view-command
+                               merge-mode repo-view-command
                                required-checks-command
                                show-command view-command)
 
@@ -22,6 +22,9 @@
                         successful?)
 
 (export ->merge-settings merge-settings start-merge)
+
+(def clean-status-message
+  (str "Pull request is in clean status"))
 
 (defstruct merge-settings
   :poll-seconds int
@@ -175,11 +178,27 @@
         (err (merge-command-failure item command outcome))))))
 
 (defn enable-auto-merge (repo config settings item target)
-  (let (command (merge-command (:merge config) target))
+  (let (command (merge-command (:merge config) merge-mode/auto target))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (poll-merge repo item target settings)
+        (handle-merge-failure repo config settings item
+                              target command outcome)))))
+
+(defn handle-merge-failure (repo config settings item target command outcome)
+  (if (clean-status-refusal? outcome)
+    (merge-directly repo config settings item target)
+    (err (merge-command-failure item command outcome))))
+
+(defn merge-directly (repo config settings item target)
+  (let (command (merge-command (:merge config) merge-mode/direct target))
     (let (outcome (execute repo command))
       (if (successful? outcome)
         (poll-merge repo item target settings)
         (err (merge-command-failure item command outcome))))))
+
+(defn clean-status-refusal? (outcome)
+  (contains? (:stderr outcome) (as-str clean-status-message)))
 
 (defn poll-merge (repo item target settings)
   (let (start (now))

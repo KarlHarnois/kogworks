@@ -33,6 +33,10 @@
   (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
        "\"headRefOid\":\"" approved-head "\"}"))
 
+(def clean-status-error
+  (str "failed to enable auto-merge: Pull request is in clean status"
+       " (enablePullRequestAutoMerge)"))
+
 (def approved-head
   (str "abcdef0123456789abcdef0123456789abcdef01"))
 
@@ -73,6 +77,12 @@
        (view-line)
        (close-line)))
 
+(defn clean-status-sequence ()
+  (str (merge-preface)
+       (direct-merge-line)
+       (view-line)
+       (close-line)))
+
 (defn view-line ()
   (str "gh pr view " merge-pr
        " --json state,mergedAt,headRefOid\n"))
@@ -98,6 +108,10 @@
   (str "gh pr merge " merge-pr
        " --auto --merge --match-head-commit " approved-head
        "\n"))
+
+(defn direct-merge-line ()
+  (str "gh pr merge " merge-pr
+       " --merge --match-head-commit " approved-head "\n"))
 
 (defn preflight-preface ()
   (str (next-line)
@@ -129,6 +143,37 @@
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (merged-sequence)))
       (assert (empty? (stderr-text output))))))
+
+(deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request
+  (let (root (unwrap-ok (setup "merge-clean-status"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone
+                                                     clean-status-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root) (clean-status-sequence)))
+      (assert (empty? (stderr-text output))))))
+
+(deftest stops-when-the-clean-pull-request-merge-is-refused
+  (let (root (unwrap-ok (setup "merge-clean-status-refused"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone clean-status-error)
+                                      :direct-merge-exit 4
+                                      :direct-merge-error (str "direct merge refused")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (str (merge-preface) (direct-merge-line))
+                                   (str "merge: " merge-item
+                                        ": `gh pr merge "
+                                        merge-pr
+                                        " --merge --match-head-commit "
+                                        approved-head
+                                        "` exited 4: direct merge refused"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
 
 (deftest stops-before-advancing-when-auto-merge-is-disabled
   (let (root (unwrap-ok (setup "merge-auto-off"

@@ -5,8 +5,12 @@
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command
-        merge-command repo-view-command
+        merge-command merge-mode repo-view-command
         required-checks-command show-command view-command)
+
+(defenum merge-mode
+  auto
+  direct)
 
 (defn show-command (item)
   (->command :program (str "rmap")
@@ -69,8 +73,8 @@
                             (str ".required_status_checks.contexts | length"))
                  :label label))))
 
-(defn merge-command (method target)
-  (let (args (merge-args method target))
+(defn merge-command (method mode target)
+  (let (args (merge-args method mode target))
     (let (label (str "gh " (join args " ")))
       (->command :program (str "gh") :args args :label label))))
 
@@ -84,12 +88,26 @@
              :label (str "gh pr view " pull-request
                          " --json state,mergedAt,headRefOid")))
 
-(defn merge-args (method target)
+(defn merge-args (method mode target)
+  (match mode
+    (auto (auto-merge-args method target))
+    (direct (direct-merge-args method target))))
+
+(defn auto-merge-args (method target)
   (match method
     (gh-auto (vec (str "pr")
                   (str "merge")
                   (clone (:pull-request target))
                   (str "--auto")
+                  (str "--merge")
+                  (str "--match-head-commit")
+                  (clone (:head target))))))
+
+(defn direct-merge-args (method target)
+  (match method
+    (gh-auto (vec (str "pr")
+                  (str "merge")
+                  (clone (:pull-request target))
                   (str "--merge")
                   (str "--match-head-commit")
                   (clone (:head target))))))
