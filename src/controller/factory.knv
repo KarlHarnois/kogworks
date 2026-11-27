@@ -152,4 +152,6 @@
     ((non-object-field path)
      (factory-error/non-object-field path))
     ((non-number-field path)
-     (factory-error/non-number-field path))))
+     (factory-error/non-number-field path))
+    ((non-boolean-field path)
+     (factory-error/non-boolean-field path))))

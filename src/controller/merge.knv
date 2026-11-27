@@ -4,7 +4,8 @@
 (use controller/failure ->action-failure controller-error
                         merge-error)
 
-(use controller/fields field-error->message required-number
+(use controller/fields field-error field-error->message
+                       required-bool required-number
                        required-object required-text)
 
 (use controller/factory factory-config)
@@ -12,12 +13,16 @@
 
 (use controller/merge-commands advance-command
                                auto-merge-command
-                               close-command merge-command
+                               close-command
+                               disable-auto-merge-command
+                               merge-command
                                repo-view-command
                                required-checks-command
                                show-command view-command)
 
-(use controller/merge-target ->merge-target merge-target)
+(use controller/merge-target ->merge-target item-status-of
+                             merge-approval
+                             merge-item-status merge-target)
 
 (use controller/process command command-detail execute
                         outcome successful?)
@@ -28,6 +33,10 @@
   :poll-seconds int
   :timeout-seconds int)
 
+(defstruct merge-poll
+  :item-status merge-item-status
+  :pr-state merge-state)
+
 (defstruct merge-state
   :state string
   :head string)
@@ -35,6 +44,7 @@
 (defenum poll-verdict
   merged
   moved
+  fixing
   waiting)
 
 (type start-merge
@@ -48,7 +58,35 @@
   (match (read-merge-target repo item)
     ((err failure) (err failure))
     ((ok target)
-     (prepare-merge repo config settings item target))))
+     (guard-merge-target repo config settings item target))))
+
+(type guard-merge-target
+  (fn ((ref str)
+       (ref factory-config)
+       (ref merge-settings)
+       (ref string)
+       (ref merge-target))
+    (result unit controller-error)))
+
+(defn guard-merge-target (repo config settings item target)
+  (match (:item-status target)
+    (fixing (disarm-and-stop repo item target
+                             (returned-to-fixing-error item target)))
+    (_ (guard-approval repo config settings item target))))
+
+(type guard-approval
+  (fn ((ref str)
+       (ref factory-config)
+       (ref merge-settings)
+       (ref string)
+       (ref merge-target))
+    (result unit controller-error)))
+
+(defn guard-approval (repo config settings item target)
+  (match (:approval target)
+    (approved (prepare-merge repo config settings item target))
+    (not-approved (disarm-and-stop repo item target
+                                   (not-approved-error item target)))))
 
 (type read-merge-target
   (fn ((ref str) (ref string))
@@ -79,52 +117,38 @@
     (result merge-target controller-error)))
 
 (defn target-from-json (item command document)
-  (match (required-object document "pull_request" "pull_request")
-    ((err failure)
-     (err (invalid-item-output item command
-                               (field-error->message failure))))
-    ((ok pull) (target-from-pull item command pull))))
+  (map-err (target-fields document)
+    (fn (failure)
+      (invalid-item-output item command
+                           (field-error->message failure)))))
 
-(type target-from-pull
-  (fn ((ref string) (ref command) (ref json))
-    (result merge-target controller-error)))
+(type target-fields
+  (fn ((ref json))
+    (result merge-target field-error)))
 
-(defn target-from-pull (item command pull)
-  (match (required-number pull "number" "pull_request.number")
-    ((err failure)
-     (err (invalid-item-output item command
-                               (field-error->message failure))))
-    ((ok pr) (target-from-pull-approval item command pull pr))))
+(defn target-fields (document)
+  (let-try (record (required-object document "item" "item"))
+    (let-try (status (required-text record "status" "item.status"))
+      (let-try (pull (required-object document "pull_request" "pull_request"))
+        (let-try (pr (required-number pull "number" "pull_request.number"))
+          (let-try (approved (required-bool pull "approved"
+                                            "pull_request.approved"))
+            (let-try (approval (required-object pull
+                                                "approval"
+                                                "pull_request.approval"))
+              (let-try (head (required-text approval "head"
+                                            "pull_request.approval.head"))
+                (ok (->merge-target :pull-request pr
+                                    :head head
+                                    :item-status (item-status-of (as-str
+                                                                   status))
+                                    :approval (approval-of approved)))))))))))
 
-(type target-from-pull-approval
-  (fn ((ref string)
-       (ref command)
-       (ref json)
-       (ref string))
-    (result merge-target controller-error)))
+(type approval-of (fn (bool) merge-approval))
 
-(defn target-from-pull-approval (item command pull pr)
-  (match (required-object pull "approval" "pull_request.approval")
-    ((err failure)
-     (err (invalid-item-output item command
-                               (field-error->message failure))))
-    ((ok approval)
-     (target-from-approval item command approval pr))))
-
-(type target-from-approval
-  (fn ((ref string)
-       (ref command)
-       (ref json)
-       (ref string))
-    (result merge-target controller-error)))
-
-(defn target-from-approval (item command approval pr)
-  (match (required-text approval "head" "pull_request.approval.head")
-    ((err failure)
-     (err (invalid-item-output item command
-                               (field-error->message failure))))
-    ((ok head)
-     (ok (->merge-target :pull-request (clone pr) :head head)))))
+(defn approval-of (approved)
+  (if approved
+    merge-approval/approved merge-approval/not-approved))
 
 (type prepare-merge
   (fn ((ref str)
@@ -310,9 +334,77 @@
   (fn ((ref str)
        (ref string)
        (ref merge-target))
-    (result merge-state controller-error)))
+    (result merge-poll controller-error)))
 
 (defn read-poll-state (repo item target)
+  (match (read-item-status repo item)
+    ((err failure) (err failure))
+    ((ok status) (attach-poll-state repo item target status))))
+
+(type read-item-status
+  (fn ((ref str) (ref string))
+    (result merge-item-status controller-error)))
+
+(defn read-item-status (repo item)
+  (let (command (show-command item))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (parse-item-status item command (:stdout outcome))
+        (err (merge-command-failure item command outcome))))))
+
+(type parse-item-status
+  (fn ((ref string)
+       (ref command)
+       (ref string))
+    (result merge-item-status controller-error)))
+
+(defn parse-item-status (item command text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (item-status-from-json item command document))
+    ((err failure)
+     (err (invalid-item-output item command
+                               (json-error->message failure))))))
+
+(type item-status-from-json
+  (fn ((ref string) (ref command) (ref json))
+    (result merge-item-status controller-error)))
+
+(defn item-status-from-json (item command document)
+  (map-err (poll-item-status document)
+    (fn (failure)
+      (invalid-item-output item command
+                           (field-error->message failure)))))
+
+(type poll-item-status
+  (fn ((ref json))
+    (result merge-item-status field-error)))
+
+(defn poll-item-status (document)
+  (let-try (record (required-object document "item" "item"))
+    (let-try (status (required-text record "status" "item.status"))
+      (ok (item-status-of (as-str status))))))
+
+(type attach-poll-state
+  (fn ((ref str)
+       (ref string)
+       (ref merge-target)
+       (ref merge-item-status))
+    (result merge-poll controller-error)))
+
+(defn attach-poll-state (repo item target status)
+  (match (read-pull-state repo item target)
+    ((err failure) (err failure))
+    ((ok state)
+     (ok (->merge-poll :item-status (clone status) :pr-state state)))))
+
+(type read-pull-state
+  (fn ((ref str)
+       (ref string)
+       (ref merge-target))
+    (result merge-state controller-error)))
+
+(defn read-pull-state (repo item target)
   (let (command (view-command (:pull-request target)))
     (let (outcome (execute repo command))
       (if (successful? outcome)
@@ -365,20 +457,32 @@
        (ref merge-target)
        (ref merge-settings)
        instant
-       (ref merge-state))
+       (ref merge-poll))
     (result unit controller-error)))
 
-(defn handle-poll (repo item target settings start state)
-  (match (poll-verdict-of target state)
+(defn handle-poll (repo item target settings start poll)
+  (match (poll-verdict-of target poll)
     (merged (close-item repo item))
-    (moved (err (head-change-error item target state)))
+    (moved (disarm-and-stop repo item target
+                            (head-change-error item target (:pr-state poll))))
+    (fixing (disarm-and-stop repo item target
+                             (returned-to-fixing-error item target)))
     (waiting (retry-poll repo item target settings start))))
 
 (type poll-verdict-of
+  (fn ((ref merge-target) (ref merge-poll))
+    poll-verdict))
+
+(defn poll-verdict-of (target poll)
+  (match (:item-status poll)
+    (fixing poll-verdict/fixing)
+    (_ (head-poll-verdict target (:pr-state poll)))))
+
+(type head-poll-verdict
   (fn ((ref merge-target) (ref merge-state))
     poll-verdict))
 
-(defn poll-verdict-of (target state)
+(defn head-poll-verdict (target state)
   (if (= (:head state) (:head target))
     (merged-verdict (:state state))
     poll-verdict/moved))
@@ -408,6 +512,50 @@
                                    (clone (:pull-request target))
                                    (clone (:head target))
                                    (clone (:head state)))))
+
+(type returned-to-fixing-error
+  (fn ((ref string) (ref merge-target))
+    controller-error))
+
+(defn returned-to-fixing-error (item target)
+  (let (pull-request (clone (:pull-request target)))
+    (controller-error/merge-failed
+      (merge-error/returned-to-fixing (clone item) pull-request))))
+
+(type not-approved-error
+  (fn ((ref string) (ref merge-target))
+    controller-error))
+
+(defn not-approved-error (item target)
+  (controller-error/merge-failed (merge-error/not-approved
+                                   (clone item)
+                                   (clone (:pull-request target))
+                                   (clone (:head target)))))
+
+(type disarm-and-stop
+  (fn ((ref str)
+       (ref string)
+       (ref merge-target)
+       controller-error)
+    (result unit controller-error)))
+
+(defn disarm-and-stop (repo item target failure)
+  (match (disarm-auto-merge repo item target)
+    ((err disarm-failure) (err disarm-failure))
+    ((ok _) (err failure))))
+
+(type disarm-auto-merge
+  (fn ((ref str)
+       (ref string)
+       (ref merge-target))
+    (result unit controller-error)))
+
+(defn disarm-auto-merge (repo item target)
+  (let (command (disable-auto-merge-command (:pull-request target)))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (ok (do))
+        (err (merge-command-failure item command outcome))))))
 
 (type retry-poll
   (fn ((ref str)

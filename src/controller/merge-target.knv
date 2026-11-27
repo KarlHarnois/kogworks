@@ -1,8 +1,27 @@
 (module
-  "Names the pull request and the approved head that a merge acts on.")
+  "Names the pull request, the approved head and the item state that a merge acts on.")
 
-(export ->merge-target merge-target)
+(export ->merge-target item-status-of merge-approval
+        merge-item-status merge-target)
 
 (defstruct merge-target
   :pull-request string
-  :head string)
+  :head string
+  :item-status merge-item-status
+  :approval merge-approval)
+
+(defenum merge-approval
+  approved
+  not-approved)
+
+(defenum merge-item-status
+  fixing
+  (other string))
+
+(type item-status-of
+  (fn ((ref str)) merge-item-status))
+
+(defn item-status-of (text)
+  (if (= text (str "fixing"))
+    merge-item-status/fixing
+    (merge-item-status/other (str text))))

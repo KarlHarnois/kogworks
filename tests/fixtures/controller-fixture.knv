@@ -78,9 +78,16 @@
     "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
-    "    case \"$2\" in\n"
-    "      show) cat \"$root/item.json\" ;;\n"
-    "      advance)\n"
+    "    case \"$2\" in\n" "      show)\n"
+    "        count=0\n"
+    "        if [ -f \"$root/show-counter\" ]; then\n"
+    "          count=$(cat \"$root/show-counter\")\n"
+    "        fi\n" "        count=$((count + 1))\n"
+    "        printf '%s' \"$count\" > \"$root/show-counter\"\n"
+    "        if [ \"$count\" -gt 1 ] && [ -f \"$root/item-later.json\" ]; then\n"
+    "          cat \"$root/item-later.json\"\n"
+    "        else\n" "          cat \"$root/item.json\"\n"
+    "        fi\n" "        ;;\n" "      advance)\n"
     "        if [ [ADVANCE_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[ADVANCE_ERROR]' >&2\n"
     "          exit [ADVANCE_EXIT]\n" "        fi\n"
@@ -136,40 +143,44 @@
        "printf 'origin/main\\n'"))
 
 (def gh-script
-  (str "#!/bin/sh\n"
-       "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-       "printf 'gh %s\\n' \"$*\" >> \"$root/sequence\"\n"
-       "case \"$1 $2\" in\n" "  \"repo view\")\n"
-       "    if [ [REPO_VIEW_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[REPO_VIEW_ERROR]' >&2\n"
-       "      exit [REPO_VIEW_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[SLUG]'\n" "    ;;\n"
-       "  \"api repos/[SLUG]\")\n"
-       "    if [ [API_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[API_ERROR]' >&2\n"
-       "      exit [API_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n"
-       "    ;;\n"
-       "  \"api repos/[SLUG]/branches/main/protection\")\n"
-       "    if [ [REQUIRED_CHECKS_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[REQUIRED_CHECKS_ERROR]' >&2\n"
-       "      exit [REQUIRED_CHECKS_EXIT]\n" "    fi\n"
-       "    if [ [API_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[API_ERROR]' >&2\n"
-       "      exit [API_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
-       "  \"pr merge\")\n"
-       "    if [ [MERGE_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[MERGE_ERROR]' >&2\n"
-       "      exit [MERGE_EXIT]\n" "    fi\n" "    ;;\n"
-       "  \"pr view\")\n" "    views=0\n"
-       "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
-       "    views=$((views + 1))\n"
-       "    printf '%s' \"$views\" > \"$root/view-count\"\n"
-       "    if [ \"$views\" -ge 2 ]; then\n"
-       "      cat \"$root/later-view.json\"\n" "    else\n"
-       "      cat \"$root/view.json\"\n" "    fi\n"
-       "    ;;\n" "esac\n" "exit 0\n"))
+  (str
+    "#!/bin/sh\n"
+    "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+    "printf 'gh %s\\n' \"$*\" >> \"$root/sequence\"\n"
+    "case \"$1 $2\" in\n" "  \"repo view\")\n"
+    "    if [ [REPO_VIEW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[REPO_VIEW_ERROR]' >&2\n"
+    "      exit [REPO_VIEW_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[SLUG]'\n" "    ;;\n"
+    "  \"api repos/[SLUG]\")\n"
+    "    if [ [API_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[API_ERROR]' >&2\n"
+    "      exit [API_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n" "    ;;\n"
+    "  \"api repos/[SLUG]/branches/main/protection\")\n"
+    "    if [ [REQUIRED_CHECKS_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[REQUIRED_CHECKS_ERROR]' >&2\n"
+    "      exit [REQUIRED_CHECKS_EXIT]\n" "    fi\n"
+    "    if [ [API_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[API_ERROR]' >&2\n"
+    "      exit [API_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
+    "  \"pr merge\")\n"
+    "    if [ \"$4\" = \"--disable-auto\" ]; then\n"
+    "      if [ [DISARM_EXIT] -ne 0 ]; then\n"
+    "        printf '%s\\n' '[DISARM_ERROR]' >&2\n"
+    "        exit [DISARM_EXIT]\n" "      fi\n" "    else\n"
+    "      if [ [MERGE_EXIT] -ne 0 ]; then\n"
+    "        printf '%s\\n' '[MERGE_ERROR]' >&2\n"
+    "        exit [MERGE_EXIT]\n" "      fi\n" "    fi\n"
+    "    ;;\n" "  \"pr view\")\n" "    views=0\n"
+    "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
+    "    views=$((views + 1))\n"
+    "    printf '%s' \"$views\" > \"$root/view-count\"\n"
+    "    if [ \"$views\" -ge 2 ]; then\n"
+    "      cat \"$root/later-view.json\"\n" "    else\n"
+    "      cat \"$root/view.json\"\n" "    fi\n" "    ;;\n"
+    "esac\n" "exit 0\n"))
 
 (def absolute-path
   (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
@@ -209,6 +220,7 @@
   :next-json string
   :ready-json string
   :item-json string
+  :item-later-json string
   :stop-after int
   :claim-exit int
   :claim-error string
@@ -220,6 +232,8 @@
   :new-error string
   :merge-exit int
   :merge-error string
+  :disarm-exit int
+  :disarm-error string
   :close-exit int
   :close-error string
   :repo-view-exit int
@@ -240,6 +254,7 @@
   (->fake-settings :next-json next-json
                    :ready-json ready-json
                    :item-json (str "{}")
+                   :item-later-json (str)
                    :stop-after 0
                    :claim-exit 0
                    :claim-error (str)
@@ -251,6 +266,8 @@
                    :new-error (str)
                    :merge-exit 0
                    :merge-error (str)
+                   :disarm-exit 0
+                   :disarm-error (str)
                    :close-exit 0
                    :close-error (str)
                    :repo-view-exit 0
@@ -314,6 +331,10 @@
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")
                      (clone (:merge-error settings)))
+      (replace-token (str "[DISARM_EXIT]")
+                     (str (:disarm-exit settings)))
+      (replace-token (str "[DISARM_ERROR]")
+                     (clone (:disarm-error settings)))
       (replace-token (str "[CLOSE_EXIT]")
                      (str (:close-exit settings)))
       (replace-token (str "[CLOSE_ERROR]")
@@ -355,5 +376,12 @@
                               (as-str (:item-json settings))))
         (let-try (_ (write-text (as-str (str root "/view.json"))
                                 (as-str (:view-json settings))))
-          (write-text (as-str (str root "/later-view.json"))
-                      (as-str (:later-view-json settings))))))))
+          (let-try (_ (write-text (as-str (str root "/later-view.json"))
+                                  (as-str (:later-view-json settings))))
+            (write-later-item root settings)))))))
+
+(defn write-later-item (root settings)
+  (if (empty? (:item-later-json settings))
+    (ok (do))
+    (write-text (as-str (str root "/item-later.json"))
+                (as-str (:item-later-json settings)))))

@@ -27,11 +27,14 @@
   (non-text-field string)
   (non-object-field string)
   (non-number-field string)
+  (non-boolean-field string)
   (unsupported-merge-method string))
 
 (defenum merge-error
   (settings-refused string string)
   (head-changed string string string string)
+  (returned-to-fixing string string)
+  (not-approved string string string)
   (timed-out string string int))
 
 (defstruct action-failure
@@ -80,6 +83,8 @@
      (str "the factory field `" path "` is not an object"))
     ((non-number-field path)
      (str "the factory field `" path "` is not a number"))
+    ((non-boolean-field path)
+     (str "the factory field `" path "` is not a boolean"))
     ((unsupported-merge-method method)
      (str "the factory merge method `" method
           "` is not supported"))))
@@ -91,6 +96,13 @@
     ((head-changed item pull-request approved observed)
      (str "merge: " item ": PR " pull-request " head is "
           observed ", not the approved " approved))
+    ((returned-to-fixing item pull-request)
+     (str "merge: " item
+          ": the item returned to fixing, so auto-merge"
+          " on PR " pull-request " is disarmed"))
+    ((not-approved item pull-request head)
+     (str "merge: " item ": PR " pull-request " head " head
+          " has no approving review"))
     ((timed-out item pull-request seconds)
      (str "merge: " item ": PR " pull-request
           " did not merge within " seconds " seconds"))))
