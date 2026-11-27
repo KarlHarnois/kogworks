@@ -1,6 +1,6 @@
 (defproject kogworks
   :knave "0.22.0"
-  (lints (needless-type warn))
+  (lints (needless-type deny))
   (libraries
     (kogworks :path ".")
     (knave-commandant :git "https://github.com/KarlHarnois/knave-commandant"
