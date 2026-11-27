@@ -16,7 +16,7 @@
   (factory-failed factory-error)
   (merge-failed merge-error)
   (unreadable-brief string string)
-  (unreadable-repository string string)
+  (unreadable-repo string string)
   (placeholder-left string string))
 
 (defenum factory-error
@@ -59,7 +59,7 @@
     ((merge-failed cause) (merge-error->message cause))
     ((unreadable-brief path reason)
      (str "controller: cannot read the brief " path ": " reason))
-    ((unreadable-repository path reason)
+    ((unreadable-repo path reason)
      (str "controller: cannot resolve the repository " path
           ": " reason))
     ((placeholder-left item token)

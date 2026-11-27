@@ -24,7 +24,7 @@
   (non-text-field string)
   (non-number-field string)
   (invalid-max-active string (parse-error int))
-  (unreadable-repository string string))
+  (unreadable-repo string string))
 
 (defstruct apply-target
   :dir string
@@ -48,7 +48,7 @@
     ((invalid-max-active path cause)
      (str "the factory field `" path
           "` is not a whole number: " cause))
-    ((unreadable-repository path reason)
+    ((unreadable-repo path reason)
      (str "cannot resolve the repository " path ": " reason))))
 
 (defn cap-from-document (document)
@@ -64,7 +64,7 @@
 (defn absolute-repo (repo)
   (map-err (canonical-path repo)
     (fn (reason)
-      (apply-error/unreadable-repository (str repo) reason))))
+      (apply-error/unreadable-repo (str repo) reason))))
 
 (defn read-cap (repo)
   (let-try (document (factory-document repo))

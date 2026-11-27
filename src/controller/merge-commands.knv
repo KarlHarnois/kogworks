@@ -46,11 +46,11 @@
   (fn ((ref string)) command))
 
 (defn auto-merge-command (slug)
-  (let (repository (str "repos/" slug))
-    (let (label (str "gh api " repository " --jq .allow_auto_merge"))
+  (let (repo (str "repos/" slug))
+    (let (label (str "gh api " repo " --jq .allow_auto_merge"))
       (->command :program (str "gh")
                  :arguments (vec (str "api")
-                                 repository
+                                 repo
                                  (str "--jq")
                                  (str ".allow_auto_merge"))
                  :label label))))

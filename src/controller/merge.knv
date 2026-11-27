@@ -93,11 +93,11 @@
      (advance-and-enable repo config settings item target))))
 
 (defn preflight (repo item)
-  (match (repository-slug repo item)
+  (match (repo-slug repo item)
     ((err failure) (err failure))
     ((ok slug) (check-settings repo item slug))))
 
-(defn repository-slug (repo item)
+(defn repo-slug (repo item)
   (let (command (repo-view-command))
     (let (outcome (execute repo command))
       (if (successful? outcome)

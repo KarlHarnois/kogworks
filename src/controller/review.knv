@@ -14,7 +14,7 @@
 (use controller/process ->command command-detail execute
                         join-path successful?)
 
-(use controller/repository default-branch)
+(use controller/repo default-branch)
 (use controller/session abandon-command failed-start-detail)
 
 (export review-mode review-mode->text start-review)

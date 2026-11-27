@@ -298,7 +298,7 @@
                         " exited 6: forbidden"))))
       (assert (not (contains? (sequence-text root) "item advance"))))))
 
-(deftest stops-when-the-repository-view-is-refused
+(deftest stops-when-the-repo-view-is-refused
   (let (root (unwrap-ok (setup "merge-repo-view-refused"
                                (assoc (merge-settings)
                                       :repo-view-exit 8

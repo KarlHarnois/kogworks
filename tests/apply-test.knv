@@ -88,9 +88,8 @@
                 (str "the factory field `max_active` is not a whole number: "
                      "invalid digit found in string"))))
     ((ok _) (assert false)))
-  (assert (= (apply-error->message (apply-error/unreadable-repository (str
-                                                                        "repo")
-                                                                      (str "gone")))
+  (assert (= (apply-error->message (apply-error/unreadable-repo (str "repo")
+                                                                (str "gone")))
              (str "cannot resolve the repository repo: gone"))))
 
 (deftest apply-stores-the-factory-max-active
