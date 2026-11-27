@@ -62,10 +62,6 @@
     ((trailing-input position)
      (str "trailing input at " position))))
 
-(type parse-json
-  (fn ((ref str))
-    (result json json-error)))
-
 (defn parse-json (text)
   (let (characters (collect (chars text))
         found (try (parse-value (ref characters) 0))
@@ -73,10 +69,6 @@
     (if (= end (len characters))
       (ok (clone (:value found)))
       (err (json-error/trailing-input end)))))
-
-(type json-field
-  (fn ((ref json) (ref str))
-    (option json)))
 
 (defn json-field (value key)
   (match value
@@ -87,24 +79,15 @@
                (fn (field) (clone (:value field)))))
     (_ none)))
 
-(type json-text
-  (fn ((ref json)) (option string)))
-
 (defn json-text (value)
   (match value
     ((text text) (some (clone text)))
     (_ none)))
 
-(type json-array
-  (fn ((ref json)) (option (vec json))))
-
 (defn json-array (value)
   (match value
     ((array items) (some (clone items)))
     (_ none)))
-
-(type json-object?
-  (fn ((ref json)) bool))
 
 (defn json-object? (value)
   (match value
@@ -254,9 +237,6 @@
                          :position (inc position))))
           (else (err (json-error/unexpected-character position character))))))))
 
-(type with-field!
-  (fn ((vec field) field) (vec field)))
-
 (defn with-field! (fields field)
   (do (push! fields field) fields))
 
@@ -309,9 +289,6 @@
       (= character (char "\t"))
       (= character (char "\n"))
       (= character (char "\r"))))
-
-(type with-item!
-  (fn ((vec json) json) (vec json)))
 
 (defn with-item! (items item)
   (do (push! items item) items))

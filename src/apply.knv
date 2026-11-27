@@ -30,9 +30,6 @@
   :dir string
   :cap roadmap-cap)
 
-(type apply-and-exit
-  (fn ((ref str)) unit))
-
 (defn apply-and-exit (repo)
   (match (read-target repo)
     ((ok target) (apply-cap target))
@@ -54,10 +51,6 @@
     ((unreadable-repository path reason)
      (str "cannot resolve the repository " path ": " reason))))
 
-(type cap-from-document
-  (fn ((ref json))
-    (result roadmap-cap apply-error)))
-
 (defn cap-from-document (document)
   (let-try (roadmap (required-text document "roadmap" "roadmap")
             max-active (required-number document "max_active" "max_active"))
@@ -68,61 +61,33 @@
             cap (read-cap (as-str dir)))
     (ok (->apply-target :dir dir :cap cap))))
 
-(type absolute-repo
-  (fn ((ref str))
-    (result string apply-error)))
-
 (defn absolute-repo (repo)
   (map-err (canonical-path repo)
     (fn (reason)
       (apply-error/unreadable-repository (str repo) reason))))
 
-(type read-cap
-  (fn ((ref str))
-    (result roadmap-cap apply-error)))
-
 (defn read-cap (repo)
   (let-try (document (factory-document repo))
     (cap-from-document document)))
 
-(type factory-document
-  (fn ((ref str))
-    (result json apply-error)))
-
 (defn factory-document (repo)
   (map-err (read-factory-document repo)
     (fn (failure) (apply-error/factory failure))))
-
-(type required-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string apply-error)))
 
 (defn required-text (value key path)
   (match (json-field value key)
     (none (err (apply-error/missing-field (str path))))
     ((some found) (field-text found path))))
 
-(type field-text
-  (fn ((ref json) (ref str))
-    (result string apply-error)))
-
 (defn field-text (found path)
   (match found
     ((text text) (ok (clone text)))
     (_ (err (apply-error/non-text-field (str path))))))
 
-(type required-number
-  (fn ((ref json) (ref str) (ref str))
-    (result int apply-error)))
-
 (defn required-number (value key path)
   (match (json-field value key)
     (none (err (apply-error/missing-field (str path))))
     ((some found) (field-number found path))))
-
-(type field-number
-  (fn ((ref json) (ref str))
-    (result int apply-error)))
 
 (defn field-number (found path)
   (match found
@@ -163,8 +128,6 @@
                          (:roadmap cap)
                          " --max-active "
                          (:max-active cap))))
-
-(type exit-code (fn (int) i32))
 
 (defn exit-code (code)
   (if (< code 0)

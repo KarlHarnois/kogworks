@@ -70,36 +70,21 @@
       ((some items) (criterion-texts items 0 (vec)))
       (none (err (item-error/non-array-criteria (str "item.criteria")))))))
 
-(type criterion-texts
-  (fn ((ref (vec json)) int (vec string))
-    (result (vec string) item-error)))
-
 (defn criterion-texts (items index texts)
   (if (>= index (len items))
     (checked-criteria texts)
     (let-try (text (criterion-text (at items index) index))
       (criterion-texts items (inc index) (with-text! texts text)))))
 
-(type checked-criteria
-  (fn ((vec string))
-    (result (vec string) item-error)))
-
 (defn checked-criteria (texts)
   (if (empty? texts)
     (err (item-error/empty-criteria (str "item.criteria")))
     (ok texts)))
 
-(type criterion-text
-  (fn ((ref json) int)
-    (result string item-error)))
-
 (defn criterion-text (value index)
   (match (json-text value)
     ((some text) (ok text))
     (none (err (item-error/non-text-criterion index)))))
-
-(type with-text!
-  (fn ((vec string) string) (vec string)))
 
 (defn with-text! (texts text)
   (do (push! texts text) texts))

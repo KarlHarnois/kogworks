@@ -17,12 +17,6 @@
 
 (export dispatch)
 
-(type dispatch
-  (fn ((ref str)
-       (ref factory-config)
-       (ref ready-item))
-    (result string controller-error)))
-
 (defn dispatch (repo config item)
   (let (session (str "build-" (:id item)))
     (let (branch (clone session))
@@ -40,15 +34,6 @@
     ((ok prompt)
      (claim-and-start repo config item session branch prompt))))
 
-(type fill-worker-brief
-  (fn ((ref str)
-       (ref factory-config)
-       (ref ready-item)
-       (ref string)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
-
 (defn fill-worker-brief (repo config item session branch base)
   (let (path (join-path repo
                         (as-str (:brief (:worker config)))))
@@ -60,15 +45,6 @@
                                   :skill (clone (:skill (:worker config)))))
       (fill-brief (as-str path) (worker-brief values)))))
 
-(type claim-and-start
-  (fn ((ref str)
-       (ref factory-config)
-       (ref ready-item)
-       (ref string)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
-
 (defn claim-and-start (repo config item session branch prompt)
   (let (claim (claim-command item session branch))
     (let (outcome (execute repo claim))
@@ -77,12 +53,6 @@
         (err (command-failed (str "dispatch")
                              (clone (:id item))
                              claim outcome))))))
-
-(type claim-command
-  (fn ((ref ready-item)
-       (ref string)
-       (ref string))
-    command))
 
 (defn claim-command (item session branch)
   (->command :program (str "rmap")
@@ -98,14 +68,6 @@
                          " --session " session " --branch "
                          branch)))
 
-(type start-session
-  (fn ((ref str)
-       (ref factory-config)
-       (ref ready-item)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
-
 (defn start-session (repo config item session prompt)
   (let (start (start-command repo config session prompt))
     (let (outcome (execute repo start))
@@ -117,14 +79,6 @@
                           (clone (:id item))
                           session start outcome)))))
 
-(type abandon-and-fail
-  (fn ((ref str)
-       (ref string)
-       (ref string)
-       (ref command)
-       (ref outcome))
-    (result string controller-error)))
-
 (defn abandon-and-fail (repo item session start outcome)
   (let (abandon (abandon-command session))
     (let (end-outcome (execute repo abandon))
@@ -135,13 +89,6 @@
                                :code (:code outcome)
                                :detail (failed-start-detail outcome
                                                             end-outcome)))))))
-
-(type start-command
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref string))
-    command))
 
 (defn start-command (repo config session prompt)
   (let (agent (:agent (:worker config)))
@@ -158,10 +105,6 @@
                :label (str "ringleader new --name " session
                            " --repo " repo " --agent " agent
                            " --prompt <filled brief>"))))
-
-(type command-failed
-  (fn (string string (ref command) (ref outcome))
-    controller-error))
 
 (defn command-failed (action item command outcome)
   (controller-error/command-failed (->action-failure

@@ -24,9 +24,6 @@
     ((kogworks-command/apply options)
      (apply-and-exit (as-str (:repo options))))))
 
-(type synth-and-exit
-  (fn ((ref str)) unit))
-
 (defn synth-and-exit (dir)
   (match (synth-factory dir)
     ((ok _) (do))

@@ -11,10 +11,6 @@
 (def symbolic-ref-label
   (str "git symbolic-ref --short refs/remotes/origin/HEAD"))
 
-(type default-branch
-  (fn ((ref str))
-    (result string controller-error)))
-
 (defn default-branch (repo)
   (let (command (->command :program (str "git")
                            :arguments (vec (str "symbolic-ref")
@@ -22,10 +18,6 @@
                                            (str "refs/remotes/origin/HEAD"))
                            :label (clone symbolic-ref-label)))
     (branch-from-outcome command (execute repo command))))
-
-(type branch-from-outcome
-  (fn ((ref command) (ref outcome))
-    (result string controller-error)))
 
 (defn branch-from-outcome (command outcome)
   (if (successful? outcome)
@@ -38,10 +30,6 @@
                              :code (:code outcome)
                              :detail (command-detail outcome))))))
 
-(type branch-from-text
-  (fn ((ref command) (ref str))
-    (result string controller-error)))
-
 (defn branch-from-text (command branch-text)
   (let (branch (remote-stripped branch-text))
     (if (empty? (as-str branch))
@@ -52,9 +40,6 @@
                                                               :code 0
                                                               :detail (str "the default branch is empty"))))
       (ok branch))))
-
-(type remote-stripped
-  (fn ((ref str)) string))
 
 (defn remote-stripped (branch)
   (if (starts-with? branch "origin/")

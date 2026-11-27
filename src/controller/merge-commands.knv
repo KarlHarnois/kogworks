@@ -9,9 +9,6 @@
         merge-command repo-view-command
         required-checks-command show-command view-command)
 
-(type show-command
-  (fn ((ref string)) command))
-
 (defn show-command (item)
   (->command :program (str "rmap")
              :arguments (vec (str "item")
@@ -19,9 +16,6 @@
                              (clone item)
                              (str "--json"))
              :label (str "rmap item show " item " --json")))
-
-(type advance-command
-  (fn ((ref string)) command))
 
 (defn advance-command (item)
   (->command :program (str "rmap")
@@ -31,17 +25,12 @@
                              (str "merging"))
              :label (str "rmap item advance " item " merging")))
 
-(type close-command
-  (fn ((ref string)) command))
-
 (defn close-command (item)
   (->command :program (str "rmap")
              :arguments (vec (str "item")
                              (str "close")
                              (clone item))
              :label (str "rmap item close " item)))
-
-(type repo-view-command (fn () command))
 
 (defn repo-view-command ()
   (->command :program (str "gh")
@@ -82,19 +71,12 @@
                                    ".required_status_checks.contexts | length"))
                  :label label))))
 
-(type merge-command
-  (fn ((ref merge-method) (ref merge-target))
-    command))
-
 (defn merge-command (method target)
   (let (arguments (merge-arguments method target))
     (let (label (str "gh " (join arguments " ")))
       (->command :program (str "gh")
                  :arguments arguments
                  :label label))))
-
-(type view-command
-  (fn ((ref string)) command))
 
 (defn view-command (pull-request)
   (->command :program (str "gh")
@@ -105,10 +87,6 @@
                              (str "state,mergedAt,headRefOid"))
              :label (str "gh pr view " pull-request
                          " --json state,mergedAt,headRefOid")))
-
-(type merge-arguments
-  (fn ((ref merge-method) (ref merge-target))
-    (vec string)))
 
 (defn merge-arguments (method target)
   (match method

@@ -37,22 +37,11 @@
   moved
   waiting)
 
-(type start-merge
-  (fn ((ref str)
-       (ref factory-config)
-       (ref merge-settings)
-       (ref string))
-    (result unit controller-error)))
-
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
     ((err failure) (err failure))
     ((ok target)
      (prepare-merge repo config settings item target))))
-
-(type read-merge-target
-  (fn ((ref str) (ref string))
-    (result merge-target controller-error)))
 
 (defn read-merge-target (repo item)
   (let (command (show-command item))
@@ -61,22 +50,12 @@
         (parse-merge-target item command (:stdout outcome))
         (err (merge-command-failure item command outcome))))))
 
-(type parse-merge-target
-  (fn ((ref string)
-       (ref command)
-       (ref string))
-    (result merge-target controller-error)))
-
 (defn parse-merge-target (item command text)
   (match (parse-json (as-str text))
     ((ok document) (target-from-json item command document))
     ((err failure)
      (err (invalid-item-output item command
                                (json-error->message failure))))))
-
-(type target-from-json
-  (fn ((ref string) (ref command) (ref json))
-    (result merge-target controller-error)))
 
 (defn target-from-json (item command document)
   (match (required-object document "pull_request" "pull_request")
@@ -85,23 +64,12 @@
                                (field-error->message failure))))
     ((ok pull) (target-from-pull item command pull))))
 
-(type target-from-pull
-  (fn ((ref string) (ref command) (ref json))
-    (result merge-target controller-error)))
-
 (defn target-from-pull (item command pull)
   (match (required-number pull "number" "pull_request.number")
     ((err failure)
      (err (invalid-item-output item command
                                (field-error->message failure))))
     ((ok pr) (target-from-pull-approval item command pull pr))))
-
-(type target-from-pull-approval
-  (fn ((ref string)
-       (ref command)
-       (ref json)
-       (ref string))
-    (result merge-target controller-error)))
 
 (defn target-from-pull-approval (item command pull pr)
   (match (required-object pull "approval" "pull_request.approval")
@@ -111,13 +79,6 @@
     ((ok approval)
      (target-from-approval item command approval pr))))
 
-(type target-from-approval
-  (fn ((ref string)
-       (ref command)
-       (ref json)
-       (ref string))
-    (result merge-target controller-error)))
-
 (defn target-from-approval (item command approval pr)
   (match (required-text approval "head" "pull_request.approval.head")
     ((err failure)
@@ -126,32 +87,16 @@
     ((ok head)
      (ok (->merge-target :pull-request (clone pr) :head head)))))
 
-(type prepare-merge
-  (fn ((ref str)
-       (ref factory-config)
-       (ref merge-settings)
-       (ref string)
-       (ref merge-target))
-    (result unit controller-error)))
-
 (defn prepare-merge (repo config settings item target)
   (match (preflight repo item)
     ((err failure) (err failure))
     ((ok _)
      (advance-and-enable repo config settings item target))))
 
-(type preflight
-  (fn ((ref str) (ref string))
-    (result unit controller-error)))
-
 (defn preflight (repo item)
   (match (repository-slug repo item)
     ((err failure) (err failure))
     ((ok slug) (check-settings repo item slug))))
-
-(type repository-slug
-  (fn ((ref str) (ref string))
-    (result string controller-error)))
 
 (defn repository-slug (repo item)
   (let (command (repo-view-command))
@@ -160,28 +105,16 @@
         (slug-from-text item (trim (:stdout outcome)))
         (err (merge-command-failure item command outcome))))))
 
-(type slug-from-text
-  (fn ((ref string) (ref str))
-    (result string controller-error)))
-
 (defn slug-from-text (item text)
   (if (empty? text)
     (err (settings-refused-error (clone item)
                                  (str "the repository slug is empty")))
     (ok (str text))))
 
-(type check-settings
-  (fn ((ref str) (ref string) (ref string))
-    (result unit controller-error)))
-
 (defn check-settings (repo item slug)
   (match (auto-merge-enabled repo item slug)
     ((err failure) (err failure))
     ((ok _) (required-status-checked repo item slug))))
-
-(type auto-merge-enabled
-  (fn ((ref str) (ref string) (ref string))
-    (result unit controller-error)))
 
 (defn auto-merge-enabled (repo item slug)
   (let (command (auto-merge-command slug))
@@ -203,10 +136,6 @@
                                       "` printed `" text
                                       "`, not `true`")))))
 
-(type required-status-checked
-  (fn ((ref str) (ref string) (ref string))
-    (result unit controller-error)))
-
 (defn required-status-checked (repo item slug)
   (let (command (required-checks-command slug))
     (let (outcome (execute repo command))
@@ -214,10 +143,6 @@
         (checked-required-count item command
                                 (trim (:stdout outcome)))
         (err (merge-command-failure item command outcome))))))
-
-(type checked-required-count
-  (fn ((ref string) (ref command) (ref str))
-    (result unit controller-error)))
 
 (defn checked-required-count (item command text)
   (match (the (result int parse-int-error) (parse text))
@@ -229,10 +154,6 @@
                                        "` printed `" text
                                        "`, not a count"))))))
 
-(type positive-required-count
-  (fn ((ref string) (ref command) int)
-    (result unit controller-error)))
-
 (defn positive-required-count (item command count)
   (if (> count 0)
     (ok (do))
@@ -241,23 +162,11 @@
                                       (:label command)
                                       "` reports no required status check")))))
 
-(type advance-and-enable
-  (fn ((ref str)
-       (ref factory-config)
-       (ref merge-settings)
-       (ref string)
-       (ref merge-target))
-    (result unit controller-error)))
-
 (defn advance-and-enable (repo config settings item target)
   (match (advance-item repo item)
     ((err failure) (err failure))
     ((ok _)
      (enable-auto-merge repo config settings item target))))
-
-(type advance-item
-  (fn ((ref str) (ref string))
-    (result unit controller-error)))
 
 (defn advance-item (repo item)
   (let (command (advance-command item))
@@ -266,27 +175,12 @@
         (ok (do))
         (err (merge-command-failure item command outcome))))))
 
-(type enable-auto-merge
-  (fn ((ref str)
-       (ref factory-config)
-       (ref merge-settings)
-       (ref string)
-       (ref merge-target))
-    (result unit controller-error)))
-
 (defn enable-auto-merge (repo config settings item target)
   (let (command (merge-command (:merge config) target))
     (let (outcome (execute repo command))
       (if (successful? outcome)
         (poll-merge repo item target settings)
         (err (merge-command-failure item command outcome))))))
-
-(type poll-merge
-  (fn ((ref str)
-       (ref string)
-       (ref merge-target)
-       (ref merge-settings))
-    (result unit controller-error)))
 
 (defn poll-merge (repo item target settings)
   (let (start (now))
