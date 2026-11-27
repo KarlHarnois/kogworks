@@ -23,23 +23,23 @@
   (if (successful? outcome)
     (branch-from-text command
                       (trim (as-str (:stdout outcome))))
-    (err (controller-error/command-failed
-           (->action-failure :action (str "base branch")
-                             :item (str "-")
-                             :command (clone (:label command))
-                             :code (:code outcome)
-                             :detail (command-detail outcome))))))
+    (base-branch-error command
+                       (:code outcome)
+                       (command-detail outcome))))
 
 (defn branch-from-text (command branch-text)
   (let (branch (remote-stripped branch-text))
     (if (empty? (as-str branch))
-      (err (controller-error/command-failed (->action-failure :action (str "base branch")
-                                                              :item (str "-")
-                                                              :command (clone (:label
-                                                                                command))
-                                                              :code 0
-                                                              :detail (str "the default branch is empty"))))
+      (base-branch-error command 0 "the default branch is empty")
       (ok branch))))
+
+(defn base-branch-error (command code detail)
+  (let (failure (->action-failure :action (str "base branch")
+                                  :item (str "-")
+                                  :command (clone (:label command))
+                                  :code code
+                                  :detail (str detail)))
+    (err (controller-error/command-failed failure))))
 
 (defn remote-stripped (branch)
   (if (starts-with? branch "origin/")
