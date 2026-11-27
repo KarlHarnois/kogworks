@@ -1,9 +1,4 @@
 (use knave-commandant defcli defcommand)
-(use prelude/macros header-shape)
-
-(header-shape (defcommand name docstring))
-
-(header-shape (defcli name docstring))
 
 (export kogworks-command kogworks-spec matches->kogworks)
 
