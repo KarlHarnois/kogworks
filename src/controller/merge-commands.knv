@@ -5,8 +5,8 @@
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command
-        fixing-command merge-command merge-mode
-        record-head-command repo-view-command
+        disarm-command fixing-command merge-command
+        merge-mode record-head-command repo-view-command
         required-checks-command send-command show-command
         update-branch-command view-command)
 
@@ -52,6 +52,14 @@
                         (str "close")
                         (clone item))
              :label (str "rmap item close " item)))
+
+(defn disarm-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "merge")
+                        (clone pull-request)
+                        (str "--disable-auto"))
+             :label (str "gh pr merge " pull-request " --disable-auto")))
 
 (defn send-command (worker message)
   (->command :program (str "ringleader")
