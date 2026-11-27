@@ -16,7 +16,8 @@
        "{\"action\":\"merge\",\"actor\":\"controller\"}]}]}"))
 
 (def merge-item-json
-  (str "{\"item\":{\"id\":\"" merge-item "\"},"
+  (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"session\":{\"name\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
        "\"approval\":{\"head\":\"" approved-head "\"}}}"))
@@ -24,6 +25,8 @@
 (def merge-item (str "rm-0009"))
 
 (def merge-pr (str "12"))
+
+(def merge-worker (str "build-rm-0009"))
 
 (def merged-view
   (str "{\"state\":\"MERGED\",\"mergedAt\":\"2026-11-26T00:00:00Z\","
@@ -40,6 +43,9 @@
 (def network-error
   (str "Post \"https://api.github.com/graphql\":"
        " net/http: TLS handshake timeout"))
+
+(def conflict-error
+  (str "Pull Request has merge conflicts"))
 
 (def approved-head
   (str "abcdef0123456789abcdef0123456789abcdef01"))
@@ -134,6 +140,26 @@
   (str "gh pr merge " merge-pr
        " --merge --match-head-commit " approved-head "\n"))
 
+(defn update-branch-line ()
+  (str "gh pr update-branch " merge-pr "\n"))
+
+(defn fixing-line ()
+  (str "rmap item advance " merge-item " fixing\n"))
+
+(defn record-head-line (head)
+  (str "rmap pr head " merge-item " " head "\n"))
+
+(defn worker-send-line (message)
+  (str "ringleader send " merge-worker " " message "\n"))
+
+(defn rebase-text ()
+  (str "rebase: " merge-item ": PR " merge-pr
+       " has merge conflicts and `gh pr update-branch "
+       merge-pr "` exited 4: branch cannot be updated."
+       " Rebase the pull request branch on main, push it, and record"
+       " a fixed report with the new head. A fresh review is needed"
+       " at the new head."))
+
 (defn preflight-preface ()
   (str (next-line)
        (show-line)
@@ -163,6 +189,64 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (merged-sequence)))
+      (assert (empty? (stderr-text output))))))
+
+(deftest records-the-new-head-when-the-update-moves-the-head
+  (let (root (unwrap-ok (setup "merge-conflict-update-moved"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :view-json (moved-view)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (update-branch-line)
+                      (view-line)
+                      (record-head-line moved-head))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send")))
+      (assert (empty? (stderr-text output))))))
+
+(deftest retries-the-merge-when-the-update-leaves-the-head
+  (let (root (unwrap-ok (setup "merge-conflict-update-same"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :view-json (clone open-view)
+                                      :later-view-json (clone merged-view)))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--once")
+                                           (str "--merge-poll")
+                                           (str "0")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (update-branch-line)
+                      (view-line)
+                      (merge-line)
+                      (view-line)
+                      (close-line))))
+      (assert (not (contains? (sequence-text root) "pr head")))
+      (assert (empty? (stderr-text output))))))
+
+(deftest rebases-a-conflicted-branch-when-the-update-is-refused
+  (let (root (unwrap-ok (setup "merge-conflict-rebase"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :update-branch-exit 4
+                                      :update-branch-error (str "branch cannot be updated")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (update-branch-line)
+                      (fixing-line)
+                      (show-line)
+                      (worker-send-line (rebase-text)))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close")))
       (assert (empty? (stderr-text output))))))
 
 (deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request

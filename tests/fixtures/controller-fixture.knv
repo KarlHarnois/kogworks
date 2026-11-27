@@ -169,13 +169,26 @@
     "      printf '%s\\n' '[API_ERROR]' >&2\n"
     "      exit [API_EXIT]\n" "    fi\n"
     "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
-    "  \"pr merge\")\n" "    case \" $* \" in\n"
+    "  \"pr update-branch\")\n"
+    "    if [ [UPDATE_BRANCH_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[UPDATE_BRANCH_ERROR]' >&2\n"
+    "      exit [UPDATE_BRANCH_EXIT]\n" "    fi\n"
+    "    ;;\n" "  \"pr merge\")\n" "    case \" $* \" in\n"
     "      *\" --auto \"*)\n"
     "        check_network merge [MERGE_NETWORK_FAILURES]\n"
-    "        if [ [MERGE_EXIT] -ne 0 ]; then\n"
-    "          printf '%s\\n' '[MERGE_ERROR]' >&2\n"
-    "          exit [MERGE_EXIT]\n" "        fi\n"
-    "        ;;\n" "      *)\n"
+    "        merges=0\n"
+    "        if [ -f \"$root/merge-count\" ]; then merges=$(cat \"$root/merge-count\"); fi\n"
+    "        merges=$((merges + 1))\n"
+    "        printf '%s' \"$merges\" > \"$root/merge-count\"\n"
+    "        if [ \"$merges\" -ge 2 ]; then\n"
+    "          if [ [LATER_MERGE_EXIT] -ne 0 ]; then\n"
+    "            printf '%s\\n' '[LATER_MERGE_ERROR]' >&2\n"
+    "            exit [LATER_MERGE_EXIT]\n" "          fi\n"
+    "        else\n"
+    "          if [ [MERGE_EXIT] -ne 0 ]; then\n"
+    "            printf '%s\\n' '[MERGE_ERROR]' >&2\n"
+    "            exit [MERGE_EXIT]\n" "          fi\n"
+    "        fi\n" "        ;;\n" "      *)\n"
     "        check_network direct-merge [DIRECT_MERGE_NETWORK_FAILURES]\n"
     "        if [ [DIRECT_MERGE_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[DIRECT_MERGE_ERROR]' >&2\n"
@@ -241,6 +254,8 @@
   :new-error string
   :merge-exit int
   :merge-error string
+  :later-merge-exit int
+  :later-merge-error string
   :direct-merge-exit int
   :direct-merge-error string
   :network-error string
@@ -250,6 +265,8 @@
   :required-checks-network-failures int
   :direct-merge-network-failures int
   :view-network-failures int
+  :update-branch-exit int
+  :update-branch-error string
   :close-exit int
   :close-error string
   :repo-view-exit int
@@ -281,6 +298,8 @@
                    :new-error (str)
                    :merge-exit 0
                    :merge-error (str)
+                   :later-merge-exit 0
+                   :later-merge-error (str)
                    :direct-merge-exit 0
                    :direct-merge-error (str)
                    :network-error (str)
@@ -290,6 +309,8 @@
                    :required-checks-network-failures 0
                    :direct-merge-network-failures 0
                    :view-network-failures 0
+                   :update-branch-exit 0
+                   :update-branch-error (str)
                    :close-exit 0
                    :close-error (str)
                    :repo-view-exit 0
@@ -349,6 +370,10 @@
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")
                      (clone (:merge-error settings)))
+      (replace-token (str "[LATER_MERGE_EXIT]")
+                     (str (:later-merge-exit settings)))
+      (replace-token (str "[LATER_MERGE_ERROR]")
+                     (clone (:later-merge-error settings)))
       (replace-token (str "[DIRECT_MERGE_EXIT]")
                      (str (:direct-merge-exit settings)))
       (replace-token (str "[DIRECT_MERGE_ERROR]")
@@ -367,6 +392,10 @@
                      (str (:direct-merge-network-failures settings)))
       (replace-token (str "[VIEW_NETWORK_FAILURES]")
                      (str (:view-network-failures settings)))
+      (replace-token (str "[UPDATE_BRANCH_EXIT]")
+                     (str (:update-branch-exit settings)))
+      (replace-token (str "[UPDATE_BRANCH_ERROR]")
+                     (clone (:update-branch-error settings)))
       (replace-token (str "[CLOSE_EXIT]")
                      (str (:close-exit settings)))
       (replace-token (str "[CLOSE_ERROR]")

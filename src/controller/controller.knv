@@ -16,6 +16,8 @@
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
+(use controller/merge-commands send-command)
+
 (use controller/process ->command canonical-path command
                         command-detail execute successful?)
 
@@ -280,10 +282,3 @@
       (none (do)))
     (eprintln message)
     (exit 1)))
-
-(defn send-command (manager message)
-  (->command :program (str "ringleader")
-             :args (vec (str "send")
-                        (clone manager)
-                        (clone message))
-             :label (str "ringleader send " manager)))

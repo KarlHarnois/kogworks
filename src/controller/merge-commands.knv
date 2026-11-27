@@ -1,12 +1,14 @@
 (module
-  "Builds the rmap and GitHub commands that the controller's merge action runs.")
+  "Builds the rmap, GitHub and ringleader commands that the controller runs.")
 
 (use controller/factory merge-method)
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command
-        merge-command merge-mode repo-view-command
-        required-checks-command show-command view-command)
+        fixing-command merge-command merge-mode
+        record-head-command repo-view-command
+        required-checks-command send-command show-command
+        update-branch-command view-command)
 
 (defenum merge-mode
   auto
@@ -28,12 +30,42 @@
                         (str "merging"))
              :label (str "rmap item advance " item " merging")))
 
+(defn fixing-command (item)
+  (->command :program (str "rmap")
+             :args (vec (str "item")
+                        (str "advance")
+                        (clone item)
+                        (str "fixing"))
+             :label (str "rmap item advance " item " fixing")))
+
+(defn record-head-command (item head)
+  (->command :program (str "rmap")
+             :args (vec (str "pr")
+                        (str "head")
+                        (clone item)
+                        (clone head))
+             :label (str "rmap pr head " item " " head)))
+
 (defn close-command (item)
   (->command :program (str "rmap")
              :args (vec (str "item")
                         (str "close")
                         (clone item))
              :label (str "rmap item close " item)))
+
+(defn send-command (worker message)
+  (->command :program (str "ringleader")
+             :args (vec (str "send")
+                        (clone worker)
+                        (clone message))
+             :label (str "ringleader send " worker)))
+
+(defn update-branch-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "update-branch")
+                        (clone pull-request))
+             :label (str "gh pr update-branch " pull-request)))
 
 (defn repo-view-command ()
   (->command :program (str "gh")
