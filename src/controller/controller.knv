@@ -41,20 +41,22 @@
   :poll-seconds int
   :merge-wait merge-settings)
 
-(defn controller-and-exit (repo poll merge-poll merge-timeout once)
+(defn controller-and-exit (repo poll merge-poll merge-timeout retry-delay once)
   (match (canonical-repo repo)
     ((ok absolute)
-     (run-controller-and-exit
-       (as-str absolute)
-       (build-controller-settings poll merge-poll merge-timeout)
-       once))
+     (run-controller-and-exit (as-str absolute)
+                              (build-controller-settings
+                                poll merge-poll
+                                merge-timeout retry-delay)
+                              once))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
 
-(defn build-controller-settings (poll merge-poll merge-timeout)
+(defn build-controller-settings (poll merge-poll merge-timeout retry-delay)
   (let (pass-seconds (poll-seconds poll)
-        merge-wait (->merge-settings :poll-seconds (poll-seconds merge-poll)
-                                     :timeout-seconds (poll-seconds
-                                                        merge-timeout)))
+        merge-wait (->merge-settings
+                     :poll-seconds (poll-seconds merge-poll)
+                     :timeout-seconds (poll-seconds merge-timeout)
+                     :retry-delay-seconds (poll-seconds retry-delay)))
     (->controller-settings :poll-seconds pass-seconds
                            :merge-wait merge-wait)))
 
@@ -145,7 +147,7 @@
 
 (defn start-merge-report (repo config manager settings action)
   (match (start-merge repo config
-                      (:merge-wait settings)
+                      (clone (:merge-wait settings))
                       (:item action))
     ((ok _) (ok pass-outcome/merged))
     ((err failure)

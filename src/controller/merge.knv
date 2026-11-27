@@ -16,6 +16,7 @@
                                required-checks-command
                                show-command view-command)
 
+(use controller/merge-retry execute-github)
 (use controller/merge-target ->merge-target)
 
 (use controller/process command command-detail execute
@@ -28,6 +29,7 @@
 
 (defstruct merge-settings
   :poll-seconds int
+  :retry-delay-seconds int
   :timeout-seconds int)
 
 (defstruct merge-state
@@ -90,19 +92,20 @@
      (ok (->merge-target :pull-request (clone pr) :head head)))))
 
 (defn prepare-merge (repo config settings item target)
-  (match (preflight repo item)
+  (match (preflight repo settings item)
     ((err failure) (err failure))
     ((ok _)
      (advance-and-enable repo config settings item target))))
 
-(defn preflight (repo item)
-  (match (repo-slug repo item)
+(defn preflight (repo settings item)
+  (match (repo-slug repo settings item)
     ((err failure) (err failure))
-    ((ok slug) (check-settings repo item slug))))
+    ((ok slug) (check-settings repo settings item slug))))
 
-(defn repo-slug (repo item)
+(defn repo-slug (repo settings item)
   (let (command (repo-view-command))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (slug-from-text item (trim (:stdout outcome)))
         (err (merge-command-failure item command outcome))))))
@@ -113,14 +116,15 @@
                                  (str "the repository slug is empty")))
     (ok (str text))))
 
-(defn check-settings (repo item slug)
-  (match (auto-merge-enabled repo item slug)
+(defn check-settings (repo settings item slug)
+  (match (auto-merge-enabled repo settings item slug)
     ((err failure) (err failure))
-    ((ok _) (required-status-checked repo item slug))))
+    ((ok _) (required-status-checked repo settings item slug))))
 
-(defn auto-merge-enabled (repo item slug)
+(defn auto-merge-enabled (repo settings item slug)
   (let (command (auto-merge-command slug))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (checked-auto-merge item command (trim (:stdout outcome)))
         (err (merge-command-failure item command outcome))))))
@@ -138,9 +142,10 @@
                                       "` printed `" text
                                       "`, not `true`")))))
 
-(defn required-status-checked (repo item slug)
+(defn required-status-checked (repo settings item slug)
   (let (command (required-checks-command slug))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (checked-required-count item command
                                 (trim (:stdout outcome)))
@@ -179,7 +184,8 @@
 
 (defn enable-auto-merge (repo config settings item target)
   (let (command (merge-command (:merge config) merge-mode/auto target))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (poll-merge repo item target settings)
         (handle-merge-failure repo config settings item
@@ -192,7 +198,8 @@
 
 (defn merge-directly (repo config settings item target)
   (let (command (merge-command (:merge config) merge-mode/direct target))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (poll-merge repo item target settings)
         (err (merge-command-failure item command outcome))))))
@@ -205,14 +212,15 @@
     (poll-iteration repo item target settings start)))
 
 (defn poll-iteration (repo item target settings start)
-  (match (read-poll-state repo item target)
+  (match (read-poll-state repo settings item target)
     ((err failure) (err failure))
     ((ok state)
      (handle-poll repo item target settings start state))))
 
-(defn read-poll-state (repo item target)
+(defn read-poll-state (repo settings item target)
   (let (command (view-command (:pull-request target)))
-    (let (outcome (execute repo command))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
       (if (successful? outcome)
         (parse-poll-state item command (:stdout outcome))
         (err (merge-command-failure item command outcome))))))

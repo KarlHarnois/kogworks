@@ -37,8 +37,26 @@
   (str "failed to enable auto-merge: Pull request is in clean status"
        " (enablePullRequestAutoMerge)"))
 
+(def network-error
+  (str "Post \"https://api.github.com/graphql\":"
+       " net/http: TLS handshake timeout"))
+
 (def approved-head
   (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(defn assert-transient-retry (name error)
+  (let (root (unwrap-ok (setup name
+                               (assoc (merge-settings)
+                                      :merge-network-failures 1
+                                      :network-error (clone error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (merge-line)
+                      (view-line)
+                      (close-line))))
+      (assert (empty? (stderr-text output))))))
 
 (defn moved-view ()
   (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
@@ -62,7 +80,10 @@
          ((ok _) (ok root)))))))
 
 (defn run (root)
-  (run-with root (vec (str "--once"))))
+  (run-with root
+            (vec (str "--once")
+                 (str "--merge-retry-delay")
+                 (str "0"))))
 
 (defn run-with (root args)
   (run-controller (as-str (str root "/bin"))
@@ -298,6 +319,8 @@
                                       :view-json (clone open-view)))))
     (let (output (unwrap-ok (run-with root
                                       (vec (str "--once")
+                                           (str "--merge-retry-delay")
+                                           (str "0")
                                            (str "--merge-timeout")
                                            (str "0")))))
       (assert (= (exit-code output) 1))
@@ -315,6 +338,8 @@
                                       :later-view-json (clone merged-view)))))
     (let (output (unwrap-ok (run-with root
                                       (vec (str "--once")
+                                           (str "--merge-retry-delay")
+                                           (str "0")
                                            (str "--merge-poll")
                                            (str "0")))))
       (assert (= (exit-code output) 0))
@@ -359,3 +384,103 @@
                                         " -q .nameWithOwner` exited 8: no repository"))))
       (assert (not (contains? (sequence-text root) "allow_auto_merge")))
       (assert (not (contains? (sequence-text root) "item advance"))))))
+
+(deftest retries-the-merge-after-a-transient-network-error
+  (assert-transient-retry "merge-network-retry" network-error))
+
+(deftest retries-the-merge-after-a-bad-gateway
+  (assert-transient-retry "merge-network-502"
+                          (str "HTTP 502: Bad Gateway")))
+
+(deftest retries-the-merge-after-a-service-unavailable
+  (assert-transient-retry "merge-network-503"
+                          (str "HTTP 503: Service Unavailable")))
+
+(deftest retries-the-merge-after-a-gateway-timeout
+  (assert-transient-retry "merge-network-504"
+                          (str "HTTP 504: Gateway Timeout")))
+
+(deftest stops-with-one-manager-line-when-the-network-error-persists
+  (let (root (unwrap-ok (setup "merge-network-persistent"
+                               (assoc (merge-settings)
+                                      :merge-network-failures 3
+                                      :network-error (clone network-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence
+                   (str (merge-preface)
+                        (merge-line)
+                        (merge-line))
+                   (str "merge: " merge-item
+                        ": `gh pr merge " merge-pr
+                        " --auto --merge --match-head-commit "
+                        approved-head "` exited 1: "
+                        network-error))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest does-not-retry-a-merge-refusal
+  (let (root (unwrap-ok (setup "merge-refusal-not-retried"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (str "Pull request is not mergeable:"
+                                                        " the merge commit cannot be"
+                                                        " cleanly created")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence (merge-preface)
+                                   (str "merge: " merge-item
+                                        ": `gh pr merge "
+                                        merge-pr
+                                        " --auto --merge --match-head-commit "
+                                        approved-head
+                                        "` exited 1: Pull request is"
+                                        " not mergeable: the merge commit cannot be"
+                                        " cleanly created"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest retries-the-direct-merge-after-a-transient-network-error
+  (let (root (unwrap-ok (setup "merge-direct-network-retry"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone clean-status-error)
+                                      :direct-merge-network-failures 1
+                                      :network-error (clone network-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (direct-merge-line)
+                      (direct-merge-line)
+                      (view-line)
+                      (close-line))))
+      (assert (empty? (stderr-text output))))))
+
+(deftest retries-each-github-call-site
+  (let (root (unwrap-ok (setup "merge-network-call-sites"
+                               (assoc (merge-settings)
+                                      :network-error (clone network-error)
+                                      :repo-view-network-failures 1
+                                      :allow-auto-merge-network-failures 1
+                                      :required-checks-network-failures 1
+                                      :view-network-failures 1))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (next-line)
+                      (show-line)
+                      (repo-view-line)
+                      (repo-view-line)
+                      (auto-merge-line)
+                      (auto-merge-line)
+                      (required-checks-line)
+                      (required-checks-line)
+                      (advance-line)
+                      (merge-line)
+                      (view-line)
+                      (view-line)
+                      (close-line))))
+      (assert (empty? (stderr-text output))))))
