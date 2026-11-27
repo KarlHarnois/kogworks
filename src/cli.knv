@@ -22,6 +22,9 @@
   (:merge-timeout u32
                   :default 3600
                   :about "Seconds to wait for a merge")
+  (:merge-retry-delay u32
+                      :default 2
+                      :about "Seconds to wait between merge retries")
   (:once switch :about "Runs one pass and exits"))
 
 (defcommand apply "Sets a governed repository's roadmap max active from its factory."

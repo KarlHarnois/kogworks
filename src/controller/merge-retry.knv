@@ -1,0 +1,50 @@
+(module
+  "Retries a merge action GitHub command when GitHub fails with a transient network error.")
+
+(use controller/process execute successful?)
+
+(export execute-github)
+
+(def merge-attempts 3)
+
+(def network-failure-markers
+  (vec (str "tls handshake timeout")
+       (str "error connecting to ")
+       (str "check your internet connection")
+       (str "net/http")
+       (str "dial tcp")
+       (str "i/o timeout")
+       (str "connection reset")
+       (str "connection refused")
+       (str "no such host")
+       (str "network is unreachable")
+       (str "temporary failure in name resolution")
+       (str "context deadline exceeded")
+       (str "request canceled")
+       (str "http2: client connection lost")
+       (str "proxyconnect")
+       (str "server misbehaving")
+       (str "unexpected eof")
+       (str "bad gateway")
+       (str "service unavailable")
+       (str "gateway timeout")))
+
+(defn execute-github (repo command retry-delay-seconds)
+  (loop (attempt 1)
+    (let (outcome (execute repo command))
+      (if (retry? outcome attempt)
+        (do
+          (sleep (seconds retry-delay-seconds))
+          (recur (inc attempt)))
+        outcome))))
+
+(defn retry? (outcome attempt)
+  (and (not (successful? outcome))
+       (< attempt merge-attempts)
+       (network-failure? outcome)))
+
+(defn network-failure? (outcome)
+  (let (detail (lower-case (as-str (:stderr outcome))))
+    (-> network-failure-markers
+        (any? (fn (marker)
+                (contains? (as-str detail) (as-str marker)))))))

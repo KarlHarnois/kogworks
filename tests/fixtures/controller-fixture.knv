@@ -136,46 +136,61 @@
        "printf 'origin/main\\n'"))
 
 (def gh-script
-  (str "#!/bin/sh\n"
-       "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-       "printf 'gh %s\\n' \"$*\" >> \"$root/sequence\"\n"
-       "case \"$1 $2\" in\n" "  \"repo view\")\n"
-       "    if [ [REPO_VIEW_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[REPO_VIEW_ERROR]' >&2\n"
-       "      exit [REPO_VIEW_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[SLUG]'\n" "    ;;\n"
-       "  \"api repos/[SLUG]\")\n"
-       "    if [ [API_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[API_ERROR]' >&2\n"
-       "      exit [API_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n"
-       "    ;;\n"
-       "  \"api repos/[SLUG]/branches/main/protection\")\n"
-       "    if [ [REQUIRED_CHECKS_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[REQUIRED_CHECKS_ERROR]' >&2\n"
-       "      exit [REQUIRED_CHECKS_EXIT]\n" "    fi\n"
-       "    if [ [API_EXIT] -ne 0 ]; then\n"
-       "      printf '%s\\n' '[API_ERROR]' >&2\n"
-       "      exit [API_EXIT]\n" "    fi\n"
-       "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
-       "  \"pr merge\")\n" "    case \" $* \" in\n"
-       "      *\" --auto \"*)\n"
-       "        if [ [MERGE_EXIT] -ne 0 ]; then\n"
-       "          printf '%s\\n' '[MERGE_ERROR]' >&2\n"
-       "          exit [MERGE_EXIT]\n" "        fi\n"
-       "        ;;\n" "      *)\n"
-       "        if [ [DIRECT_MERGE_EXIT] -ne 0 ]; then\n"
-       "          printf '%s\\n' '[DIRECT_MERGE_ERROR]' >&2\n"
-       "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
-       "        ;;\n" "    esac\n" "    ;;\n"
-       "  \"pr view\")\n" "    views=0\n"
-       "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
-       "    views=$((views + 1))\n"
-       "    printf '%s' \"$views\" > \"$root/view-count\"\n"
-       "    if [ \"$views\" -ge 2 ]; then\n"
-       "      cat \"$root/later-view.json\"\n" "    else\n"
-       "      cat \"$root/view.json\"\n" "    fi\n"
-       "    ;;\n" "esac\n" "exit 0\n"))
+  (str
+    "#!/bin/sh\n"
+    "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
+    "printf 'gh %s\\n' \"$*\" >> \"$root/sequence\"\n"
+    "check_network() {\n" "  name=$1\n" "  limit=$2\n"
+    "  file=\"$root/$name-attempts\"\n" "  count=0\n"
+    "  if [ -f \"$file\" ]; then count=$(cat \"$file\"); fi\n"
+    "  count=$((count + 1))\n"
+    "  printf '%s' \"$count\" > \"$file\"\n"
+    "  if [ \"$limit\" -gt 0 ] && [ \"$count\" -le \"$limit\" ]; then\n"
+    "    printf '%s\\n' '[NETWORK_ERROR]' >&2\n"
+    "    exit 1\n" "  fi\n" "}\n" "case \"$1 $2\" in\n"
+    "  \"repo view\")\n"
+    "    check_network repo-view [REPO_VIEW_NETWORK_FAILURES]\n"
+    "    if [ [REPO_VIEW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[REPO_VIEW_ERROR]' >&2\n"
+    "      exit [REPO_VIEW_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[SLUG]'\n" "    ;;\n"
+    "  \"api repos/[SLUG]\")\n"
+    "    check_network allow-auto-merge [ALLOW_AUTO_MERGE_NETWORK_FAILURES]\n"
+    "    if [ [API_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[API_ERROR]' >&2\n"
+    "      exit [API_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[ALLOW_AUTO_MERGE]'\n" "    ;;\n"
+    "  \"api repos/[SLUG]/branches/main/protection\")\n"
+    "    check_network required-checks [REQUIRED_CHECKS_NETWORK_FAILURES]\n"
+    "    if [ [REQUIRED_CHECKS_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[REQUIRED_CHECKS_ERROR]' >&2\n"
+    "      exit [REQUIRED_CHECKS_EXIT]\n" "    fi\n"
+    "    if [ [API_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[API_ERROR]' >&2\n"
+    "      exit [API_EXIT]\n" "    fi\n"
+    "    printf '%s\\n' '[REQUIRED_CHECKS]'\n" "    ;;\n"
+    "  \"pr merge\")\n" "    case \" $* \" in\n"
+    "      *\" --auto \"*)\n"
+    "        check_network merge [MERGE_NETWORK_FAILURES]\n"
+    "        if [ [MERGE_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[MERGE_ERROR]' >&2\n"
+    "          exit [MERGE_EXIT]\n" "        fi\n"
+    "        ;;\n" "      *)\n"
+    "        check_network direct-merge [DIRECT_MERGE_NETWORK_FAILURES]\n"
+    "        if [ [DIRECT_MERGE_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[DIRECT_MERGE_ERROR]' >&2\n"
+    "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
+    "        ;;\n" "    esac\n" "    ;;\n"
+    "  \"pr view\")\n"
+    "    check_network view [VIEW_NETWORK_FAILURES]\n"
+    "    views=0\n"
+    "    if [ -f \"$root/view-count\" ]; then views=$(cat \"$root/view-count\"); fi\n"
+    "    views=$((views + 1))\n"
+    "    printf '%s' \"$views\" > \"$root/view-count\"\n"
+    "    if [ \"$views\" -ge 2 ]; then\n"
+    "      cat \"$root/later-view.json\"\n" "    else\n"
+    "      cat \"$root/view.json\"\n" "    fi\n" "    ;;\n"
+    "esac\n" "exit 0\n"))
 
 (def absolute-path
   (rust "std::fs::canonicalize({0}).map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
@@ -228,6 +243,13 @@
   :merge-error string
   :direct-merge-exit int
   :direct-merge-error string
+  :network-error string
+  :merge-network-failures int
+  :repo-view-network-failures int
+  :allow-auto-merge-network-failures int
+  :required-checks-network-failures int
+  :direct-merge-network-failures int
+  :view-network-failures int
   :close-exit int
   :close-error string
   :repo-view-exit int
@@ -261,6 +283,13 @@
                    :merge-error (str)
                    :direct-merge-exit 0
                    :direct-merge-error (str)
+                   :network-error (str)
+                   :merge-network-failures 0
+                   :repo-view-network-failures 0
+                   :allow-auto-merge-network-failures 0
+                   :required-checks-network-failures 0
+                   :direct-merge-network-failures 0
+                   :view-network-failures 0
                    :close-exit 0
                    :close-error (str)
                    :repo-view-exit 0
@@ -324,6 +353,20 @@
                      (str (:direct-merge-exit settings)))
       (replace-token (str "[DIRECT_MERGE_ERROR]")
                      (clone (:direct-merge-error settings)))
+      (replace-token (str "[NETWORK_ERROR]")
+                     (clone (:network-error settings)))
+      (replace-token (str "[MERGE_NETWORK_FAILURES]")
+                     (str (:merge-network-failures settings)))
+      (replace-token (str "[REPO_VIEW_NETWORK_FAILURES]")
+                     (str (:repo-view-network-failures settings)))
+      (replace-token (str "[ALLOW_AUTO_MERGE_NETWORK_FAILURES]")
+                     (str (:allow-auto-merge-network-failures settings)))
+      (replace-token (str "[REQUIRED_CHECKS_NETWORK_FAILURES]")
+                     (str (:required-checks-network-failures settings)))
+      (replace-token (str "[DIRECT_MERGE_NETWORK_FAILURES]")
+                     (str (:direct-merge-network-failures settings)))
+      (replace-token (str "[VIEW_NETWORK_FAILURES]")
+                     (str (:view-network-failures settings)))
       (replace-token (str "[CLOSE_EXIT]")
                      (str (:close-exit settings)))
       (replace-token (str "[CLOSE_ERROR]")

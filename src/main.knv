@@ -19,6 +19,7 @@
                           (:poll options)
                           (:merge-poll options)
                           (:merge-timeout options)
+                          (:merge-retry-delay options)
                           (:once options)))
     ((kogworks-command/apply options)
      (apply-and-exit (as-str (:repo options))))))
