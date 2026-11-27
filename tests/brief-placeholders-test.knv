@@ -51,12 +51,10 @@
   (contains? (:briefs placeholder) brief-kind/reviewer))
 
 (defn filled-brief? (brief in-brief?)
-  (let (relevant (-> all-placeholders
-                     (filter (fn (placeholder) (in-brief? placeholder)))
-                     collect))
+  (let (relevant (-> all-placeholders (filter in-brief?) collect))
     (and (every? relevant
            (fn (placeholder) (placeholder-present? brief placeholder)))
-         (not (leftover-braces? (reduce relevant (clone brief) substitute))))))
+         (not (leftover-braces? (reduce relevant brief substitute))))))
 
 (type substitute
   (fn (string (ref (ref placeholder)))
