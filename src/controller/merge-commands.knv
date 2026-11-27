@@ -6,8 +6,12 @@
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command
-        merge-command repo-view-command
+        merge-command merge-mode repo-view-command
         required-checks-command show-command view-command)
+
+(defenum merge-mode
+  auto
+  direct)
 
 (type show-command
   (fn ((ref string)) command))
@@ -83,11 +87,13 @@
                  :label label))))
 
 (type merge-command
-  (fn ((ref merge-method) (ref merge-target))
+  (fn ((ref merge-method)
+       (ref merge-mode)
+       (ref merge-target))
     command))
 
-(defn merge-command (method target)
-  (let (arguments (merge-arguments method target))
+(defn merge-command (method mode target)
+  (let (arguments (merge-arguments method mode target))
     (let (label (str "gh " (join arguments " ")))
       (->command :program (str "gh")
                  :arguments arguments
@@ -107,15 +113,39 @@
                          " --json state,mergedAt,headRefOid")))
 
 (type merge-arguments
+  (fn ((ref merge-method)
+       (ref merge-mode)
+       (ref merge-target))
+    (vec string)))
+
+(defn merge-arguments (method mode target)
+  (match mode
+    (auto (auto-merge-arguments method target))
+    (direct (direct-merge-arguments method target))))
+
+(type auto-merge-arguments
   (fn ((ref merge-method) (ref merge-target))
     (vec string)))
 
-(defn merge-arguments (method target)
+(defn auto-merge-arguments (method target)
   (match method
     (gh-auto (vec (str "pr")
                   (str "merge")
                   (clone (:pull-request target))
                   (str "--auto")
+                  (str "--merge")
+                  (str "--match-head-commit")
+                  (clone (:head target))))))
+
+(type direct-merge-arguments
+  (fn ((ref merge-method) (ref merge-target))
+    (vec string)))
+
+(defn direct-merge-arguments (method target)
+  (match method
+    (gh-auto (vec (str "pr")
+                  (str "merge")
+                  (clone (:pull-request target))
                   (str "--merge")
                   (str "--match-head-commit")
                   (clone (:head target))))))
