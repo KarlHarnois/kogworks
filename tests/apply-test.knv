@@ -2,13 +2,14 @@
            cap-from-document)
 
 (use controller/failure factory-error)
+(use controller/fields field-error)
 (use controller/json parse-json)
 
 (use apply-fixture ->fake-rmap exit-code export-document
                    factory-json prepare-real-repo
                    prepare-repo prepare-repo-without-factory
-                   recorded-command recorded-directory
-                   repo-directory rmap-call-count rmap-path
+                   recorded-command recorded-dir repo-dir
+                   rmap-call-count rmap-path
                    roadmap-max-active run-apply stderr-text
                    stdout-text stored-max-active
                    write-unreadable-factory)
@@ -37,28 +38,28 @@
 (deftest cap-from-document-rejects-a-missing-roadmap
   (let (document (unwrap-ok (parse-json (as-str (str "{\"max_active\": 3}")))))
     (match (cap-from-document document)
-      ((err (missing-field path))
+      ((err (factory (field (missing-field path))))
        (assert (= path (str "roadmap"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-missing-max-active
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\"}")))))
     (match (cap-from-document document)
-      ((err (missing-field path))
+      ((err (factory (field (missing-field path))))
        (assert (= path (str "max_active"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-text-max-active
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": \"3\"}")))))
     (match (cap-from-document document)
-      ((err (non-number-field path))
+      ((err (factory (field (non-number-field path))))
        (assert (= path (str "max_active"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-text-roadmap
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": 7, \"max_active\": 3}")))))
     (match (cap-from-document document)
-      ((err (non-text-field path))
+      ((err (factory (field (non-text-field path))))
        (assert (= path (str "roadmap"))))
       (_ (assert false)))))
 
@@ -74,11 +75,17 @@
                                                           (str "f.json")
                                                           (str "bad"))))
              (str "cannot parse f.json: bad")))
-  (assert (= (apply-error->message (apply-error/missing-field (str "roadmap")))
-             (str "the factory has no `roadmap`")))
-  (assert (= (apply-error->message (apply-error/non-text-field (str "roadmap")))
+  (assert (= (apply-error->message (apply-error/factory (factory-error/field
+                                                          (field-error/missing-field
+                                                            (str "roadmap")))))
+             (str "the factory field `roadmap` is missing")))
+  (assert (= (apply-error->message (apply-error/factory (factory-error/field
+                                                          (field-error/non-text-field
+                                                            (str "roadmap")))))
              (str "the factory field `roadmap` is not text")))
-  (assert (= (apply-error->message (apply-error/non-number-field (str "max_active")))
+  (assert (= (apply-error->message (apply-error/factory
+                                     (factory-error/field
+                                       (field-error/non-number-field (str "max_active")))))
              (str "the factory field `max_active` is not a number")))
   (match (the (result int (parse-error int))
               (parse "3.5"))
@@ -88,9 +95,8 @@
                 (str "the factory field `max_active` is not a whole number: "
                      "invalid digit found in string"))))
     ((ok _) (assert false)))
-  (assert (= (apply-error->message (apply-error/unreadable-repository (str
-                                                                        "repo")
-                                                                      (str "gone")))
+  (assert (= (apply-error->message (apply-error/unreadable-repo (str "repo")
+                                                                (str "gone")))
              (str "cannot resolve the repository repo: gone"))))
 
 (deftest apply-stores-the-factory-max-active
@@ -108,8 +114,8 @@
       (assert (empty? (stderr-text outcome)))
       (assert (= (recorded-command (as-str root))
                  (some (str "roadmap set factory-mvp --max-active 5"))))
-      (assert (= (recorded-directory (as-str root))
-                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (recorded-dir (as-str root))
+                 (some (unwrap-ok (repo-dir (as-str root))))))
       (assert (= (stored-max-active (as-str root))
                  (some (str "5"))))
       (assert (= (rmap-call-count (as-str root)) 1)))))
@@ -129,8 +135,8 @@
                  (str "error: no roadmap is named missing-roadmap (roadmap-not-found)")))
       (assert (= (recorded-command (as-str root))
                  (some (str "roadmap set missing-roadmap --max-active 4"))))
-      (assert (= (recorded-directory (as-str root))
-                 (some (unwrap-ok (repo-directory (as-str root))))))
+      (assert (= (recorded-dir (as-str root))
+                 (some (unwrap-ok (repo-dir (as-str root))))))
       (assert (= (stored-max-active (as-str root)) none))
       (assert (= (rmap-call-count (as-str root)) 1)))))
 

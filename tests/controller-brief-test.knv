@@ -3,8 +3,8 @@
 
 (use controller/failure controller-error error->message)
 
-(use fixtures/controller-fixture make-directory
-                                 reset-directory write-text)
+(use fixtures/controller-fixture make-dir reset-dir
+                                 write-text)
 
 (def worker-values
   (->worker-values :item (str "rm-0001")
@@ -16,8 +16,8 @@
 
 (deftest names-the-token-that-the-brief-leaves
   (let (root (str "target/knave/controller-tests/brief-placeholder-left"))
-    (unwrap-ok (reset-directory (as-str root)))
-    (unwrap-ok (make-directory (as-str root)))
+    (unwrap-ok (reset-dir (as-str root)))
+    (unwrap-ok (make-dir (as-str root)))
     (unwrap-ok (write-text (as-str (str root "/brief.md"))
                            (as-str (str "item={{item}} token={{nope}}"))))
     (let (failure (unwrap-err (fill-brief (as-str (str root "/brief.md"))

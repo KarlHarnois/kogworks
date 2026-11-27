@@ -82,10 +82,10 @@
          ((err reason) (err reason))
          ((ok _) (ok root)))))))
 
-(defn run (root arguments)
+(defn run (root args)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
-                  arguments))
+                  args))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
@@ -94,7 +94,7 @@
   (unwrap-ok (read-text (as-str (str root "/prompt")))))
 
 (defn new-failure-sequence (root)
-  (let (repo (absolute-repository-of root))
+  (let (repo (absolute-repo-of root))
     (str (dispatch-sequence root)
          "rmap session end build-rm-0001 --reason abandoned\n"
          (send-line (str "dispatch: rm-0001: `ringleader new --name build-rm-0001 --repo "
@@ -103,7 +103,7 @@
                          "exited 4: cannot start session")))))
 
 (defn dispatch-sequence (root)
-  (let (repo (absolute-repository-of root))
+  (let (repo (absolute-repo-of root))
     (str
       (next-line (str "fake-roadmap"))
       (ready-line (str "fake-roadmap"))
@@ -135,7 +135,7 @@
                        "` exited 5: " error))))
 
 (defn review-new-failure-sequence (root)
-  (let (repo (absolute-repository-of root))
+  (let (repo (absolute-repo-of root))
     (str (review-sequence root)
          "rmap session end " review-session
          " --reason abandoned\n"
@@ -157,16 +157,16 @@
        review-session "\n"))
 
 (defn reviewer-start-line (root)
-  (let (repo (absolute-repository-of root))
+  (let (repo (absolute-repo-of root))
     (str "ringleader new --name " review-session " --repo "
          repo " --agent fake-reviewer-agent"
          " --base-branch " review-branch
          " --prompt <filled>\n")))
 
-(defn absolute-repository-of (root)
-  (unwrap-ok (absolute-path (as-str (repository-of root)))))
+(defn absolute-repo-of (root)
+  (unwrap-ok (absolute-path (as-str (repo-of root)))))
 
-(defn repository-of (root) (str root "/repo"))
+(defn repo-of (root) (str root "/repo"))
 
 (defn missing-detail-sequence ()
   (str (next-line (str "fake-roadmap"))
@@ -174,7 +174,7 @@
        (send-line (str "review: " review-item
                        ": `rmap item show " review-item
                        " --json` exited 0: invalid item JSON: "
-                       "missing `pull_request`"))))
+                       "`pull_request` is missing"))))
 
 (defn claim-refusal-sequence ()
   (str
@@ -204,13 +204,13 @@
 (defn send-line (message)
   (str "ringleader send fake-manager " message "\n"))
 
-(deftest dispatches-with-a-relative-repository
+(deftest dispatches-with-a-relative-repo
   (let (root (unwrap-ok (setup "relative-repo"
                                (default-settings (clone ignored-next)
                                                  (clone build-ready)))))
     (let (output (unwrap-ok (run root (vec (str "--once")))))
-      (let (repo (absolute-repository-of root)
-            relative-repo (repository-of root))
+      (let (repo (absolute-repo-of root)
+            relative-repo (repo-of root))
         (assert (not= (as-str repo) (as-str relative-repo)))
         (assert (starts-with? (as-str repo) "/"))
         (assert (= (exit-code output) 0))
@@ -379,6 +379,6 @@
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
                  (str "ringleader send fake-manager "
-                      "controller: the factory has no `roles`\n")))
+                      "controller: the factory field `roles` is missing\n")))
       (assert (contains? (stderr-text output)
-                         "the factory has no `roles`")))))
+                         "the factory field `roles` is missing")))))

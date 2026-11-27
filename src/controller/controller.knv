@@ -11,21 +11,20 @@
 (use controller/factory factory-config read-factory
                         read-manager)
 
-(use controller/json json json-error->message parse-json)
+(use controller/json json-error->message parse-json)
 
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
 (use controller/process ->command canonical-path command
-                        command-detail execute outcome
-                        successful?)
+                        command-detail execute successful?)
 
 (use controller/review review-mode start-review)
 
 (use controller/rules action-kind action-kind->text
                       first-build first-controller-action
                       item-action parse-next-response
-                      parse-ready-response ready-item)
+                      parse-ready-response)
 
 (export controller-and-exit)
 
@@ -42,9 +41,6 @@
   :poll-seconds int
   :merge-wait merge-settings)
 
-(type controller-and-exit
-  (fn ((ref str) u32 u32 u32 switch-state) unit))
-
 (defn controller-and-exit (repo poll merge-poll merge-timeout once)
   (match (canonical-repo repo)
     ((ok absolute)
@@ -54,9 +50,6 @@
        once))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
 
-(type build-controller-settings
-  (fn (u32 u32 u32) controller-settings))
-
 (defn build-controller-settings (poll merge-poll merge-timeout)
   (let (pass-seconds (poll-seconds poll)
         merge-wait (->merge-settings :poll-seconds (poll-seconds merge-poll)
@@ -65,24 +58,16 @@
     (->controller-settings :poll-seconds pass-seconds
                            :merge-wait merge-wait)))
 
-(type canonical-repo
-  (fn ((ref str))
-    (result string controller-error)))
-
 (defn canonical-repo (repo)
   (map-err (canonical-path repo)
     (fn (reason)
-      (controller-error/unreadable-repository (str repo) reason))))
+      (controller-error/unreadable-repo (str repo) reason))))
 
 (defn run-controller-and-exit (repo settings once)
   (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
     (match (run-controller repo settings mode)
       ((ok _) (do))
       ((err report) (fail-stop repo report)))))
-
-(type run-controller
-  (fn ((ref str) (ref controller-settings) run-mode)
-    (result unit failure-report)))
 
 (defn run-controller (repo settings mode)
   (loop ()
@@ -113,10 +98,6 @@
 
 (defn poll-seconds (poll)
   (the int (convert poll)))
-
-(type run-pass
-  (fn ((ref str) (ref controller-settings))
-    (result pass-outcome failure-report)))
 
 (defn run-pass (repo settings)
   (match (read-factory repo)
@@ -162,14 +143,6 @@
     (merge (start-merge-report repo config manager settings action))
     (_ (out-of-scope-report config manager action))))
 
-(type start-merge-report
-  (fn ((ref str)
-       (ref factory-config)
-       (option string)
-       (ref controller-settings)
-       (ref item-action))
-    (result pass-outcome failure-report)))
-
 (defn start-merge-report (repo config manager settings action)
   (match (start-merge repo config
                       (:merge-wait settings)
@@ -178,35 +151,15 @@
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
 
-(type start-review-report
-  (fn ((ref str)
-       (ref factory-config)
-       (option string)
-       (ref item-action)
-       (ref review-mode))
-    (result pass-outcome failure-report)))
-
 (defn start-review-report (repo config manager action mode)
   (match (start-review repo config (:item action) mode)
     ((ok _) (ok pass-outcome/dispatched))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
 
-(type out-of-scope-report
-  (fn ((ref factory-config)
-       (option string)
-       (ref item-action))
-    (result pass-outcome failure-report)))
-
 (defn out-of-scope-report (config manager action)
   (err (->failure-report :manager manager
                          :error (out-of-scope-error config action))))
-
-(type run-ready
-  (fn ((ref str)
-       (ref factory-config)
-       (option string))
-    (result pass-outcome failure-report)))
 
 (defn run-ready (repo config manager)
   (match (poll-ready repo config)
@@ -224,10 +177,6 @@
     ((ok _) (ok pass-outcome/dispatched))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
-
-(type poll-next
-  (fn ((ref str) (ref factory-config))
-    (result (option item-action) controller-error)))
 
 (defn poll-next (repo config)
   (let (command (next-command (:roadmap config)))
@@ -248,10 +197,6 @@
     ((err reason)
      (err (output-failed (str "next") command reason)))))
 
-(type poll-ready
-  (fn ((ref str) (ref factory-config))
-    (result (vec ready-item) controller-error)))
-
 (defn poll-ready (repo config)
   (let (command (ready-command (:roadmap config)))
     (let (outcome (execute repo command))
@@ -271,10 +216,6 @@
     ((err reason)
      (err (output-failed (str "ready") command reason)))))
 
-(type parse-document
-  (fn (string (ref command) (ref string))
-    (result json controller-error)))
-
 (defn parse-document (action command text)
   (match (parse-json (as-str text))
     ((ok document) (ok document))
@@ -292,10 +233,6 @@
                                      :code 0
                                      :detail (str "invalid JSON: " reason))))
 
-(type command-failed
-  (fn (string string (ref command) (ref outcome))
-    controller-error))
-
 (defn command-failed (action item command outcome)
   (controller-error/command-failed (->action-failure
                                      :action action
@@ -304,20 +241,13 @@
                                      :code (:code outcome)
                                      :detail (command-detail outcome))))
 
-(type ready-command
-  (fn ((ref string)) command))
-
 (defn ready-command (roadmap)
   (->command :program (str "rmap")
-             :arguments (vec (str "ready")
-                             (str "--roadmap")
-                             (clone roadmap)
-                             (str "--json"))
+             :args (vec (str "ready")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--json"))
              :label (str "rmap ready --roadmap " roadmap " --json")))
-
-(type out-of-scope-error
-  (fn ((ref factory-config) (ref item-action))
-    controller-error))
 
 (defn out-of-scope-error (config action)
   (let (command (next-command (:roadmap config)))
@@ -328,23 +258,16 @@
                                      :code 0
                                      :detail (str)))))
 
-(type next-command
-  (fn ((ref string)) command))
-
 (defn next-command (roadmap)
   (->command :program (str "rmap")
-             :arguments (vec (str "next")
-                             (str "--roadmap")
-                             (clone roadmap)
-                             (str "--taken-by")
-                             (str "controller")
-                             (str "--json"))
+             :args (vec (str "next")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--taken-by")
+                        (str "controller")
+                        (str "--json"))
              :label (str "rmap next --roadmap " roadmap
                          " --taken-by controller --json")))
-
-(type fail-stop
-  (fn ((ref str) (ref failure-report))
-    unit))
 
 (defn fail-stop (repo report)
   (let (message (error->message (:error report)))
@@ -356,12 +279,9 @@
     (eprintln message)
     (exit 1)))
 
-(type send-command
-  (fn ((ref string) (ref string)) command))
-
 (defn send-command (manager message)
   (->command :program (str "ringleader")
-             :arguments (vec (str "send")
-                             (clone manager)
-                             (clone message))
+             :args (vec (str "send")
+                        (clone manager)
+                        (clone message))
              :label (str "ringleader send " manager)))

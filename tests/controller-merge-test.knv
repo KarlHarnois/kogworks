@@ -64,10 +64,10 @@
 (defn run (root)
   (run-with root (vec (str "--once"))))
 
-(defn run-with (root arguments)
+(defn run-with (root args)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
-                  arguments))
+                  args))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
@@ -343,7 +343,7 @@
                         " exited 6: forbidden"))))
       (assert (not (contains? (sequence-text root) "item advance"))))))
 
-(deftest stops-when-the-repository-view-is-refused
+(deftest stops-when-the-repo-view-is-refused
   (let (root (unwrap-ok (setup "merge-repo-view-refused"
                                (assoc (merge-settings)
                                       :repo-view-exit 8

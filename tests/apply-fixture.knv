@@ -10,10 +10,9 @@
 (export ->fake-rmap exit-code export-document factory-json
         prepare-real-repo prepare-repo
         prepare-repo-without-factory recorded-command
-        recorded-directory repo-directory rmap-call-count
-        rmap-path roadmap-max-active run-apply stderr-text
-        stdout-text stored-max-active
-        write-unreadable-factory)
+        recorded-dir repo-dir rmap-call-count rmap-path
+        roadmap-max-active run-apply stderr-text stdout-text
+        stored-max-active write-unreadable-factory)
 
 (def factory-json
   (str "{\"schema\": 0,\n" " \"name\": \"apply-fixture\",\n"
@@ -22,7 +21,7 @@
        " \"max_active\": 3,\n" " \"merge\": \"gh-auto\",\n"
        " \"roles\": {}}\n"))
 
-(def reset-directory
+(def reset-dir
   (rust "{{
     match std::fs::remove_dir_all({0}) {{
       Ok(_) => Ok(()),
@@ -32,7 +31,7 @@
   }}"
     (fn ((ref str)) (result unit string))))
 
-(def make-directory
+(def make-dir
   (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result unit string))))
 
@@ -69,7 +68,7 @@
   (str "#!/bin/sh\n"
        "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
        "printf '%s\n' \"$*\" >> \"$root/rmap-commands\"\n"
-       "printf '%s' \"$(pwd -P)\" > \"$root/rmap-directory\"\n"
+       "printf '%s' \"$(pwd -P)\" > \"$root/rmap-dir\"\n"
        "if [ [CODE] -eq 0 ] && [ \"$1 $2\" = \"roadmap set\" ]; then\n"
        "  printf '%s' \"$5\" > \"$root/stored-max-active\"\n"
        "fi\n" "printf '%s' '[STDOUT]'\n"
@@ -109,45 +108,30 @@
 
 (deftype process-output (rust "std::process::Output"))
 
-(type prepare-repo
-  (fn ((ref str) (ref str) (ref fake-rmap))
-    (result unit string)))
-
 (defn prepare-repo (root factory-text settings)
-  (let-try (_ (prepare-directories root))
-    (let-try (_ (write-factory root factory-text))
-      (write-fake-rmap root settings))))
-
-(type prepare-real-repo
-  (fn ((ref str) (ref str) (ref str))
-    (result unit string)))
+  (let-try (_ (prepare-directories root)
+            _ (write-factory root factory-text))
+    (write-fake-rmap root settings)))
 
 (defn prepare-real-repo (root factory-text roadmap)
-  (let-try (_ (prepare-directories root))
-    (let-try (_ (write-factory root factory-text))
-      (let-try (_ (run-in root "git"
-                          (vec (str "init") (str "-q"))
-                          "git init"))
-        (let-try (_ (run-in root "rmap" (vec (str "init")) "rmap init"))
-          (rmap-new root roadmap))))))
-
-(type prepare-repo-without-factory
-  (fn ((ref str)) (result unit string)))
+  (let-try (_ (prepare-directories root)
+            _ (write-factory root factory-text)
+            _ (run-in root "git"
+                      (vec (str "init") (str "-q"))
+                      "git init")
+            _ (run-in root "rmap" (vec (str "init")) "rmap init"))
+    (rmap-new root roadmap)))
 
 (defn prepare-repo-without-factory (root)
-  (let-try (_ (reset-directory root))
-    (let-try (_ (make-directory (as-str (str root "/bin"))))
-      (make-directory (as-str (str root "/repo"))))))
+  (let-try (_ (reset-dir root)
+            _ (make-dir (as-str (str root "/bin"))))
+    (make-dir (as-str (str root "/repo")))))
 
 (type write-unreadable-factory
   (fn ((ref str)) (result unit string)))
 
 (defn write-unreadable-factory (root)
   (write-invalid-utf8 (as-str (str root "/repo/.kogworks/factory.json"))))
-
-(type run-apply
-  (fn ((ref str) (ref str))
-    (result process-output string)))
 
 (defn run-apply (bin repo) (run-apply-process bin repo))
 
@@ -167,11 +151,11 @@
     ((some text) (len (collect (lines (as-str text)))))
     (none 0)))
 
-(type recorded-directory
+(type recorded-dir
   (fn ((ref str)) (option string)))
 
-(defn recorded-directory (root)
-  (read-option (as-str (str root "/rmap-directory"))))
+(defn recorded-dir (root)
+  (read-option (as-str (str root "/rmap-dir"))))
 
 (type stored-max-active
   (fn ((ref str)) (option string)))
@@ -179,10 +163,10 @@
 (defn stored-max-active (root)
   (read-option (as-str (str root "/stored-max-active"))))
 
-(type repo-directory
+(type repo-dir
   (fn ((ref str)) (result string string)))
 
-(defn repo-directory (root)
+(defn repo-dir (root)
   (canonical-path (as-str (str root "/repo"))))
 
 (type export-document
@@ -191,41 +175,26 @@
 (defn export-document (root)
   (let (outcome (execute (as-str (str root "/repo"))
                          (->command :program (str "rmap")
-                                    :arguments (vec (str "export"))
+                                    :args (vec (str "export"))
                                     :label (str "rmap export"))))
     (if (successful? outcome)
       (map-err (parse-json (as-str (:stdout outcome)))
         (fn (failure) (json-error->message failure)))
       (err (command-detail outcome)))))
 
-(type roadmap-max-active
-  (fn ((ref json) (ref str))
-    (option string)))
-
 (defn roadmap-max-active (document name)
   (match (named-roadmap document name)
     ((some object) (max-active-text object))
     (none none)))
 
-(type prepare-directories
-  (fn ((ref str)) (result unit string)))
-
 (defn prepare-directories (root)
-  (let-try (_ (reset-directory root))
-    (let-try (_ (make-directory (as-str (str root "/repo/.kogworks"))))
-      (make-directory (as-str (str root "/bin"))))))
-
-(type write-factory
-  (fn ((ref str) (ref str))
-    (result unit string)))
+  (let-try (_ (reset-dir root)
+            _ (make-dir (as-str (str root "/repo/.kogworks"))))
+    (make-dir (as-str (str root "/bin")))))
 
 (defn write-factory (root factory-text)
   (write-text (as-str (str root "/repo/.kogworks/factory.json"))
               factory-text))
-
-(type write-fake-rmap
-  (fn ((ref str) (ref fake-rmap))
-    (result unit string)))
 
 (defn write-fake-rmap (root settings)
   (let-try (_ (write-text (as-str (str root "/bin/rmap"))
@@ -262,33 +231,19 @@
                (str "apply-test"))
           (as-str (str "rmap new " roadmap))))
 
-(type run-in
-  (fn ((ref str)
-       (ref str)
-       (vec string)
-       (ref str))
-    (result unit string)))
-
-(defn run-in (root program arguments label)
+(defn run-in (root program args label)
   (let (outcome (execute (as-str (str root "/repo"))
                          (->command :program (str program)
-                                    :arguments arguments
+                                    :args args
                                     :label (str label))))
     (if (successful? outcome)
       (ok (do))
       (err (command-detail outcome)))))
 
-(type read-option
-  (fn ((ref str)) (option string)))
-
 (defn read-option (path)
   (match (read-text path)
     ((ok text) (some text))
     ((err _) none)))
-
-(type named-roadmap
-  (fn ((ref json) (ref str))
-    (option json)))
 
 (defn named-roadmap (document name)
   (let (items (unwrap-or (roadmaps document) (vec)))
@@ -296,32 +251,20 @@
                 (fn (item) (named? item name)))
               (fn (item) (clone item)))))
 
-(type roadmaps
-  (fn ((ref json)) (option (vec json))))
-
 (defn roadmaps (document)
   (match (json-field document "roadmaps")
     ((some value) (json-array value))
     (none none)))
-
-(type named?
-  (fn ((ref json) (ref str)) bool))
 
 (defn named? (object name)
   (match (json-field object "name")
     ((some value) (text-is? value name))
     (none false)))
 
-(type text-is?
-  (fn ((ref json) (ref str)) bool))
-
 (defn text-is? (value expected)
   (match (json-text value)
     ((some text) (= (as-str text) expected))
     (none false)))
-
-(type max-active-text
-  (fn ((ref json)) (option string)))
 
 (defn max-active-text (object)
   (match (json-field object "max_active")

@@ -1,0 +1,50 @@
+(module
+  "Reads the default branch of the governed repository.")
+
+(use controller/failure ->action-failure controller-error)
+
+(use controller/process ->command command-detail execute
+                        successful?)
+
+(export default-branch)
+
+(def symbolic-ref-label
+  (str "git symbolic-ref --short refs/remotes/origin/HEAD"))
+
+(defn default-branch (repo)
+  (let (command (->command :program (str "git")
+                           :args (vec (str "symbolic-ref")
+                                      (str "--short")
+                                      (str "refs/remotes/origin/HEAD"))
+                           :label (clone symbolic-ref-label)))
+    (branch-from-outcome command (execute repo command))))
+
+(defn branch-from-outcome (command outcome)
+  (if (successful? outcome)
+    (branch-from-text command
+                      (trim (as-str (:stdout outcome))))
+    (base-branch-error command
+                       (:code outcome)
+                       (command-detail outcome))))
+
+(defn branch-from-text (command branch-text)
+  (let (branch (remote-stripped branch-text))
+    (if (empty? (as-str branch))
+      (base-branch-error command 0 "the default branch is empty")
+      (ok branch))))
+
+(defn base-branch-error (command code detail)
+  (let (failure (->action-failure :action (str "base branch")
+                                  :item (str "-")
+                                  :command (clone (:label command))
+                                  :code code
+                                  :detail (str detail)))
+    (err (controller-error/command-failed failure))))
+
+(defn remote-stripped (branch)
+  (if (starts-with? branch "origin/")
+    (let (parts (collect (split branch "/")))
+      (join (collect (map (range 1 (len parts))
+                       (fn (index) (clone (at parts index)))))
+            "/"))
+    (str branch)))

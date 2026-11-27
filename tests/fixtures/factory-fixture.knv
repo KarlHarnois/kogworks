@@ -1,6 +1,6 @@
 (export prepare-factory)
 
-(def create-directory
+(def create-dir
   (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result unit string))))
 
@@ -9,9 +9,9 @@
     (fn ((ref str) (ref str))
       (result unit string))))
 
-(defn prepare-factory (directory factory-text)
-  (match (create-directory (as-str directory))
+(defn prepare-factory (dir factory-text)
+  (match (create-dir (as-str dir))
     ((ok _)
-     (write-text (as-str (str directory "/factory.knv"))
+     (write-text (as-str (str dir "/factory.knv"))
                  (as-str factory-text)))
     ((err reason) (err reason))))

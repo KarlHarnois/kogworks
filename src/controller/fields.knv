@@ -14,15 +14,11 @@
 
 (defn field-error->message (failure)
   (match failure
-    ((missing-field path) (str "missing `" path "`"))
+    ((missing-field path) (str "`" path "` is missing"))
     ((non-text-field path) (str "`" path "` is not text"))
     ((non-object-field path)
      (str "`" path "` is not an object"))
     ((non-number-field path) (str "`" path "` is not a number"))))
-
-(type required-object
-  (fn ((ref json) (ref str) (ref str))
-    (result json field-error)))
 
 (defn required-object (value key path)
   (let-try (found (required-field value key path))
@@ -30,19 +26,11 @@
       (ok found)
       (err (field-error/non-object-field (str path))))))
 
-(type required-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string field-error)))
-
 (defn required-text (value key path)
   (let-try (found (required-field value key path))
     (match (json-text found)
       ((some text) (ok text))
       (none (err (field-error/non-text-field (str path)))))))
-
-(type required-number
-  (fn ((ref json) (ref str) (ref str))
-    (result string field-error)))
 
 (defn required-number (value key path)
   (let-try (found (required-field value key path))

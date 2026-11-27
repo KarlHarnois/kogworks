@@ -1,45 +1,10 @@
-(use knave-commandant defcli defcommand run-command)
-(use prelude/macros header-shape)
+(use knave-commandant run-command)
 (use apply apply-and-exit)
 (use controller/controller controller-and-exit)
+(use cli kogworks-command kogworks-spec matches->kogworks)
 
 (use synth error->message factory-format-module
            factory-module synth-factory)
-
-(header-shape (defcommand name docstring))
-
-(header-shape (defcli name docstring))
-
-(defcommand synth "Writes <dir>/factory.json." (dir string))
-
-(defcommand module "Writes the module." (dir string))
-
-(defcommand format "Writes the shape module." (dir string))
-
-(defcommand controller "Runs the controller loop against a governed repository. It polls rmap and starts the worker for the first startable build, and starts one behavior reviewer when rmap marks a build for review or verify. It exits 1 on the first failure. A person reads the manager message and restarts it. The controller can merge pull requests that change the controller itself; the running binary stays at the version it was built from, and a person rebuilds and restarts it after such a merge. It has no automatic restart, supervisor or backoff loop. The pilot pins rmap to a build before rm-9dff, so a behavior approve alone merges and the controller starts no design reviewer."
-  (:repo string
-         :required true
-         :value-name path
-         :about "The governed repository")
-  (:poll u32
-         :default 30
-         :about "Seconds to wait between passes")
-  (:merge-poll u32
-               :default 30
-               :about "Seconds to wait between merge polls")
-  (:merge-timeout u32
-                  :default 3600
-                  :about "Seconds to wait for a merge")
-  (:once switch :about "Runs one pass and exits"))
-
-(defcommand apply "Sets a governed repository's roadmap max active from its factory."
-  (:repo string
-         :required true
-         :value-name path
-         :about "The governed repository"))
-
-(defcli kogworks "Factory."
-  (commands synth module format controller apply))
 
 (defn main ()
   (match (:command (run-command kogworks))
@@ -58,26 +23,23 @@
     ((kogworks-command/apply options)
      (apply-and-exit (as-str (:repo options))))))
 
-(type synth-and-exit
-  (fn ((ref str)) unit))
-
-(defn synth-and-exit (directory)
-  (match (synth-factory directory)
+(defn synth-and-exit (dir)
+  (match (synth-factory dir)
     ((ok _) (do))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
 
 (type module-and-exit
   (fn ((ref str)) unit))
 
-(defn module-and-exit (directory)
-  (match (factory-module directory)
+(defn module-and-exit (dir)
+  (match (factory-module dir)
     ((ok module-text) (print module-text))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
 
 (type format-and-exit
   (fn ((ref str)) unit))
 
-(defn format-and-exit (directory)
-  (match (factory-format-module directory)
+(defn format-and-exit (dir)
+  (match (factory-format-module dir)
     ((ok module-text) (print module-text))
     ((err failure) (eprintln (error->message failure)) (exit 1))))

@@ -1,10 +1,11 @@
 (use controller/factory merge-method read-factory)
+(use controller/fields field-error)
 
 (use controller/failure factory-error
                         factory-error->message)
 
-(use fixtures/controller-fixture prepare-repo
-                                 reset-directory write-text)
+(use fixtures/controller-fixture prepare-repo reset-dir
+                                 write-text)
 
 (deftest read-factory-reads-the-manager-roadmap-and-roles
   (let (root (str "target/knave/controller-tests/factory-read"))
@@ -30,7 +31,7 @@
 
 (deftest read-factory-reports-a-missing-factory
   (let (root (str "target/knave/controller-tests/factory-missing"))
-    (unwrap-ok (reset-directory (as-str root)))
+    (unwrap-ok (reset-dir (as-str root)))
     (match (read-factory (as-str (str root "/repo")))
       ((err (missing-factory path))
        (assert (contains? path "factory.json")))
@@ -60,5 +61,6 @@
       (_ (assert false)))))
 
 (deftest names-a-non-number-factory-field
-  (assert (= (factory-error->message (factory-error/non-number-field (str "worker.weight")))
+  (assert (= (factory-error->message (factory-error/field (field-error/non-number-field
+                                                            (str "worker.weight"))))
              (str "the factory field `worker.weight` is not a number"))))

@@ -2,8 +2,8 @@
 (use synth synth-factory)
 
 (deftest deffactory-writes-the-factory-json
-  (let (directory (str "target/knave/test-factories/deffactory-sample"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/deffactory-sample"))
+    (unwrap-ok (prepare-factory dir
                                 (str
                                   "(deffactory sample\n"
                                   "  :manager \"sample-manager\"\n"
@@ -16,8 +16,8 @@
                                   "          (reviewer :agent \"sample-reviewer\"\n"
                                   "                    :skill \"sample:reviewer-skill\"\n"
                                   "                    :brief \"sample/briefs/reviewer.md\")))\n")))
-    (unwrap-ok (synth-factory (as-str directory)))
-    (assert (= (unwrap-ok (slurp (as-str (str directory "/factory.json"))))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (assert (= (unwrap-ok (slurp (as-str (str dir "/factory.json"))))
                (str "{\n" "  \"schema\": 0,\n"
                     "  \"name\": \"sample\",\n"
                     "  \"manager\": \"sample-manager\",\n"

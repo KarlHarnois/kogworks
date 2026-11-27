@@ -45,7 +45,7 @@
 
 (defstruct command
   :program string
-  :arguments (vec string)
+  :args (vec string)
   :label string)
 
 (defstruct outcome
@@ -58,10 +58,10 @@
 (type execute
   (fn ((ref str) (ref command)) outcome))
 
-(defn execute (directory command)
+(defn execute (dir command)
   (match (run (as-str (:program command))
-              (:arguments command)
-              directory)
+              (:args command)
+              dir)
     ((ok output)
      (->outcome :code (exit-code output)
                 :stdout (stdout-text output)
@@ -72,16 +72,11 @@
 (defn successful? (outcome)
   (= (:code outcome) 0))
 
-(type command-detail
-  (fn ((ref outcome)) string))
-
 (defn command-detail (outcome)
   (let (stderr-line (last-line (as-str (:stderr outcome))))
     (if (empty? stderr-line)
       (last-line (as-str (:stdout outcome)))
       stderr-line)))
-
-(type last-line (fn ((ref str)) string))
 
 (defn last-line (text)
   (let (found (last (collect (filter (lines text) non-blank?))))

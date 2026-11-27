@@ -2,16 +2,16 @@
 (use synth synth-factory)
 
 (deftest empty-roles-json-has-no-blank-line
-  (let (directory (str "target/knave/test-factories/empty-roles"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/empty-roles"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory empty-sample\n"
                                      "  :manager \"sample-manager\"\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles))\n")))
-    (unwrap-ok (synth-factory (as-str directory)))
-    (assert (= (unwrap-ok (slurp (as-str (str directory "/factory.json"))))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (assert (= (unwrap-ok (slurp (as-str (str dir "/factory.json"))))
                (str "{\n" "  \"schema\": 0,\n"
                     "  \"name\": \"empty-sample\",\n"
                     "  \"manager\": \"sample-manager\",\n"

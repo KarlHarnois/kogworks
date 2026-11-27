@@ -6,7 +6,7 @@
 (use controller/failure factory-error
                         factory-error->message)
 
-(use controller/json json json-field)
+(use controller/fields required-number required-text)
 
 (use controller/process ->command canonical-path command
                         execute)
@@ -20,18 +20,12 @@
 
 (defenum apply-error
   (factory factory-error)
-  (missing-field string)
-  (non-text-field string)
-  (non-number-field string)
   (invalid-max-active string (parse-error int))
-  (unreadable-repository string string))
+  (unreadable-repo string string))
 
 (defstruct apply-target
-  :directory string
+  :dir string
   :cap roadmap-cap)
-
-(type apply-and-exit
-  (fn ((ref str)) unit))
 
 (defn apply-and-exit (repo)
   (match (read-target repo)
@@ -43,95 +37,42 @@
 (defn apply-error->message (failure)
   (match failure
     ((factory cause) (factory-error->message cause))
-    ((missing-field path) (str "the factory has no `" path "`"))
-    ((non-text-field path)
-     (str "the factory field `" path "` is not text"))
-    ((non-number-field path)
-     (str "the factory field `" path "` is not a number"))
     ((invalid-max-active path cause)
      (str "the factory field `" path
           "` is not a whole number: " cause))
-    ((unreadable-repository path reason)
+    ((unreadable-repo path reason)
      (str "cannot resolve the repository " path ": " reason))))
 
-(type cap-from-document
-  (fn ((ref json))
-    (result roadmap-cap apply-error)))
-
 (defn cap-from-document (document)
-  (let-try (roadmap (required-text document "roadmap" "roadmap"))
-    (let-try (max-active (required-number document "max_active" "max_active"))
-      (ok (->roadmap-cap :roadmap roadmap :max-active max-active)))))
-
-(type read-target
-  (fn ((ref str))
-    (result apply-target apply-error)))
+  (let-try (roadmap (factory-field (required-text document "roadmap" "roadmap"))
+            max-active-text (factory-field (required-number document
+                                                            "max_active"
+                                                            "max_active"))
+            max-active (whole-number max-active-text "max_active"))
+    (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
 
 (defn read-target (repo)
-  (let-try (directory (absolute-repo repo))
-    (let-try (cap (read-cap (as-str directory)))
-      (ok (->apply-target :directory directory :cap cap)))))
-
-(type absolute-repo
-  (fn ((ref str))
-    (result string apply-error)))
+  (let-try (dir (absolute-repo repo)
+            cap (read-cap (as-str dir)))
+    (ok (->apply-target :dir dir :cap cap))))
 
 (defn absolute-repo (repo)
   (map-err (canonical-path repo)
     (fn (reason)
-      (apply-error/unreadable-repository (str repo) reason))))
-
-(type read-cap
-  (fn ((ref str))
-    (result roadmap-cap apply-error)))
+      (apply-error/unreadable-repo (str repo) reason))))
 
 (defn read-cap (repo)
   (let-try (document (factory-document repo))
     (cap-from-document document)))
 
-(type factory-document
-  (fn ((ref str))
-    (result json apply-error)))
-
 (defn factory-document (repo)
   (map-err (read-factory-document repo)
     (fn (failure) (apply-error/factory failure))))
 
-(type required-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string apply-error)))
-
-(defn required-text (value key path)
-  (match (json-field value key)
-    (none (err (apply-error/missing-field (str path))))
-    ((some found) (field-text found path))))
-
-(type field-text
-  (fn ((ref json) (ref str))
-    (result string apply-error)))
-
-(defn field-text (found path)
-  (match found
-    ((text text) (ok (clone text)))
-    (_ (err (apply-error/non-text-field (str path))))))
-
-(type required-number
-  (fn ((ref json) (ref str) (ref str))
-    (result int apply-error)))
-
-(defn required-number (value key path)
-  (match (json-field value key)
-    (none (err (apply-error/missing-field (str path))))
-    ((some found) (field-number found path))))
-
-(type field-number
-  (fn ((ref json) (ref str))
-    (result int apply-error)))
-
-(defn field-number (found path)
-  (match found
-    ((number text) (whole-number text path))
-    (_ (err (apply-error/non-number-field (str path))))))
+(defn factory-field (found)
+  (map-err found
+    (fn (failure)
+      (apply-error/factory (factory-error/field failure)))))
 
 (type whole-number
   (fn ((ref string) (ref str))
@@ -147,7 +88,7 @@
   (fn ((ref apply-target)) unit))
 
 (defn apply-cap (target)
-  (let (outcome (execute (:directory target)
+  (let (outcome (execute (:dir target)
                          (set-command (:cap target))))
     (print (as-str (:stdout outcome)))
     (eprint (as-str (:stderr outcome)))
@@ -158,17 +99,15 @@
 
 (defn set-command (cap)
   (->command :program (str "rmap")
-             :arguments (vec (str "roadmap")
-                             (str "set")
-                             (clone (:roadmap cap))
-                             (str "--max-active")
-                             (str (:max-active cap)))
+             :args (vec (str "roadmap")
+                        (str "set")
+                        (clone (:roadmap cap))
+                        (str "--max-active")
+                        (str (:max-active cap)))
              :label (str "rmap roadmap set "
                          (:roadmap cap)
                          " --max-active "
                          (:max-active cap))))
-
-(type exit-code (fn (int) i32))
 
 (defn exit-code (code)
   (if (< code 0)
