@@ -45,7 +45,7 @@
 
 (defstruct command
   :program string
-  :arguments (vec string)
+  :args (vec string)
   :label string)
 
 (defstruct outcome
@@ -60,7 +60,7 @@
 
 (defn execute (dir command)
   (match (run (as-str (:program command))
-              (:arguments command)
+              (:args command)
               dir)
     ((ok output)
      (->outcome :code (exit-code output)

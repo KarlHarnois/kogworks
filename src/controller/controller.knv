@@ -243,10 +243,10 @@
 
 (defn ready-command (roadmap)
   (->command :program (str "rmap")
-             :arguments (vec (str "ready")
-                             (str "--roadmap")
-                             (clone roadmap)
-                             (str "--json"))
+             :args (vec (str "ready")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--json"))
              :label (str "rmap ready --roadmap " roadmap " --json")))
 
 (defn out-of-scope-error (config action)
@@ -260,12 +260,12 @@
 
 (defn next-command (roadmap)
   (->command :program (str "rmap")
-             :arguments (vec (str "next")
-                             (str "--roadmap")
-                             (clone roadmap)
-                             (str "--taken-by")
-                             (str "controller")
-                             (str "--json"))
+             :args (vec (str "next")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--taken-by")
+                        (str "controller")
+                        (str "--json"))
              :label (str "rmap next --roadmap " roadmap
                          " --taken-by controller --json")))
 
@@ -281,7 +281,7 @@
 
 (defn send-command (manager message)
   (->command :program (str "ringleader")
-             :arguments (vec (str "send")
-                             (clone manager)
-                             (clone message))
+             :args (vec (str "send")
+                        (clone manager)
+                        (clone message))
              :label (str "ringleader send " manager)))

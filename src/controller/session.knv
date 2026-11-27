@@ -8,11 +8,11 @@
 
 (defn abandon-command (session)
   (->command :program (str "rmap")
-             :arguments (vec (str "session")
-                             (str "end")
-                             (clone session)
-                             (str "--reason")
-                             (str "abandoned"))
+             :args (vec (str "session")
+                        (str "end")
+                        (clone session)
+                        (str "--reason")
+                        (str "abandoned"))
              :label (str "rmap session end " session " --reason abandoned")))
 
 (defn failed-start-detail (outcome end-outcome)

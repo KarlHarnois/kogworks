@@ -13,9 +13,9 @@
 
 (defn default-branch (repo)
   (let (command (->command :program (str "git")
-                           :arguments (vec (str "symbolic-ref")
-                                           (str "--short")
-                                           (str "refs/remotes/origin/HEAD"))
+                           :args (vec (str "symbolic-ref")
+                                      (str "--short")
+                                      (str "refs/remotes/origin/HEAD"))
                            :label (clone symbolic-ref-label)))
     (branch-from-outcome command (execute repo command))))
 

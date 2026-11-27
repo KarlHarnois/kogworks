@@ -119,11 +119,11 @@
 
 (defn set-command (cap)
   (->command :program (str "rmap")
-             :arguments (vec (str "roadmap")
-                             (str "set")
-                             (clone (:roadmap cap))
-                             (str "--max-active")
-                             (str (:max-active cap)))
+             :args (vec (str "roadmap")
+                        (str "set")
+                        (clone (:roadmap cap))
+                        (str "--max-active")
+                        (str (:max-active cap)))
              :label (str "rmap roadmap set "
                          (:roadmap cap)
                          " --max-active "

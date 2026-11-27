@@ -175,7 +175,7 @@
 (defn export-document (root)
   (let (outcome (execute (as-str (str root "/repo"))
                          (->command :program (str "rmap")
-                                    :arguments (vec (str "export"))
+                                    :args (vec (str "export"))
                                     :label (str "rmap export"))))
     (if (successful? outcome)
       (map-err (parse-json (as-str (:stdout outcome)))
@@ -231,10 +231,10 @@
                (str "apply-test"))
           (as-str (str "rmap new " roadmap))))
 
-(defn run-in (root program arguments label)
+(defn run-in (root program args label)
   (let (outcome (execute (as-str (str root "/repo"))
                          (->command :program (str program)
-                                    :arguments arguments
+                                    :args args
                                     :label (str label))))
     (if (successful? outcome)
       (ok (do))

@@ -60,10 +60,10 @@
 (defn run (root)
   (run-with root (vec (str "--once"))))
 
-(defn run-with (root arguments)
+(defn run-with (root args)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
-                  arguments))
+                  args))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
