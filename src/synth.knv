@@ -95,12 +95,12 @@
                      factory-module-layout/separated))
 
 (defn synth-factory (directory)
-  (let (factory-file (join-path directory "factory.knv"))
-    (let-try (module-text (factory-module directory))
-      (let-try (json (eval-factory-json (as-str factory-file)
-                                        (as-str module-text)))
-        (write-factory-json (as-str (join-path directory "factory.json"))
-                            (as-str json))))))
+  (let (factory-file (join-path directory "factory.knv")
+        module-text (try (factory-module directory))
+        json (try (eval-factory-json (as-str factory-file)
+                                     (as-str module-text)))
+        filepath (join-path directory "factory.json"))
+    (write-factory-json (as-str filepath) (as-str json))))
 
 (defn factory-module (directory)
   (factory-module-in directory factory-module-layout/inline))
