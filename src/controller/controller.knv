@@ -20,9 +20,9 @@
 (use controller/log-lines log-item)
 
 (use controller/log-report merge-log-item print-events
-                           print-failure print-start print-stop
-                           read-log-item review-log-item
-                           start-progress)
+                           print-failure print-start
+                           print-stop read-log-item
+                           review-log-item start-progress)
 
 (use controller/merge ->merge-settings merge-settings
                       start-merge)

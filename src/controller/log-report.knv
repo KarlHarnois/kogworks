@@ -35,8 +35,8 @@
                              stderr-terminal? stderr-width)
 
 (export merge-log-item print-events print-failure
-        print-start print-stop read-log-item
-        review-log-item start-progress)
+        print-start print-stop read-log-item review-log-item
+        start-progress)
 
 (defn print-start (remote roadmap manager running)
   (let (settings (settings-for remote)
