@@ -9,8 +9,8 @@
                    prepare-repo prepare-repo-without-factory
                    recorded-command recorded-dir repo-dir
                    rmap-call-count rmap-path
-                   roadmap-max-active run-apply stderr-text
-                   stdout-text stored-max-active
+                   roadmap-max-active run-apply run-apply-in
+                   stderr-text stdout-text stored-max-active
                    write-unreadable-factory)
 
 (def stored-factory-json
@@ -120,6 +120,38 @@
       (assert (= (stored-max-active (as-str root))
                  (some (str "5"))))
       (assert (= (rmap-call-count (as-str root)) 1)))))
+
+(deftest apply-accepts-the-repo-option-and-defaults-to-the-current-directory
+  (let (explicit-root (str "target/knave/apply-tests/repo-explicit"))
+    (unwrap-ok (prepare-repo (as-str explicit-root)
+                             (as-str stored-factory-json)
+                             (->fake-rmap :stdout (str) :stderr (str) :code 0)))
+    (let (explicit (unwrap-ok (run-apply (as-str (str explicit-root "/bin"))
+                                         (as-str (str explicit-root "/repo")))))
+      (assert (= (exit-code explicit) 0))
+      (assert (= (recorded-dir (as-str explicit-root))
+                 (some (unwrap-ok (repo-dir (as-str explicit-root))))))))
+  (let (default-root (str "target/knave/apply-tests/repo-default"))
+    (unwrap-ok (prepare-repo (as-str default-root)
+                             (as-str stored-factory-json)
+                             (->fake-rmap :stdout (str) :stderr (str) :code 0)))
+    (let (default (unwrap-ok (run-apply-in (as-str (str default-root "/bin"))
+                                           (as-str (str default-root
+                                                        "/repo")))))
+      (assert (= (exit-code default) 0))
+      (assert (= (recorded-dir (as-str default-root))
+                 (some (unwrap-ok (repo-dir (as-str default-root)))))))))
+
+(deftest apply-reports-a-missing-factory-in-the-working-directory
+  (let (root (str "target/knave/apply-tests/default-missing-factory"))
+    (unwrap-ok (prepare-repo-without-factory (as-str root)))
+    (let (outcome (unwrap-ok (run-apply-in (as-str (str root "/bin"))
+                                           (as-str (str root "/repo")))))
+      (assert (= (exit-code outcome) 1))
+      (assert (contains? (stderr-text outcome) "no factory at"))
+      (assert (contains? (stderr-text outcome)
+                         (as-str (str (unwrap-ok (repo-dir (as-str root)))
+                                      "/.kogworks/factory.json")))))))
 
 (deftest apply-passes-through-an-rmap-refusal
   (let (root (str "target/knave/apply-tests/refusal"))
