@@ -1,8 +1,10 @@
 (use controller/log ->banner-line ->item-line ->log-settings
-                    ->pr-summary color-mode display-width
-                    log-status output-target render-banner
-                    render-item render-sub-lines stage-state
-                    sub-line track)
+                    ->pr-summary ->running-item ->stop-line
+                    color-mode display-width log-status
+                    output-target render-banner render-item
+                    render-stop render-sub-lines
+                    running-status stage-state sub-line
+                    track)
 
 (use fixtures/log-fixture banner-actual banner-expected
                           bdc-building changes-118-item
@@ -197,7 +199,7 @@
   (let (sub-lines (vec (sub-line/pr (->pr-summary :number 35
                                                   :branch (str "build-rm-0001")
                                                   :head none)))
-        text (join (render-sub-lines (link-settings) (str "rm-0001") sub-lines)
+        text (join (render-sub-lines (link-settings) "rm-0001" sub-lines)
                    "\n"))
     (assert (contains? (as-str text)
                        (as-str (str "\u{1b}]8;;https://github.com/KarlHarnois/kogworks/pull/35"
@@ -214,7 +216,7 @@
                                                   :branch (str "build-rm-0009")
                                                   :head (some (str
                                                                 "abcdef0")))))
-        lines (render-sub-lines settings (str "rm-0009") sub-lines)
+        lines (render-sub-lines settings "rm-0009" sub-lines)
         text (join lines "\n"))
     (assert (> (len lines) 1))
     (assert (contains? (as-str text)
@@ -340,3 +342,90 @@
                          (vec (str "14:02:12  rm-8bdc  build ✓ review ↺ merge ○"
                                    "  changes      Empty note")
                               (str "          ╰─ criterion 2  "))))))
+
+(deftest renders-the-styled-parts-in-truecolor
+  (let (reset "\u{1b}[0m"
+        secondary "\u{1b}[38;2;122;127;135m"
+        bold "\u{1b}[1m"
+        success "\u{1b}[38;2;91;208;138m"
+        failure "\u{1b}[38;2;242;95;92m"
+        outcome "\u{1b}[38;2;224;176;92m"
+        banner (render-banner (settings-truecolor)
+                              (->banner-line :time (str "14:02:11")
+                                             :roadmap (str "factory-mvp")
+                                             :manager (some (str "kw-manager"))
+                                             :poll-seconds 30))
+        item (render-item (settings-truecolor) (changes-118-item))
+        stop (render-stop (settings-truecolor)
+                          (->stop-line
+                            :time (str "14:23:02")
+                            :merged 1
+                            :accepted 1
+                            :failed 1
+                            :running (vec (->running-item
+                                            :id (str "rm-9a01")
+                                            :status running-status/building
+                                            :minutes 4))
+                            :rerun (str "kogworks controller --repo . --poll 30"))))
+    (assert (same-lines?
+              banner
+              (vec (str secondary "14:02:11" reset "  ● "
+                        bold "kogworks" reset "  " secondary
+                        "roadmap" reset " factory-mvp "
+                        secondary "·" reset " " secondary
+                        "manager" reset " kw-manager "
+                        secondary "·" reset " " secondary
+                        "poll 30s" reset))))
+    (assert (same-lines?
+              item
+              (vec (str secondary "14:09:12" reset "  " bold
+                        "rm-8bdc" reset "  " secondary
+                        "build" reset " " success "✓" reset
+                        " " bold "review" reset " " outcome
+                        "↺" reset " " secondary "merge"
+                        reset " " secondary "○" reset "  "
+                        outcome "changes" reset "      "
+                        "Disarm auto-merge when the approved head changes"
+                        " or the ite…")
+                   (str "          " secondary "├─ " reset
+                        secondary "criterion 2" reset
+                        "  no test shows the disarm when the approved"
+                        " head changes")
+                   (str "          " secondary "├─ " reset
+                        secondary "criterion 4" reset
+                        "  the return to fixing leaves auto-merge armed")
+                   (str "          " secondary "╰─ " reset
+                        secondary "reviewer" reset
+                        "     review-rm-8bdc-7da1703, behavior review"))))
+    (assert
+      (same-lines?
+        stop
+        (vec (str secondary "14:23:02" reset "  " failure
+                  "■" reset " " bold "controller stopped"
+                  reset "  " success "1 merged" reset " "
+                  secondary "·" reset " " success
+                  "1 accepted" reset " " secondary "·" reset
+                  " " failure "1 failed" reset " " secondary
+                  "·" reset " 1 running")
+             (str "          " secondary "├─ " reset
+                  secondary "running" reset "      " bold
+                  "rm-9a01" reset " building 4m" secondary
+                  " · its session keeps running" reset)
+             (str "          " secondary "╰─ " reset
+                  secondary "rerun" reset "        " bold
+                  "kogworks controller --repo . --poll 30"
+                  reset))))
+    (assert (balanced-spans? (join banner "\n")))
+    (assert (balanced-spans? (join item "\n")))
+    (assert (balanced-spans? (join stop "\n")))))
+
+(deftest colors-the-owner-on-a-forced-color-stream
+  (let (settings (->log-settings :colors color-mode/truecolor
+                                 :width none
+                                 :target output-target/stream
+                                 :remote none)
+        sub-lines (vec (sub-line/manager (str "kw-manager")))
+        line (join (render-sub-lines settings "rm-35cb" sub-lines) "\n"))
+    (assert (contains? line
+                       (as-str (str "\u{1b}[38;2;122;127;135mrm-35cb\u{1b}[0m  "))))
+    (assert (balanced-spans? line))))
