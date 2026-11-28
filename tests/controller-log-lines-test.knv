@@ -26,6 +26,7 @@
               :kind item-kind/build
               :title (str "Build the thing")
               :branch (some (str "build-rm-0001"))
+              :approved false
               :pull-request (some (->pr-summary :number 12
                                                 :branch (str "build-rm-0001")
                                                 :head (some (str "abcdef0"))))))
@@ -127,7 +128,10 @@
                         (str "roadmap")
                         (some (str "mgr"))
                         3)
-        stop (stop-of (str "14:01:00") 2 1 (str "kogworks controller")))
+        stop (stop-of (str "14:01:00")
+                      2 0 1
+                      (vec)
+                      (str "kogworks controller")))
     (assert (= (:roadmap start) (str "roadmap")))
     (assert (= (:manager start) (some (str "mgr"))))
     (assert (= (:running start) 3))

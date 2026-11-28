@@ -1,0 +1,421 @@
+(module
+  "Builds lifecycle log lines and the controller's running progress from rmap events.")
+
+(use controller/events ->item-count fixing-count-of
+                       item-count lifecycle-change)
+
+(use controller/log ->item-line ->running-item item-line
+                    log-status running-item running-status
+                    stage-state track)
+
+(use controller/log-lines log-item)
+(use controller/rules item-kind)
+
+(export ->item-review ->log-progress advance-progress
+        event-item-id event-line fixing-round-for
+        item-review last-review-of log-progress
+        remember-items review-outcome)
+
+(defstruct log-progress
+  :event-id int
+  :roadmap-id string
+  :fixing-counts (vec item-count)
+  :merged int
+  :accepted int
+  :running (vec running-item)
+  :reviews (vec item-review))
+
+(defstruct item-review
+  :item string
+  :outcome review-outcome)
+
+(defenum review-outcome
+  none
+  changes
+  approved)
+
+(defenum running-update
+  (set running-status)
+  remove
+  keep)
+
+(type remember-items
+  (fn ((ref (vec log-item))
+       (ref (vec log-item)))
+    (vec log-item)))
+
+(defn remember-items (items additional)
+  (let (owned (collect (map items (fn (item) (clone item)))))
+    (remember-items-from owned additional 0)))
+
+(defn event-item-id (change)
+  (match change
+    ((claimed item) (str item))
+    ((reported item _status) (str item))
+    ((review-started item) (str item))
+    ((reviewed item _verdict) (str item))
+    ((advanced item _status) (str item))
+    ((head-recorded item) (str item))
+    ((abandoned item _session) (str item))
+    ((closed item _status) (str item))))
+
+(defn fixing-round-for (progress change)
+  (match change
+    ((advanced item status)
+     (fixing-round-of progress item status))
+    (_ 0)))
+
+(defn last-review-of (progress item)
+  (match (find-review (:reviews progress) item)
+    ((some found) (:outcome found))
+    (none review-outcome/none)))
+
+(defn event-line (time last-review fixing-round change log-item)
+  (match change
+    ((claimed item) (claim-line time log-item))
+    ((reported item status)
+     (reported-line time status log-item))
+    ((review-started item) (review-line time log-item))
+    ((reviewed item verdict)
+     (reviewed-line time verdict log-item))
+    ((advanced item status)
+     (advanced-line time last-review fixing-round status
+                    log-item))
+    ((head-recorded item) (head-line time log-item))
+    ((abandoned item _session) (abandoned-line time log-item))
+    ((closed item status) (closed-line time status log-item))))
+
+(defn advance-progress (progress change line)
+  (-> progress
+      (advance-fixing change)
+      (advance-review change)
+      (advance-close change)
+      (advance-running change line)))
+
+(defn remember-items-from (items additional index)
+  (if (>= index (len additional))
+    items
+    (recur (remember-item items (at additional index))
+           additional
+           (inc index))))
+
+(type remember-item
+  (fn ((vec log-item) (ref log-item))
+    (vec log-item)))
+
+(defn remember-item (items item)
+  (let (id (clone (:id item)))
+    (match (item-index items id)
+      ((some index) (assoc items index (clone item)))
+      (none (push-item items item)))))
+
+(defn item-index (items id) (item-index-from items id 0))
+
+(defn item-index-from (items id index)
+  (cond
+    ((>= index (len items)) none)
+    ((= (:id (at items index)) id) (some index))
+    (else (recur items id (inc index)))))
+
+(defn push-item (items item)
+  (do (push! items (clone item)) items))
+
+(defn fixing-round-of (progress item status)
+  (if (= (as-str status) (str "fixing"))
+    (+ (fixing-count-of (:fixing-counts progress) item) 2)
+    0))
+
+(defn find-review (reviews item)
+  (find-review-from reviews 0 item))
+
+(defn find-review-from (reviews index item)
+  (cond
+    ((>= index (len reviews)) none)
+    ((= (:item (at reviews index)) item)
+     (some (clone (at reviews index))))
+    (else (recur reviews (inc index) item))))
+
+(defn claim-line (time log-item)
+  (some (item-line-of time log-item
+                      (claim-track (:kind log-item))
+                      (claim-status (:kind log-item)))))
+
+(defn reported-line (time status log-item)
+  (if (= (as-str status) (str "reported"))
+    (some (item-line-of time log-item
+                        (track/write-track stage-state/done stage-state/active)
+                        log-status/reported))
+    none))
+
+(defn review-line (time log-item)
+  (some (item-line-of time log-item
+                      (review-track)
+                      (review-status log-item))))
+
+(defn reviewed-line (time verdict log-item)
+  (if (= (as-str verdict) (str "changes"))
+    (some (item-line-of time log-item
+                        (changes-track)
+                        log-status/changes))
+    none))
+
+(defn advanced-line (time last-review fixing-round status log-item)
+  (cond
+    ((= (as-str status) (str "fixing"))
+     (some (item-line-of time log-item
+                         (fixing-track last-review)
+                         (log-status/fixing fixing-round))))
+    ((= (as-str status) (str "merging"))
+     (some (item-line-of time log-item
+                         (merging-track)
+                         log-status/merging)))
+    (else none)))
+
+(defn head-line (time log-item)
+  (some (item-line-of time log-item
+                      (head-track)
+                      log-status/new-head)))
+
+(defn abandoned-line (time log-item)
+  (some (item-line-of time log-item
+                      (abandoned-track)
+                      log-status/abandoned)))
+
+(defn closed-line (time status log-item)
+  (cond
+    ((= (as-str status) (str "merged"))
+     (some (item-line-of time log-item
+                         (merged-track)
+                         (merged-status log-item))))
+    ((= (as-str status) (str "accepted"))
+     (some (item-line-of time log-item
+                         (accepted-track)
+                         log-status/accepted)))
+    (else none)))
+
+(defn item-line-of (time log-item track status)
+  (->item-line :time (str time)
+               :id (clone (:id log-item))
+               :track track
+               :status status
+               :title (clone (:title log-item))
+               :sub-lines (vec)))
+
+(defn claim-status (kind)
+  (match kind
+    (build log-status/building)
+    (research log-status/researching)
+    (design log-status/designing)
+    (_ log-status/working)))
+
+(defn claim-track (kind)
+  (match kind
+    (build (track/build-track stage-state/active
+                              stage-state/waiting
+                              stage-state/waiting))
+    (_ (track/write-track stage-state/active stage-state/waiting))))
+
+(defn review-status (log-item)
+  (if (:approved log-item)
+    log-status/verifying log-status/reviewing))
+
+(defn review-track ()
+  (track/build-track stage-state/done stage-state/active
+                     stage-state/waiting))
+
+(defn changes-track ()
+  (track/build-track stage-state/done stage-state/sent-back
+                     stage-state/waiting))
+
+(defn fixing-track (last-review)
+  (match last-review
+    (review-outcome/changes (track/build-track stage-state/active
+                                               stage-state/sent-back
+                                               stage-state/waiting))
+    (_ (track/build-track stage-state/active
+                          stage-state/waiting
+                          stage-state/waiting))))
+
+(defn merging-track ()
+  (track/build-track stage-state/done stage-state/done
+                     stage-state/active))
+
+(defn head-track ()
+  (track/build-track stage-state/done stage-state/waiting
+                     stage-state/waiting))
+
+(defn abandoned-track ()
+  (track/build-track stage-state/done stage-state/waiting
+                     stage-state/waiting))
+
+(defn merged-track ()
+  (track/build-track stage-state/done stage-state/done
+                     stage-state/done))
+
+(defn accepted-track ()
+  (track/write-track stage-state/done stage-state/done))
+
+(defn merged-status (log-item)
+  (match (:pull-request log-item)
+    (none (log-status/merged 0))
+    ((some summary) (log-status/merged (:number summary)))))
+
+(defn advance-fixing (progress change)
+  (match change
+    ((advanced item status)
+     (fixing-progress progress item status))
+    (_ progress)))
+
+(defn fixing-progress (progress item status)
+  (if (= (as-str status) (str "fixing"))
+    (assoc progress
+           :fixing-counts (bump-fixing-count (:fixing-counts progress) item))
+    progress))
+
+(defn bump-fixing-count (counts item)
+  (let (entries (clone counts))
+    (bump-entry! entries (clone item) 0)))
+
+(defn bump-entry! (entries item index)
+  (cond
+    ((>= index (len entries))
+     (do
+       (push! entries (->item-count :item item :count 1))
+       entries))
+    ((= (:item (at entries index)) item)
+     (let (count (inc (:count (at entries index))))
+       (assoc entries index (->item-count :item item :count count))))
+    (else (recur entries item (inc index)))))
+
+(defn advance-review (progress change)
+  (match change
+    ((reviewed item verdict)
+     (assoc progress
+            :reviews (record-review (clone (:reviews progress)) item verdict)))
+    (_ progress)))
+
+(defn record-review (reviews item verdict)
+  (let (outcome (outcome-of-verdict verdict))
+    (set-review (clone reviews) (clone item) outcome 0)))
+
+(defn outcome-of-verdict (verdict)
+  (cond
+    ((= (as-str verdict) (str "changes"))
+     review-outcome/changes)
+    ((= (as-str verdict) (str "approve"))
+     review-outcome/approved)
+    (else review-outcome/none)))
+
+(defn set-review (reviews item outcome index)
+  (cond
+    ((>= index (len reviews))
+     (do
+       (push! reviews (->item-review :item item :outcome outcome))
+       reviews))
+    ((= (:item (at reviews index)) item)
+     (assoc reviews index
+            (->item-review :item item :outcome outcome)))
+    (else (recur reviews item outcome (inc index)))))
+
+(defn advance-close (progress change)
+  (match change
+    ((closed item status) (close-progress progress item status))
+    (_ progress)))
+
+(type close-progress
+  (fn (log-progress (ref string) (ref string))
+    log-progress))
+
+(defn close-progress (progress item status)
+  (cond
+    ((= (as-str status) (str "merged"))
+     (let (running (remove-running (:running progress) item))
+       (assoc (update progress :merged inc) :running running)))
+    ((= (as-str status) (str "accepted"))
+     (let (running (remove-running (:running progress) item))
+       (assoc (update progress :accepted inc) :running running)))
+    (else progress)))
+
+(type advance-running
+  (fn (log-progress (ref lifecycle-change) (option item-line))
+    log-progress))
+
+(defn advance-running (progress change line)
+  (apply-running-update progress
+                        (event-item-id change)
+                        (event-running-update change line)))
+
+(type apply-running-update
+  (fn (log-progress (ref string) running-update) log-progress))
+
+(defn apply-running-update (progress item update)
+  (match update
+    ((set status)
+     (assoc progress
+            :running (set-running (:running progress) item status)))
+    (remove (assoc progress
+                   :running (remove-running (:running progress) item)))
+    (keep progress)))
+
+(defn event-running-update (change line)
+  (match change
+    ((reported item status)
+     (reported-running-update status line))
+    ((closed item _status) running-update/remove)
+    (_ (line-running-update line))))
+
+(defn reported-running-update (status line)
+  (if (= (as-str status) (str "in_review"))
+    (running-update/set running-status/reviewing)
+    (line-running-update line)))
+
+(defn line-running-update (line)
+  (match line
+    (none running-update/keep)
+    ((some item-line)
+     (status-running-update (:status item-line)))))
+
+(defn status-running-update (status)
+  (match status
+    (building (running-update/set running-status/building))
+    (researching (running-update/set running-status/researching))
+    (designing (running-update/set running-status/designing))
+    (working (running-update/set running-status/working))
+    (reviewing (running-update/set running-status/reviewing))
+    (verifying (running-update/set running-status/verifying))
+    (changes (running-update/set running-status/changes))
+    ((fixing _round) (running-update/set running-status/fixing))
+    (new-head (running-update/set running-status/new-head))
+    (abandoned (running-update/set running-status/abandoned))
+    (merging (running-update/set running-status/merging))
+    (reported (running-update/set running-status/reported))
+    ((merged _number) running-update/remove)
+    (accepted running-update/remove)
+    (_ running-update/keep)))
+
+(defn remove-running (running item)
+  (keep-running (clone running) item 0 (vec)))
+
+(defn keep-running (running item index kept)
+  (cond
+    ((>= index (len running)) kept)
+    ((= (:id (at running index)) item)
+     (recur running item (inc index) kept))
+    (else (do
+            (push! kept (clone (at running index)))
+            (recur running item (inc index) kept)))))
+
+(defn set-running (running item status)
+  (set-running-at (clone running) (clone item) status 0))
+
+(defn set-running-at (running item status index)
+  (cond
+    ((>= index (len running))
+     (do
+       (push! running
+              (->running-item :id item :status status :minutes 0))
+       running))
+    ((= (:id (at running index)) item)
+     (assoc running index
+            (->running-item :id item :status status :minutes 0)))
+    (else (recur running item status (inc index)))))

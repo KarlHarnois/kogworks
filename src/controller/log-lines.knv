@@ -10,18 +10,18 @@
                     item-line log-status pr-summary
                     stage-state sub-line track)
 
-(use controller/merge-target merge-event)
 (use controller/rules item-kind)
 
 (export ->log-item action-line controller-failure-of
         failure-item-id failure-line log-action log-item
-        merge-event-action short-head start-of stop-of)
+        short-head start-of stop-of)
 
 (defstruct log-item
   :id string
   :kind item-kind
   :title string
   :branch (option string)
+  :approved bool
   :pull-request (option pr-summary))
 
 (defenum log-action
@@ -37,12 +37,12 @@
                 :manager manager
                 :running running))
 
-(defn stop-of (time merged failed rerun)
+(defn stop-of (time merged accepted failed running rerun)
   (->stop-line :time (str time)
                :merged merged
-               :accepted 0
+               :accepted accepted
                :failed failed
-               :running (vec)
+               :running (clone running)
                :rerun (str rerun)))
 
 (type action-line
@@ -77,11 +77,6 @@
                         :status (controller-failure-status failure)
                         :sub-lines (controller-failure-sub-lines manager
                                                                  failure)))
-
-(defn merge-event-action (event)
-  (match event
-    (merging log-action/merge)
-    (closed log-action/merged)))
 
 (defn short-head (head)
   (join (collect (map (take (chars (as-str head)) 7)

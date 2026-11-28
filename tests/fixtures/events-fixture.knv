@@ -1,0 +1,52 @@
+(module
+  "Holds the rmap event fixtures that replay a lifecycle into the controller log.")
+
+(export build-events build-expected build-item-json
+        research-events research-expected research-item-json
+        running-events)
+
+(def build-events
+  (str "{\"id\":1,\"type\":\"item-claimed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"open\",\"new\":\"dispatched\"}}}}\n"
+       "{\"id\":2,\"type\":\"item-reported\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"dispatched\",\"new\":\"in_review\"}}}}\n"
+       "{\"id\":3,\"type\":\"review-started\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0001\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
+       "{\"id\":4,\"type\":\"item-reviewed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"verdict\":{\"old\":null,\"new\":\"changes\"}}}}\n"
+       "{\"id\":5,\"type\":\"item-advanced\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"in_review\",\"new\":\"fixing\"}}}}\n"
+       "{\"id\":6,\"type\":\"item-reported\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"fixing\",\"new\":\"in_review\"}}}}\n"
+       "{\"id\":7,\"type\":\"review-started\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0001-2\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
+       "{\"id\":8,\"type\":\"item-reviewed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"verdict\":{\"old\":null,\"new\":\"approve\"}}}}\n"
+       "{\"id\":9,\"type\":\"item-advanced\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"in_review\",\"new\":\"merging\"}}}}\n"
+       "{\"id\":10,\"type\":\"item-closed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"merging\",\"new\":\"merged\"}}}}\n"))
+
+(def build-item-json
+  (str "{\"item\":{\"title\":\"Build the thing\",\"kind\":\"build\","
+       "\"session\":{\"branch\":\"build-rm-0001\"}},"
+       "\"pull_request\":{\"number\":12,\"head\":\"abcdef0\","
+       "\"approved\":false}}"))
+
+(def build-expected
+  (vec (str "rm-0001  build ▸ review ○ merge ○  building     Build the thing")
+       (str "rm-0001  build ✓ review ▸ merge ○  reviewing    Build the thing")
+       (str "rm-0001  build ✓ review ↺ merge ○  changes      Build the thing")
+       (str "rm-0001  build ▸ review ↺ merge ○  fixing (2)   Build the thing")
+       (str "rm-0001  build ✓ review ▸ merge ○  reviewing    Build the thing")
+       (str "rm-0001  build ✓ review ✓ merge ▸  merging      Build the thing")
+       (str "rm-0001  build ✓ review ✓ merge ✓  merged #12   Build the thing")))
+
+(def research-events
+  (str "{\"id\":1,\"type\":\"item-claimed\",\"item_id\":\"rm-0002\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"open\",\"new\":\"dispatched\"}}}}\n"
+       "{\"id\":2,\"type\":\"item-reported\",\"item_id\":\"rm-0002\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"dispatched\",\"new\":\"reported\"}}}}\n"
+       "{\"id\":3,\"type\":\"item-closed\",\"item_id\":\"rm-0002\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"reported\",\"new\":\"accepted\"}}}}\n"))
+
+(def research-item-json
+  (str "{\"item\":{\"title\":\"Compare OSC 8 hyperlinks\","
+       "\"kind\":\"research\",\"session\":{\"branch\":\"research-rm-0002\"}}}"))
+
+(def research-expected
+  (vec (str "rm-0002  write ▸ accept ○          researching  Compare OSC 8 hyperlinks")
+       (str "rm-0002  write ✓ accept ▸          reported     Compare OSC 8 hyperlinks")
+       (str "rm-0002  write ✓ accept ✓          accepted     Compare OSC 8 hyperlinks")))
+
+(def running-events
+  (str "{\"id\":1,\"type\":\"item-claimed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"open\",\"new\":\"dispatched\"}}}}\n"
+       "{\"id\":2,\"type\":\"item-reported\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"dispatched\",\"new\":\"in_review\"}}}}\n"
+       "{\"id\":3,\"type\":\"review-started\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0001\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"))

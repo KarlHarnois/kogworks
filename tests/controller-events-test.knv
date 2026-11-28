@@ -1,0 +1,135 @@
+(use fixtures/controller-fixture default-settings exit-code
+                                 prepare-repo run-controller
+                                 stderr-text write-fakes
+                                 write-text)
+
+(use fixtures/events-fixture build-events build-expected
+                             build-item-json research-events
+                             research-expected
+                             research-item-json
+                             running-events)
+
+(def wait-next
+  (str "{\"next\":[{\"item\":\"rm-9999\",\"actions\":["
+       "{\"action\":\"wait\",\"actor\":\"controller\"}]}]}"))
+
+(def empty-ready (str "{\"ready\":[]}"))
+
+(defn setup (name settings)
+  (let (root (str "target/knave/controller-tests/" name))
+    (match (prepare-repo (as-str root))
+      ((err reason) (err reason))
+      ((ok _)
+       (match (write-fakes (as-str root) settings)
+         ((err reason) (err reason))
+         ((ok _) (ok root)))))))
+
+(defn run (root args)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str (str root "/repo"))
+                  args))
+
+(defn write-events (root events)
+  (let-try (_ (write-text (as-str (str root "/events.log"))
+                          (as-str events))
+            _ (write-text (as-str (str root "/event-id")) "10"))
+    (ok (do))))
+
+(type item-lines
+  (fn ((ref string) (ref string))
+    (vec string)))
+
+(defn item-lines (text id)
+  (collect (map (filter (lines text)
+                  (fn (line)
+                    (contains? line (as-str (str "  " id "  ")))))
+                strip-time)))
+
+(defn strip-time (line)
+  (let (characters (collect (chars line)))
+    (join (collect (map (range 10 (len characters))
+                     (fn (index)
+                       (str (deref (at characters index))))))
+          "")))
+
+(deftest replays-a-build-with-one-fix-round
+  (let (root (unwrap-ok (setup "events-build"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0001"))
+                 build-expected)))))
+
+(deftest replays-a-research-item
+  (let (root (unwrap-ok (setup "events-research"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone research-item-json)))))
+    (unwrap-ok (write-events root (clone research-events)))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0002"))
+                 research-expected)))))
+
+(deftest prints-no-history-from-before-the-controller-started
+  (let (root (unwrap-ok (setup "events-no-history"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (unwrap-ok (write-text (as-str (str root "/log-history")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (empty? (item-lines (stderr-text output) (str "rm-0001")))))))
+
+(deftest stops-when-the-event-log-is-malformed
+  (let (root (unwrap-ok (setup "events-malformed"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-broken")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "invalid JSON")))))
+
+(deftest stops-when-the-event-log-command-fails
+  (let (root (unwrap-ok (setup "events-failed"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-fail")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "log refused")))))
+
+(deftest stop-line-counts-the-running-items-of-the-run
+  (let (root (unwrap-ok (setup "events-running"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)
+                                      :stop-after 2))))
+    (unwrap-ok (write-events root (clone running-events)))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         (as-str (str "0 merged · 0 accepted · 1 failed · 1 running"))))
+      (assert (contains? (stderr-text output)
+                         (as-str (str "running      rm-0001 reviewing")))))))
+
+(deftest does-not-print-a-change-twice-when-a-pass-has-no-events
+  (let (root (unwrap-ok (setup "events-empty-pass"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)
+                                      :stop-after 4))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (unwrap-ok (write-text (as-str (str root "/log-empty-third")) ""))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (item-lines (stderr-text output) (str "rm-0001"))
+                 build-expected)))))

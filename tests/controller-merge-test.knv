@@ -957,7 +957,7 @@
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (contains? (stderr-text output)
                          (as-str (str "● controller started"))))
-      (assert (stderr-has? output (str "merging"))))))
+      (assert (stderr-has? output (str "merged #12"))))))
 
 (deftest closes-a-merge-that-finished-while-the-controller-was-down
   (let (root (unwrap-ok (setup "merge-resume-merged"

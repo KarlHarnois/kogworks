@@ -1,51 +1,46 @@
 (module
   "Prints the controller log lines to standard error.")
 
+(use controller/events event-entry event-error->message
+                       event-log fixing-baselines latest-id
+                       parse-event-log roadmap-id-of)
+
+(use controller/failure ->action-failure controller-error)
 (use controller/json json json-field json-text parse-json)
+
+(use controller/lifecycle ->log-progress advance-progress
+                          event-item-id event-line
+                          fixing-round-for last-review-of
+                          log-progress)
 
 (use controller/log ->log-settings ->pr-summary
                     output-target render-controller-failure
                     render-item render-start render-stop)
 
-(use controller/log-lines ->log-item action-line
-                          controller-failure-of
+(use controller/log-lines ->log-item controller-failure-of
                           failure-item-id failure-line
-                          merge-event-action short-head
-                          start-of stop-of)
+                          log-item short-head start-of
+                          stop-of)
 
-(use controller/log-lines log-item)
+(use controller/merge-target merge-approval merge-target)
 
-(use controller/merge-target merge-event merge-report
-                             merge-target)
+(use controller/process ->command command command-detail
+                        execute successful?)
 
-(use controller/process ->command execute successful?)
 (use controller/rules item-kind item-kind-of)
 
 (use controller/surroundings local-time local-time->text
                              read-color-mode
                              stderr-terminal? stderr-width)
 
-(export print-action print-failure print-merge-line
+(export merge-log-item print-events print-failure
         print-start print-stop read-log-item
-        review-log-item)
+        review-log-item start-progress)
 
 (defn print-start (remote roadmap manager running)
   (let (settings (settings-for remote)
         line (start-of (time-text) roadmap manager running))
     (print-lines (render-start settings line))))
-
-(type print-merge-line
-  (fn (merge-event (ref merge-target) (ref merge-report))
-    unit))
-
-(defn print-merge-line (event target data)
-  (let (log (merge-log-item (clone (:item data)) target))
-    (print-action (:remote data) log (merge-event-action event))))
-
-(defn print-action (remote log-item action)
-  (let (settings (settings-for remote)
-        line (action-line (time-text) log-item action))
-    (print-lines (render-item settings line))))
 
 (defn print-failure (repo remote manager failure)
   (match (failure-item-id failure)
@@ -57,15 +52,47 @@
             (print-lines (render-controller-failure (settings-for remote)
                                                     line))))))
 
-(defn print-stop (remote merged failed rerun)
-  (let (line (stop-of (time-text) merged failed rerun))
+(defn print-stop (remote progress failed rerun)
+  (let (line (stop-of (time-text)
+                      (:merged progress)
+                      (:accepted progress)
+                      failed
+                      (:running progress)
+                      rerun))
     (print-lines (render-stop (settings-for remote) line))))
 
-(defn review-log-item (id title kind branch pull-request head)
+(defn start-progress (repo roadmap)
+  (let (command (log-command none))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (start-progress-from roadmap (:stdout outcome) command)
+        (err (log-failure command outcome))))))
+
+(type print-events
+  (fn ((ref str)
+       (option string)
+       log-progress
+       (ref (vec log-item)))
+    (result log-progress controller-error)))
+
+(defn print-events (repo remote progress items)
+  (let (command (log-command (some (:event-id progress))))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (print-log-text repo
+                        (clone remote)
+                        (clone progress)
+                        items
+                        (clone (:stdout outcome))
+                        (clone command))
+        (err (log-failure command outcome))))))
+
+(defn review-log-item (id title kind branch pull-request head approved)
   (->log-item :id (str id)
               :kind (item-kind-of kind)
               :title (str title)
               :branch (some (str branch))
+              :approved approved
               :pull-request (review-pr (str pull-request)
                                        (str branch)
                                        (str head))))
@@ -86,7 +113,144 @@
               :kind (item-kind-of (clone (:kind target)))
               :title (str (:title target))
               :branch (clone (:branch target))
+              :approved (= (:approval target) merge-approval/approved)
               :pull-request (target-pr target)))
+
+(type log-command
+  (fn ((option int)) command))
+
+(defn log-command (since)
+  (match since
+    (none (log-command-with (vec (str "log") (str "--json"))))
+    ((some event-id)
+     (log-command-with (vec (str "log")
+                            (str "--since")
+                            (str event-id)
+                            (str "--json"))))))
+
+(defn log-command-with (arguments)
+  (->command :program (str "rmap")
+             :args (clone arguments)
+             :label (str "rmap "
+                         (join (collect (map arguments
+                                          (fn (argument) (str argument))))
+                               " "))))
+
+(defn start-progress-from (roadmap text command)
+  (match (parse-event-log text)
+    ((err failure) (err (invalid-log command failure)))
+    ((ok log) (ok (initial-progress log roadmap)))))
+
+(defn initial-progress (log roadmap)
+  (->log-progress :event-id (latest-id log)
+                  :roadmap-id (unwrap-or (roadmap-id-of log roadmap) (str))
+                  :fixing-counts (fixing-baselines log)
+                  :merged 0
+                  :accepted 0
+                  :running (vec)
+                  :reviews (vec)))
+
+(type print-log-text
+  (fn ((ref str)
+       (option string)
+       log-progress
+       (ref (vec log-item))
+       string command)
+    (result log-progress controller-error)))
+
+(defn print-log-text (repo remote progress items text command)
+  (match (parse-event-log text)
+    ((err failure) (err (invalid-log command failure)))
+    ((ok log)
+     (print-log-entries repo remote progress items log))))
+
+(type print-log-entries
+  (fn ((ref str)
+       (option string)
+       log-progress
+       (ref (vec log-item))
+       (ref event-log))
+    (result log-progress controller-error)))
+
+(defn print-log-entries (repo remote progress items log)
+  (let (entries (:entries log))
+    (loop (index 0
+           current progress)
+      (if (>= index (len entries))
+        (ok (assoc current
+                   :event-id (max (:event-id current) (latest-id log))))
+        (recur (inc index)
+               (print-entry repo
+                            (clone remote)
+                            current items
+                            (at entries index)))))))
+
+(defn print-entry (repo remote progress items entry)
+  (if (entry-wanted? progress entry)
+    (print-wanted-entry repo remote progress items entry)
+    progress))
+
+(defn entry-wanted? (progress entry)
+  (and (> (:id entry) (:event-id progress))
+       (= (:roadmap-id entry) (:roadmap-id progress))))
+
+(type print-wanted-entry
+  (fn ((ref str)
+       (option string)
+       log-progress
+       (ref (vec log-item))
+       (ref event-entry))
+    log-progress))
+
+(defn print-wanted-entry (repo remote progress items entry)
+  (let (item (event-item-id (:change entry))
+        log-item (log-item-for repo items item)
+        last-review (last-review-of progress item)
+        fixing-round (fixing-round-for progress (:change entry))
+        line (event-line (time-text)
+                         last-review fixing-round
+                         (:change entry)
+                         log-item))
+    (do
+      (print-event-line remote line)
+      (advance-progress progress (:change entry) line))))
+
+(defn print-event-line (remote line)
+  (match line
+    (none (do))
+    ((some item-line)
+     (print-lines (render-item (settings-for remote) item-line)))))
+
+(defn log-item-for (repo items item)
+  (match (find-item items item)
+    ((some found) (clone found))
+    (none (read-log-item repo item))))
+
+(type find-item
+  (fn ((ref (vec log-item)) (ref string))
+    (option (ref log-item))))
+
+(defn find-item (items item)
+  (find items
+    (fn (found)
+      (= (:id (clone found)) item))))
+
+(defn invalid-log (command failure)
+  (controller-error/command-failed
+    (->action-failure :action (str "log")
+                      :item (str "-")
+                      :command (clone (:label command))
+                      :code 0
+                      :detail (str "invalid JSON: "
+                                   (event-error->message failure)))))
+
+(defn log-failure (command outcome)
+  (controller-error/command-failed (->action-failure
+                                     :action (str "log")
+                                     :item (str "-")
+                                     :command (clone (:label command))
+                                     :code (:code outcome)
+                                     :detail (command-detail outcome))))
 
 (defn target-pr (target)
   (match (parse-int-text (clone (:pull-request target)))
@@ -127,6 +291,7 @@
               :kind (item-kind-of (optional-text record "kind" "build"))
               :title (optional-text record "title" item)
               :branch (session-branch record)
+              :approved (pull-approved document)
               :pull-request (pull-summary record document)))
 
 (defn fallback-log-item (item)
@@ -134,7 +299,23 @@
               :kind item-kind/build
               :title (str item)
               :branch none
+              :approved false
               :pull-request none))
+
+(defn pull-approved (document)
+  (match (json-field document "pull_request")
+    (none false)
+    ((some pull) (optional-approved pull))))
+
+(defn optional-approved (pull)
+  (match (json-field pull "approved")
+    (none false)
+    ((some found) (approved-value found))))
+
+(defn approved-value (found)
+  (match found
+    ((boolean flag) flag)
+    (_ false)))
 
 (defn session-branch (item)
   (match (json-field item "session")

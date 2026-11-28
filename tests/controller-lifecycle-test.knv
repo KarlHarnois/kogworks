@@ -1,0 +1,98 @@
+(use controller/events ->item-count lifecycle-change)
+
+(use controller/lifecycle ->log-progress advance-progress
+                          event-line fixing-round-for
+                          review-outcome)
+
+(use controller/log ->pr-summary ->running-item log-status
+                    running-status stage-state track)
+
+(use controller/log-lines ->log-item)
+(use controller/rules item-kind)
+
+(defn build-item (approved)
+  (->log-item :id (str "rm-0001")
+              :kind item-kind/build
+              :title (str "Build the thing")
+              :branch none
+              :approved approved
+              :pull-request (some (->pr-summary :number 12
+                                                :branch (str "build-rm-0001")
+                                                :head (some (str "abcdef0"))))))
+
+(defn progress (fixing-count merged accepted running)
+  (->log-progress :event-id 0
+                  :roadmap-id (str "rm-fake")
+                  :fixing-counts (vec (->item-count :item (str "rm-0001")
+                                                    :count fixing-count))
+                  :merged merged
+                  :accepted accepted
+                  :running running
+                  :reviews (vec)))
+
+(defn line-status (change item)
+  (match (event-line (str "14:00:00")
+                     review-outcome/none 0 change item)
+    ((some line) (:status line))
+    (none log-status/failed)))
+
+(deftest a-review-start-shows-reviewing-or-verifying
+  (assert (= (line-status (lifecycle-change/review-started (str "rm-0001"))
+                          (build-item false))
+             log-status/reviewing))
+  (assert (= (line-status (lifecycle-change/review-started (str "rm-0001"))
+                          (build-item true))
+             log-status/verifying)))
+
+(deftest a-recorded-head-shows-the-new-head
+  (let (item (build-item false)
+        change (lifecycle-change/head-recorded (str "rm-0001")))
+    (assert (= (line-status change item) log-status/new-head))
+    (match (event-line (str "14:00:00")
+                       review-outcome/changes 0 change item)
+      ((some line)
+       (assert (= (:track line)
+                  (track/build-track stage-state/done
+                                     stage-state/waiting
+                                     stage-state/waiting))))
+      (none (assert false)))))
+
+(deftest an-abandoned-review-shows-abandoned
+  (assert (= (line-status (lifecycle-change/abandoned (str "rm-0001")
+                                                      (str "review-rm-0001"))
+                          (build-item false))
+             log-status/abandoned)))
+
+(deftest the-fixing-round-counts-the-earlier-moves
+  (assert (= (fixing-round-for (progress 0 0 0 (vec))
+                               (lifecycle-change/advanced (str "rm-0001")
+                                                          (str "fixing")))
+             2))
+  (assert (= (fixing-round-for (progress 1 0 0 (vec))
+                               (lifecycle-change/advanced (str "rm-0001")
+                                                          (str "fixing")))
+             3)))
+
+(deftest a-merged-close-counts-once-and-clears-the-running-item
+  (let (running (vec (->running-item :id (str "rm-0001")
+                                     :status running-status/merging
+                                     :minutes 0))
+        next (advance-progress (progress 0 0 0 running)
+                               (lifecycle-change/closed (str "rm-0001")
+                                                        (str "merged"))
+                               none))
+    (assert (= (:merged next) 1))
+    (assert (= (:accepted next) 0))
+    (assert (empty? (:running next)))))
+
+(deftest an-accepted-close-counts-once-and-clears-the-running-item
+  (let (running (vec (->running-item :id (str "rm-0002")
+                                     :status running-status/reported
+                                     :minutes 0))
+        next (advance-progress (progress 0 0 0 running)
+                               (lifecycle-change/closed (str "rm-0002")
+                                                        (str "accepted"))
+                               none))
+    (assert (= (:merged next) 0))
+    (assert (= (:accepted next) 1))
+    (assert (empty? (:running next)))))
