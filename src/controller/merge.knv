@@ -213,17 +213,7 @@
   (match (:approval target)
     (not-approved (disarm-and-stop repo settings item target
                                    (not-approved-error item target)))
-    (approved (check-target-timeout repo config settings item target))))
-
-(defn check-target-timeout (repo config settings item target)
-  (match (merge-timed-out? repo settings item)
-    ((err failure)
-     (disarm-and-stop repo settings item target failure))
-    ((ok true)
-     (disarm-and-stop repo settings item target
-                      (timed-out-error item target settings)))
-    ((ok false)
-     (check-target-state repo config settings item target))))
+    (approved (check-target-state repo config settings item target))))
 
 (defn check-target-state (repo config settings item target)
   (match (read-resume-state repo settings item target)
@@ -237,8 +227,29 @@
     (merged (close-item repo settings item target))
     (moved (disarm-and-stop repo settings item target
                             (head-change-error item target state)))
-    (waiting (ok merge-outcome/waiting))
-    (rearm (enable-auto-merge repo config settings item target))))
+    (waiting (check-state-timeout repo config settings item
+                                  target
+                                  state-verdict/waiting))
+    (rearm (check-state-timeout repo config settings item
+                                target
+                                state-verdict/rearm))))
+
+(defn check-state-timeout (repo config settings item target verdict)
+  (match (merge-timed-out? repo settings item)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok true)
+     (disarm-and-stop repo settings item target
+                      (timed-out-error item target settings)))
+    ((ok false)
+     (apply-state-verdict repo config settings item target
+                          verdict))))
+
+(defn apply-state-verdict (repo config settings item target verdict)
+  (match verdict
+    (state-verdict/waiting (ok merge-outcome/waiting))
+    (state-verdict/rearm (enable-auto-merge repo config settings item target))
+    (_ (ok merge-outcome/waiting))))
 
 (type state-verdict-of
   (fn ((ref merge-target) (ref merge-state))

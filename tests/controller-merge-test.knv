@@ -491,10 +491,32 @@
                                          (str "1")))))
     (assert (= (exit-code output) 1))
     (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
                        (as-str (disarm-line merge-pr))))
-    (assert (not (contains? (sequence-text root) "pr view")))
     (assert (stderr-has? output
                          (str "PR 12 did not merge within 1 seconds")))))
+
+(deftest closes-a-merge-older-than-the-timeout
+  (let (root (unwrap-ok (setup-timeout "merge-merged-after-timeout"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone merged-view))))
+        output (unwrap-ok (run-with root
+                                    (vec (str "--once")
+                                         (str "--merge-retry-delay")
+                                         (str "0")
+                                         (str "--merge-timeout")
+                                         (str "1")))))
+    (assert (= (exit-code output) 0))
+    (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (close-line merge-item))))
+    (assert (not (contains? (sequence-text root) "--disable-auto")))
+    (assert (= (occurrences (stderr-text output) (str "merged #12"))
+               1))))
 
 (deftest stops-when-the-head-moved
   (let (root (unwrap-ok (setup-merging "merge-head-moved"
@@ -672,6 +694,7 @@
                                        (assoc (merge-settings)
                                               :items-json (merging-items (vec (clone
                                                                                 merge-item)))
+                                              :view-json (clone armed-view)
                                               :log-exit 7
                                               :log-error (str "log refused"))
                                        (clone merging-item-json)))
