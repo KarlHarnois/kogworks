@@ -1,7 +1,10 @@
 (module
   "Polls a pull request that has auto-merge armed and disarms it before any stop that leaves the item open.")
 
-(use controller/failure controller-error merge-error)
+(use controller/failure ->signal-stop-report
+                        controller-error disarm-status
+                        merge-error)
+
 (use controller/fields field-error->message required-text)
 
 (use controller/json json-error->message json-field
@@ -18,7 +21,11 @@
                              merge-item-status
                              read-item-status)
 
-(use controller/process execute successful?)
+(use controller/process command-detail execute successful?)
+
+(use controller/signal install-stop-handlers
+                       read-stop-signal
+                       restore-stop-handlers)
 
 (export auto-merge-state close-item disarm-and-stop
         head-change-error item-fixing-error poll-merge
@@ -43,7 +50,10 @@
 
 (defn poll-merge (repo item target settings)
   (let (start (now))
-    (poll-iteration repo item target settings start)))
+    (install-stop-handlers)
+    (let (outcome (poll-iteration repo item target settings start))
+      (restore-stop-handlers)
+      outcome)))
 
 (defn read-poll-state (repo settings item target)
   (let (command (view-command (:pull-request target))
@@ -86,7 +96,21 @@
       (err (merge-command-failure item command outcome)))))
 
 (defn poll-iteration (repo item target settings start)
-  (match (read-item-status repo item)
+  (match (read-stop-signal)
+    ((some signal) (stop-on-signal repo item target signal))
+    (none (poll-item-status repo item target settings start))))
+
+(defn poll-item-status (repo item target settings start)
+  (let (result (read-item-status repo item))
+    (poll-checked-item repo item target settings start result)))
+
+(defn poll-checked-item (repo item target settings start result)
+  (match (read-stop-signal)
+    ((some signal) (stop-on-signal repo item target signal))
+    (none (poll-item-result repo item target settings start result))))
+
+(defn poll-item-result (repo item target settings start result)
+  (match result
     ((err failure)
      (disarm-and-stop repo settings item target failure))
     ((ok status)
@@ -99,11 +123,36 @@
     (_ (poll-pull-state repo item target settings start))))
 
 (defn poll-pull-state (repo item target settings start)
-  (match (read-poll-state repo settings item target)
+  (let (result (read-poll-state repo settings item target))
+    (poll-checked-state repo item target settings start result)))
+
+(defn poll-checked-state (repo item target settings start result)
+  (match (read-stop-signal)
+    ((some signal) (stop-on-signal repo item target signal))
+    (none (poll-state-result repo item target settings start result))))
+
+(defn poll-state-result (repo item target settings start result)
+  (match result
     ((err failure)
      (disarm-and-stop repo settings item target failure))
     ((ok state)
      (handle-poll repo item target settings start state))))
+
+(defn stop-on-signal (repo item target signal)
+  (let (pull-request (clone (:pull-request target)))
+    (err (controller-error/signal-stop
+           (->signal-stop-report :item (clone item)
+                                 :pull-request-number (clone pull-request)
+                                 :signal signal
+                                 :disarm (disarm-once repo pull-request))))))
+
+(defn disarm-once (repo pull-request)
+  (let (command (disarm-command pull-request)
+        outcome (execute repo command))
+    (if (or (successful? outcome) (already-disarmed? outcome))
+      disarm-status/disarmed
+      (disarm-status/not-disarmed (:code outcome)
+                                  (command-detail outcome)))))
 
 (defn parse-poll-state (item command text)
   (match (parse-json (as-str text))
