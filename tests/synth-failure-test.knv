@@ -72,7 +72,7 @@
       (assert (contains? (stderr-text output)
                          "deffactory needs a `roles` form")))))
 
-(deftest malformed-role-clause-reports-its-message
+(deftest role-clause-without-a-key-reports-the-key-and-the-role
   (let (dir (str "target/knave/test-factories/malformed-role-clause"))
     (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
@@ -83,13 +83,11 @@
                                      "  (roles (worker :agent \"a\" :skill \"s\")))\n")))
     (let (reason (failure-reason (synth-factory (as-str dir)))
           output (unwrap-ok (run-synth (as-str dir))))
-      (assert (contains?
-                reason
-                "a role clause is `(name :agent ... :skill ... :brief ...)`"))
+      (assert (contains? reason "role `worker` needs `:brief`"))
       (assert (contains? reason "factory.knv:6:"))
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
-                         "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
+                         "role `worker` needs `:brief`")))))
 
 (deftest role-clause-must-be-a-list-reports-its-message
   (let (dir (str "target/knave/test-factories/role-clause-symbol"))
@@ -146,3 +144,92 @@
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
                          "deffactory needs `:manager`")))))
+
+(deftest unknown-setting-reports-the-key-and-the-known-keys
+  (let (dir (str "target/knave/test-factories/unknown-setting"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :max-activee 9\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "deffactory does not know `:max-activee`"))
+      (assert (contains? reason
+                         "`:manager`, `:roadmap`, `:max-active` or `:merge`"))
+      (assert (contains? reason "factory.knv:3:"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "deffactory does not know `:max-activee`")))))
+
+(deftest repeated-setting-reports-the-key
+  (let (dir (str "target/knave/test-factories/repeated-setting"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :manager \"sample-manager-again\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "deffactory writes `:manager` twice"))
+      (assert (contains? reason "factory.knv:2:"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "deffactory writes `:manager` twice")))))
+
+(deftest form-that-is-not-roles-reports-its-head
+  (let (dir (str "target/knave/test-factories/not-roles-form"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (role (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason
+                         "deffactory takes only a `roles` form beside its settings, not `role`"))
+      (assert (contains? reason "factory.knv:6:"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "not `role`")))))
+
+(deftest unknown-role-key-reports-the-key-and-the-role
+  (let (dir (str "target/knave/test-factories/unknown-role-key"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"a\" :skil \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "role `worker` does not know `:skil`"))
+      (assert (contains? reason "factory.knv:6:"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "role `worker` does not know `:skil`")))))
+
+(deftest repeated-role-key-reports-the-key-and-the-role
+  (let (dir (str "target/knave/test-factories/repeated-role-key"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"a\" :skill \"s\" :skill \"t\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "role `worker` writes `:skill` twice"))
+      (assert (contains? reason "factory.knv:6:"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "role `worker` writes `:skill` twice")))))

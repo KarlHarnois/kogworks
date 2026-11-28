@@ -2,8 +2,8 @@
   "Defines deffactory, the form a factory file holds.")
 
 (use code bool-not empty? fail first keyword-name keyword?
-          list? nth rest string symbol symbol-name symbol?
-          value-eq)
+          list list? nth rest string symbol symbol-name
+          symbol? value-eq)
 
 (use factory/json factory->json)
 (use factory/roles roles)
@@ -12,24 +12,104 @@
 
 (export deffactory)
 
+(def setting-names
+  (list "manager" "roadmap" "max-active" "merge"))
+
 (defmacro deffactory (name parts ...)
   "Defines `factory-value` and `factory-json` from a factory definition, as in
   `(deffactory acme :manager \"manager\" :roadmap \"roadmap\" :max-active 1
      :merge gh-auto (roles (worker ...)))`."
-  (template (do
-              (export (unquote (symbol name "factory-json"))
-                      (unquote (symbol name "factory-value")))
-              (def (unquote (symbol name "factory-value"))
-                (->factory :schema 0
-                           :name (str (unquote (symbol-name name)))
-                           :manager (str (unquote (setting parts "manager")))
-                           :roadmap (str (unquote (setting parts "roadmap")))
-                           :max-active (unquote (setting parts "max-active"))
-                           :merge (unquote (merge->symbol (setting parts
-                                                                   "merge")))
-                           :roles (unquote (roles-form parts))))
-              (defn (unquote (symbol name "factory-json")) ()
-                (factory->json (unquote (symbol name "factory-value")))))))
+  (do
+    (check-parts parts)
+    (template (do
+                (export (unquote (symbol name "factory-json"))
+                        (unquote (symbol name "factory-value")))
+                (def (unquote (symbol name "factory-value"))
+                  (->factory :schema 0
+                             :name (str (unquote (symbol-name name)))
+                             :manager (str (unquote (setting parts "manager")))
+                             :roadmap (str (unquote (setting parts "roadmap")))
+                             :max-active (unquote (setting parts "max-active"))
+                             :merge (unquote (merge->symbol (setting parts
+                                                                     "merge")))
+                             :roles (unquote (roles-form parts))))
+                (defn (unquote (symbol name "factory-json")) ()
+                  (factory->json (unquote (symbol name "factory-value"))))))))
+
+(defn check-parts (parts)
+  (cond
+    ((empty? parts) (do))
+    ((keyword? (first parts))
+     (check-setting parts)
+     (check-parts (rest (rest parts))))
+    ((list? (first parts))
+     (check-list-form (first parts))
+     (check-parts (rest parts)))
+    (else (check-parts (rest parts)))))
+
+(defn check-setting (parts)
+  (let (key (keyword-name (first parts)))
+    (check-known-setting (first parts) key)
+    (check-repeated-setting (first parts)
+                            key
+                            (rest (rest parts)))))
+
+(defn check-known-setting (form key)
+  (if (known-setting? key)
+    (do)
+    (unknown-setting form key)))
+
+(defn known-setting? (key) (member-name? setting-names key))
+
+(defn member-name? (names key)
+  (cond
+    ((empty? names) false)
+    ((value-eq (first names) key) true)
+    (else (member-name? (rest names) key))))
+
+(defn unknown-setting (form key)
+  (fail (string "deffactory does not know `:" key
+                "`; write `:manager`, `:roadmap`, `:max-active` or `:merge`")
+    form
+    (string "remove `:" key "`, or correct its spelling")))
+
+(defn check-repeated-setting (form key parts)
+  (if (repeated-key? parts key)
+    (repeated-setting form key)
+    (do)))
+
+(defn repeated-key? (parts key)
+  (cond
+    ((empty? parts) false)
+    ((bool-not (keyword? (first parts)))
+     (repeated-key? (rest parts) key))
+    ((setting-key? (first parts) key) true)
+    (else (repeated-key? (rest (rest parts)) key))))
+
+(defn repeated-setting (form key)
+  (fail (string "deffactory writes `:" key "` twice")
+    form
+    (string "keep one `:" key "` setting")))
+
+(defn check-list-form (form)
+  (if (named? form "roles")
+    (do)
+    (unknown-list form)))
+
+(defn unknown-list (form)
+  (fail (unknown-list-message form)
+    form
+    "write `(roles (worker ...) (reviewer ...))` beside the settings"))
+
+(defn unknown-list-message (form)
+  (cond
+    ((empty? form)
+     "deffactory takes only a `roles` form beside its settings, not an empty list")
+    ((symbol? (first form))
+     (string "deffactory takes only a `roles` form beside its settings, not `"
+             (symbol-name (first form))
+             "`"))
+    (else "deffactory takes only a `roles` form beside its settings")))
 
 (defn setting (parts key)
   (cond

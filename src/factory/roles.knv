@@ -2,13 +2,15 @@
   "Defines the roles form of a factory.")
 
 (use code bool-not empty? fail first keyword-name keyword?
-          len list list? nth prepend rest symbol symbol-name
-          symbol? value-eq)
+          list list? nth prepend rest string symbol
+          symbol-name symbol? value-eq)
 
 (use factory/types ->role role-name)
 (use prelude/macros template)
 
 (export roles)
+
+(def role-key-names (list "agent" "skill" "brief"))
 
 (defmacro roles (clause ...)
   "Builds a vector of roles from role clauses, as in
@@ -24,30 +26,124 @@
 (defn role-form (clause)
   (check-role-clause clause)
   (let (name (first clause)
-        agent (nth clause 2)
-        skill (nth clause 4)
-        brief (nth clause 6))
+        agent (role-value clause "agent")
+        skill (role-value clause "skill")
+        brief (role-value clause "brief"))
     (template (->role :name (unquote (role-name-symbol name))
                       :agent (str (unquote agent))
                       :skill (str (unquote skill))
                       :brief (str (unquote brief))))))
 
+(defn role-value (clause key)
+  (role-value-from (rest clause) (first clause) clause key))
+
+(defn role-value-from (parts role clause key)
+  (cond
+    ((empty? parts) (missing-role-key role clause key))
+    ((role-key? (first parts) key) (nth parts 1))
+    (else (role-value-from (rest (rest parts)) role clause key))))
+
 (defn check-role-clause (clause)
   (cond
     ((bool-not (list? clause)) (malformed-role-clause clause))
-    ((bool-not (value-eq (len clause) 7))
-     (malformed-role-clause clause))
+    ((empty? clause) (malformed-role-clause clause))
     ((bool-not (symbol? (first clause)))
      (malformed-role-clause clause))
-    ((bool-not (key-named? (nth clause 1) "agent"))
+    (else (check-role-keys (rest clause) (first clause) clause))))
+
+(defn check-role-keys (parts role clause)
+  (cond
+    ((empty? parts) (check-role-complete role clause))
+    ((bool-not (keyword? (first parts)))
      (malformed-role-clause clause))
-    ((bool-not (key-named? (nth clause 3) "skill"))
-     (malformed-role-clause clause))
-    ((bool-not (key-named? (nth clause 5) "brief"))
-     (malformed-role-clause clause))
+    (else (check-role-key parts role)
+          (check-role-keys (rest (rest parts)) role clause))))
+
+(defn check-role-key (parts role)
+  (let (form (first parts)
+        key (keyword-name form))
+    (check-known-role-key form role key)
+    (check-repeated-role-key form role key (rest (rest parts)))
+    (check-role-key-value form role key (rest parts))))
+
+(defn check-known-role-key (form role key)
+  (if (known-role-key? key)
+    (do)
+    (unknown-role-key form role key)))
+
+(defn known-role-key? (key)
+  (member-name? role-key-names key))
+
+(defn member-name? (names key)
+  (cond
+    ((empty? names) false)
+    ((value-eq (first names) key) true)
+    (else (member-name? (rest names) key))))
+
+(defn unknown-role-key (form role key)
+  (fail (string "role `"
+                (symbol-name role)
+                "` does not know `:" key
+                "`; write `:agent`, `:skill` or `:brief`")
+    form
+    (string "remove `:" key "`, or correct its spelling")))
+
+(defn check-repeated-role-key (form role key parts)
+  (if (repeated-role-key? parts key)
+    (repeated-role-key-failure form role key)
+    (do)))
+
+(defn repeated-role-key? (parts key)
+  (cond
+    ((empty? parts) false)
+    ((bool-not (keyword? (first parts)))
+     (repeated-role-key? (rest parts) key))
+    ((role-key? (first parts) key) true)
+    (else (repeated-role-key? (rest (rest parts)) key))))
+
+(defn repeated-role-key-failure (form role key)
+  (fail (string "role `"
+                (symbol-name role)
+                "` writes `:" key "` twice")
+    form
+    (string "keep one `:" key "` in the role clause")))
+
+(defn check-role-key-value (form role key parts)
+  (cond
+    ((empty? parts) (missing-role-value form role key))
+    ((keyword? (first parts))
+     (missing-role-value form role key))
     (else (do))))
 
-(defn key-named? (part name)
+(defn missing-role-value (form role key)
+  (fail (string "role `"
+                (symbol-name role)
+                "` needs a value after `:" key "`")
+    form
+    (string "write `:" key " value` in the role clause")))
+
+(defn check-role-complete (role clause)
+  (check-role-key-present role clause "agent")
+  (check-role-key-present role clause "skill")
+  (check-role-key-present role clause "brief"))
+
+(defn check-role-key-present (role clause key)
+  (if (role-key-present? (rest clause) key)
+    (do)
+    (missing-role-key role clause key)))
+
+(defn role-key-present? (parts key)
+  (cond
+    ((empty? parts) false)
+    ((role-key? (first parts) key) true)
+    (else (role-key-present? (rest (rest parts)) key))))
+
+(defn missing-role-key (role clause key)
+  (fail (string "role `" (symbol-name role) "` needs `:" key "`")
+    clause
+    (string "write `:" key " value` in the role clause")))
+
+(defn role-key? (part name)
   (if (keyword? part)
     (value-eq (keyword-name part) name)
     false))
