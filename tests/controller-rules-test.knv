@@ -3,7 +3,7 @@
 (use controller/rules action-kind action-kind->text actor
                       first-build first-controller-action
                       parse-next-response
-                      parse-ready-response)
+                      parse-ready-response subject)
 
 (defn controller-next (action item)
   (str "{\"next\":[{\"item\":\"" item "\",\"actions\":["
@@ -19,6 +19,13 @@
        "{\"item\":\"rm-3\",\"actions\":[{\"action\":\"send-fixes\","
        "\"actor\":\"manager\"}]},"
        "{\"item\":\"rm-4\",\"actions\":[{\"action\":\"dispatch\","
+       "\"actor\":\"controller\"}]}" "]}"))
+
+(defn decision-next ()
+  (str "{\"next\":["
+       "{\"decision\":\"rm-d1\",\"kind\":\"decision\",\"actions\":["
+       "{\"action\":\"ask\",\"actor\":\"manager\"}]},"
+       "{\"item\":\"rm-5\",\"actions\":[{\"action\":\"merge\","
        "\"actor\":\"controller\"}]}" "]}"))
 
 (defn ready-items-from (text)
@@ -79,13 +86,27 @@
     ((ok lines)
      (assert (= (len lines) 1))
      (let (line (clone (at lines 0)))
-       (assert (= (:item line) (str "rm-1")))
+       (assert (= (:subject line)
+                  (subject/item (str "rm-1"))))
        (assert (= (len (:actions line)) 1))
        (let (action (clone (at (:actions line) 0)))
          (assert (= (action-kind->text (:kind action))
                     (str "review")))
          (assert-controller-actor (:actor action)))))
     ((err _) (assert false))))
+
+(deftest parse-next-response-reads-a-decision
+  (match (next-lines-from (decision-next))
+    ((ok lines)
+     (assert (= (len lines) 2))
+     (assert (= (:subject (clone (at lines 0)))
+                (subject/decision (str "rm-d1")))))
+    ((err _) (assert false))))
+
+(deftest parse-next-response-rejects-a-line-without-a-subject
+  (match (next-lines-from (str "{\"next\":[{\"actions\":[]}]}"))
+    ((err reason) (assert (= reason (str "`item` is missing"))))
+    ((ok _) (assert false))))
 
 (deftest parse-next-response-rejects-a-missing-next
   (let (document (unwrap-ok (parse-json (as-str (str "{}")))))
@@ -107,6 +128,11 @@
   (assert-controller-action (controller-next (str "merge") (str "rm-3"))
                             (str "merge")
                             (str "rm-3")))
+
+(deftest first-controller-action-skips-a-decision
+  (assert-controller-action (decision-next)
+                            (str "merge")
+                            (str "rm-5")))
 
 (deftest first-controller-action-ignores-other-actors
   (assert-no-controller-action (ignored-next)))
