@@ -143,20 +143,18 @@
     ((missing-factory path) (str "no factory at " path))
     ((unreadable-factory path reason)
      (str "cannot read " path ": " reason))
-    ((missing-project reason) (str "kogworks check: " reason))
+    ((missing-project reason) reason)
     ((unreadable-project path reason)
      (str "cannot read " path ": " reason))
     ((temp-dir reason)
-     (str "kogworks check: cannot create a temporary directory: "
-          reason))
+     (str "cannot create a temporary directory: " reason))
     ((unwritable-file path reason)
      (str "cannot write " path ": " reason))
     ((check-failed detail)
-     (str "kogworks check: `knave check` failed:\n" detail))
-    ((lint-failed detail)
-     (str "kogworks check: `knave lint` failed:\n" detail))
+     (str "`knave check` failed:\n" detail))
+    ((lint-failed detail) (str "`knave lint` failed:\n" detail))
     ((format-failed detail)
-     (str "kogworks check: `knave fmt --check` failed:\n" detail))
+     (str "`knave fmt --check` failed:\n" detail))
     ((factory-eval-failed path reason)
      (str "cannot evaluate " path ": " reason))
     ((missing-factory-json path)
@@ -231,18 +229,17 @@
                          text))
 
 (defn rewrite-path-segment (root segment)
-  (let (parts (collect (split segment "\"")))
-    (if (empty? parts)
-      (str)
-      (str (join-absolute (as-str root)
-                          (deref (at parts 0)))
-           (quote-tail parts 1)))))
+  (rewrite-segment-head segment
+    (fn (value)
+      (join-absolute (as-str root) value))))
 
 (defn rewrite-entry (text)
-  (rewrite-marker-values entry-marker
-                         (fn (segment)
-                           (replace-segment-value module-file segment))
+  (rewrite-marker-values entry-marker rewrite-entry-segment
                          text))
+
+(defn rewrite-entry-segment (segment)
+  (rewrite-segment-head segment
+    (fn (_) (clone module-file))))
 
 (defn rewrite-marker-values (marker rewriter text)
   (let (segments (collect (split (as-str text) (as-str marker))))
@@ -257,11 +254,12 @@
          (rewrite-marker-segments marker rewriter segments
                                   (inc index)))))
 
-(defn replace-segment-value (replacement segment)
+(defn rewrite-segment-head (segment rewriter)
   (let (parts (collect (split segment "\"")))
     (if (empty? parts)
       (str)
-      (str replacement (quote-tail parts 1)))))
+      (str (rewriter (deref (at parts 0)))
+           (quote-tail parts 1)))))
 
 (defn quote-tail (parts index)
   (if (>= index (len parts))
