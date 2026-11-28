@@ -18,9 +18,13 @@
                           (:merge-poll options)
                           (:merge-timeout options)
                           (:merge-retry-delay options)
-                          (:once options)))
+                          (:once options)
+                          (rerun-command)))
     ((kogworks-command/apply options)
      (apply-and-exit (as-str (:repo options))))))
+
+(defn rerun-command ()
+  (str "kogworks " (join (command-line-args) " ")))
 
 (defn synth-and-exit (dir)
   (match (synth-factory dir)

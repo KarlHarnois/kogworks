@@ -2,9 +2,10 @@
                                  absolute-path
                                  default-settings exit-code
                                  prepare-repo read-text
-                                 run-controller stderr-text
-                                 stdout-text write-fakes
-                                 write-text)
+                                 run-controller
+                                 run-controller-colored
+                                 stderr-text stdout-text
+                                 write-fakes write-text)
 
 (def ignored-next
   (str "{\"next\":["
@@ -72,7 +73,8 @@
 (def review-session (str "review-rm-0009-abcdef0"))
 
 (def review-item-json
-  (str "{\"item\":{"
+  (str "{\"item\":{" "\"title\":\"Print the stop summary\","
+       "\"kind\":\"build\","
        "\"criteria\":[\"the controller starts one reviewer\","
        "\"the brief names the head\"],"
        "\"session\":{\"branch\":\"" review-branch
@@ -86,7 +88,8 @@
        "SHALL still be covered."))
 
 (def criterion-item-json
-  (str "{\"item\":{" "\"criteria\":[\""
+  (str "{\"item\":{" "\"title\":\"Print the stop summary\","
+       "\"kind\":\"build\"," "\"criteria\":[\""
        criterion-with-manager "\"],"
        "\"session\":{\"branch\":\"" review-branch
        "\",\"kind\":\"work\"," "\"name\":\"" review-branch
@@ -122,22 +125,35 @@
                   (as-str (str root "/repo"))
                   args))
 
+(defn run-colored (root args)
+  (run-controller-colored (as-str (str root "/bin"))
+                          (as-str (str root "/repo"))
+                          args))
+
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
+
+(defn stderr-has? (output text)
+  (contains? (stderr-text output) (as-str text)))
 
 (defn prompt-text (root)
   (unwrap-ok (read-text (as-str (str root "/prompt")))))
 
 (defn new-failure-sequence (root)
   (let (repo (absolute-repo-of root))
-    (str (dispatch-sequence root)
+    (str (dispatch-actions root)
          "rmap session end build-rm-0001 --reason abandoned\n"
          (send-line (str "dispatch: rm-0001: `ringleader new --name build-rm-0001 --repo "
                          repo
                          " --agent fake-agent --prompt <filled brief>` "
-                         "exited 4: cannot start session")))))
+                         "exited 4: cannot start session"))
+         (str "rmap item show rm-0001 --json\n"))))
 
 (defn dispatch-sequence (root)
+  (str (dispatch-actions root)
+       "rmap item show rm-0001 --json\n"))
+
+(defn dispatch-actions (root)
   (let (repo (absolute-repo-of root))
     (str
       (next-line (str "fake-roadmap"))
@@ -168,7 +184,8 @@
        (send-line (str "review: " review-item
                        ": `rmap review start " review-item
                        " --session " review-session
-                       "` exited 5: " error))))
+                       "` exited 5: " error))
+       "rmap item show " review-item " --json\n"))
 
 (defn review-new-failure-sequence (root)
   (let (repo (absolute-repo-of root))
@@ -181,7 +198,8 @@
                          " --agent fake-reviewer-agent"
                          " --base-branch " review-branch
                          " --prompt <filled brief>` "
-                         "exited 4: cannot start session")))))
+                         "exited 4: cannot start session"))
+         "rmap item show " review-item " --json\n")))
 
 (defn review-sequence (root)
   (str (review-preface) (reviewer-start-line root)))
@@ -210,7 +228,8 @@
        (send-line (str "review: " review-item
                        ": `rmap item show " review-item
                        " --json` exited 0: invalid item JSON: "
-                       "`pull_request` is missing"))))
+                       "`pull_request` is missing"))
+       "rmap item show " review-item " --json\n"))
 
 (defn claim-refusal-sequence ()
   (str
@@ -220,7 +239,8 @@
     "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
     (send-line (str "dispatch: rm-0001: `rmap item claim rm-0001 "
                     "--session build-rm-0001 --branch build-rm-0001` "
-                    "exited 5: not-ready"))))
+                    "exited 5: not-ready"))
+    "rmap item show rm-0001 --json\n"))
 
 (defn poll-sequence ()
   (str (next-line (str "fake-roadmap"))
@@ -294,7 +314,7 @@
         (assert (not= (as-str repo) (as-str relative-repo)))
         (assert (starts-with? (as-str repo) "/"))
         (assert (= (exit-code output) 0))
-        (assert (= (stdout-text output) (str "build-rm-0001\n")))
+        (assert (empty? (stdout-text output)))
         (assert (= (sequence-text root) (dispatch-sequence root))))
       (assert (= (prompt-text root)
                  (str "item=rm-0001 roadmap=fake-roadmap "
@@ -307,7 +327,7 @@
                                                  (clone build-ready)))))
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 0))
-      (assert (= (stdout-text output) (str "build-rm-0001\n")))
+      (assert (empty? (stdout-text output)))
       (assert (= (sequence-text root) (dispatch-sequence root)))
       (assert (= (prompt-text root)
                  (str "item=rm-0001 roadmap=fake-roadmap "
@@ -332,7 +352,7 @@
                                                            review-item)))))
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 0))
-      (assert (= (stdout-text output) (str review-session "\n")))
+      (assert (empty? (stdout-text output)))
       (assert (= (sequence-text root) (review-sequence root)))
       (assert (= (prompt-text root) (review-prompt)))
       (assert (not (contains? (prompt-text root) "{{")))
@@ -351,6 +371,34 @@
       (assert (not (contains? (prompt-text root)
                               (as-str substituted-criterion))))
       (assert (contains? (prompt-text root) "manager=fake-manager")))))
+
+(deftest links-a-pull-request-in-the-controller-log-when-color-is-on
+  (let (root (unwrap-ok (setup "colored-link"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :new-exit 4
+                                      :new-error (str
+                                                   "cannot start session")))))
+    (let (output (unwrap-ok (run-colored root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (stderr-has? output
+                           (str "\u{1b}]8;;https://github.com/fake-owner/fake-repo/pull/12"
+                                "\u{1b}\\")))
+      (assert (stderr-has? output (str "#12"))))))
+
+(deftest reports-a-reviewer-placeholder-failure-with-its-pr-line
+  (let (root (unwrap-ok (setup "review-placeholder"
+                               (review-settings (next-with (str "review")
+                                                           review-item)))))
+    (unwrap-ok (write-text (as-str (str root
+                                        "/repo/.kogworks/briefs/reviewer.md"))
+                           (as-str (str "item={{item}} token={{nope}}"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (stderr-has? output (str "build ✓ review ✗ merge ○")))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
+      (assert (stderr-has? output
+                           (str "the brief still holds `{{` after filling"))))))
 
 (deftest starts-a-reviewer-for-a-controller-verify
   (let (root (unwrap-ok (setup "verify"
@@ -387,7 +435,8 @@
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root) (review-new-failure-sequence root)))
-      (assert (contains? (stderr-text output) "cannot start session")))))
+      (assert (contains? (stderr-text output) "cannot start session"))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0"))))))
 
 (deftest stops-when-the-item-detail-is-missing
   (let (root (unwrap-ok (setup "review-no-pull"
@@ -471,7 +520,7 @@
                                (review-settings (clone decision-review-next)))))
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 0))
-      (assert (= (stdout-text output) (str review-session "\n")))
+      (assert (empty? (stdout-text output)))
       (assert (= (sequence-text root) (decision-review-sequence root))))))
 
 (deftest help-states-the-restart-and-bootstrap-rules

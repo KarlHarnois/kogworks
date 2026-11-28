@@ -7,8 +7,9 @@
 
 (export ->fake-settings absolute-path default-settings
         exit-code fake-settings make-dir prepare-repo
-        read-text reset-dir run-controller stderr-text
-        stdout-text write-fakes write-text)
+        read-text reset-dir run-controller
+        run-controller-colored stderr-text stdout-text
+        write-fakes write-text)
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -152,7 +153,9 @@
   (str "#!/bin/sh\n"
        "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
        "printf 'git %s\\n' \"$*\" >> \"$root/git.log\"\n"
-       "printf 'origin/main\\n'"))
+       "case \"$1 $2\" in\n"
+       "  \"remote get-url\") printf 'git@github.com:fake-owner/fake-repo.git\\n' ;;\n"
+       "  *) printf 'origin/main\\n' ;;\n" "esac\n"))
 
 (def gh-script
   (str
@@ -262,6 +265,26 @@
     (fn ((ref str) (ref str) (ref (vec string)))
       (result process-output string))))
 
+(def run-controller-colored
+  (rust "{{
+    let bin = std::fs::canonicalize({0}).map_err(|error| error.to_string())?;
+    let path = format!(\"{{}}:{{}}\",
+                       bin.display(),
+                       std::env::var(\"PATH\").unwrap_or_default());
+    std::process::Command::new(\"./target/knave/kogworks/kogworks\")
+      .arg(\"controller\")
+      .arg(\"--repo\")
+      .arg({1})
+      .args({2}.iter().map(|argument| argument.as_str()))
+      .env(\"PATH\", path)
+      .env(\"FORCE_COLOR\", \"1\")
+      .env(\"COLORTERM\", \"truecolor\")
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref str) (ref (vec string)))
+      (result process-output string))))
+
 (def exit-code
   (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
     (fn ((ref process-output)) int)))
@@ -273,6 +296,11 @@
 (def stderr-text
   (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
+
+(def dispatch-item-json
+  (str "{\"item\":{\"id\":\"rm-0001\","
+       "\"title\":\"Build the first ready item\","
+       "\"kind\":\"build\"}}"))
 
 (defstruct fake-settings
   :next-json string
@@ -335,7 +363,7 @@
   (->fake-settings :next-json next-json
                    :next-signal (str)
                    :ready-json ready-json
-                   :item-json (str "{}")
+                   :item-json (clone dispatch-item-json)
                    :item-later-json (str)
                    :stop-after 0
                    :claim-exit 0

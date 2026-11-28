@@ -1,7 +1,7 @@
 (module
   "Builds and fills the briefs that the factory points at.")
 
-(use controller/failure controller-error)
+(use controller/failure brief-role controller-error)
 (use controller/process read-text-file)
 
 (export ->brief ->reviewer-values ->worker-values brief
@@ -29,6 +29,7 @@
 
 (defstruct brief
   :item string
+  :role brief-role
   :placeholders (vec placeholder))
 
 (defstruct placeholder
@@ -40,6 +41,7 @@
 
 (defn worker-brief (values)
   (->brief :item (clone (:item values))
+           :role brief-role/worker
            :placeholders (worker-placeholders values)))
 
 (type reviewer-brief
@@ -47,6 +49,7 @@
 
 (defn reviewer-brief (values)
   (->brief :item (clone (:item values))
+           :role brief-role/reviewer
            :placeholders (reviewer-placeholders values)))
 
 (defn fill-brief (path values)
@@ -55,7 +58,8 @@
      (err (controller-error/unreadable-brief (str path) reason)))
     ((ok text)
      (filled-brief (fill (as-str text) (:placeholders values))
-                   (:item values)))))
+                   (:item values)
+                   (:role values)))))
 
 (type worker-placeholders
   (fn ((ref worker-values))
@@ -163,8 +167,8 @@
        (= (deref (at characters (inc index)))
           (char "{"))))
 
-(defn filled-brief (filled item)
+(defn filled-brief (filled item role)
   (match filled
     ((ok text) (ok text))
     ((err token)
-     (err (controller-error/placeholder-left (clone item) token)))))
+     (err (controller-error/placeholder-left (clone item) token role)))))

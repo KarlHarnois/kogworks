@@ -1,0 +1,537 @@
+(module
+  "Builds the controller log lines from controller values.")
+
+(use controller/failure brief-role controller-error
+                        disarm-status factory-error->message
+                        merge-error signal-stop->log-text)
+
+(use controller/log ->banner-line ->controller-failure
+                    ->item-line ->pr-summary ->stop-line
+                    item-line log-status pr-summary
+                    stage-state sub-line track)
+
+(use controller/merge-target merge-event)
+(use controller/rules item-kind)
+
+(export ->log-item action-line banner-of
+        controller-failure-of failure-item-id failure-line
+        log-action log-item merge-event-action short-head
+        stop-of)
+
+(defstruct log-item
+  :id string
+  :kind item-kind
+  :title string
+  :branch (option string)
+  :pull-request (option pr-summary))
+
+(defenum log-action
+  dispatch
+  review
+  verify
+  merge
+  merged)
+
+(defn banner-of (time roadmap manager poll-seconds)
+  (->banner-line :time (str time)
+                 :roadmap (str roadmap)
+                 :manager manager
+                 :poll-seconds poll-seconds))
+
+(defn stop-of (time merged failed rerun)
+  (->stop-line :time (str time)
+               :merged merged
+               :accepted 0
+               :failed failed
+               :running (vec)
+               :rerun (str rerun)))
+
+(type action-line
+  (fn (string (ref log-item) log-action) item-line))
+
+(defn action-line (time log-item action)
+  (->item-line :time (str time)
+               :id (clone (:id log-item))
+               :track (action-track (:kind log-item) action)
+               :status (action-status (:kind log-item)
+                                      action
+                                      (:pull-request log-item))
+               :title (clone (:title log-item))
+               :sub-lines (vec)))
+
+(type failure-line
+  (fn (string (ref log-item)
+              (option string)
+              (ref controller-error))
+    item-line))
+
+(defn failure-line (time log-item manager failure)
+  (->item-line :time (str time)
+               :id (clone (:id log-item))
+               :track (failure-track (:kind log-item) failure)
+               :status (failure-status failure)
+               :title (clone (:title log-item))
+               :sub-lines (failure-sub-lines log-item manager failure)))
+
+(defn controller-failure-of (time manager failure)
+  (->controller-failure :time (str time)
+                        :status (controller-failure-status failure)
+                        :sub-lines (controller-failure-sub-lines manager
+                                                                 failure)))
+
+(defn merge-event-action (event)
+  (match event
+    (merging log-action/merge)
+    (closed log-action/merged)))
+
+(defn short-head (head)
+  (join (collect (map (take (chars (as-str head)) 7)
+                   (fn (character) (str character))))
+        ""))
+
+(defn failure-item-id (failure)
+  (match failure
+    ((command-failed report) (action-item (:item report)))
+    ((out-of-scope report) (action-item (:item report)))
+    ((disarmed-command-failed report)
+     (action-item (:item (:failure report))))
+    ((merge-failed cause) (some (merge-error-item cause)))
+    ((signal-stop report) (some (clone (:item report))))
+    ((placeholder-left item _ _) (some (clone item)))
+    (_ none)))
+
+(defn action-track (kind action)
+  (match kind
+    (build (build-action-track action))
+    (_ (write-action-track action))))
+
+(defn action-status (kind action pull-request)
+  (match action
+    (dispatch (claim-status kind))
+    (review log-status/reviewing)
+    (verify log-status/verifying)
+    (merge log-status/merging)
+    (merged (merged-status pull-request))))
+
+(defn claim-status (kind)
+  (match kind
+    (build log-status/building)
+    (research log-status/researching)
+    (design log-status/designing)
+    (_ log-status/working)))
+
+(defn merged-status (pull-request)
+  (match pull-request
+    ((some summary) (log-status/merged (:number summary)))
+    (none log-status/failed)))
+
+(defn build-action-track (action)
+  (match action
+    (dispatch (track/build-track stage-state/active
+                                 stage-state/waiting
+                                 stage-state/waiting))
+    (review (track/build-track stage-state/done
+                               stage-state/active
+                               stage-state/waiting))
+    (verify (track/build-track stage-state/done
+                               stage-state/active
+                               stage-state/waiting))
+    (merge (track/build-track stage-state/done
+                              stage-state/done
+                              stage-state/active))
+    (merged (track/build-track stage-state/done
+                               stage-state/done
+                               stage-state/done))))
+
+(defn write-action-track (action)
+  (match action
+    (dispatch (track/write-track stage-state/active stage-state/waiting))
+    (_ (track/write-track stage-state/done stage-state/active))))
+
+(defn failure-status (failure)
+  (match failure
+    ((merge-failed cause) (merge-error-status cause))
+    (_ log-status/failed)))
+
+(defn merge-error-status (cause)
+  (match cause
+    ((head-changed _ _ _ _) log-status/head-moved)
+    ((timed-out _ _ _) log-status/timed-out)
+    ((settings-refused _ _) log-status/refused)
+    ((item-fixing _ _) log-status/refused)
+    ((not-approved _ _ _) log-status/refused)))
+
+(defn failure-track (kind failure)
+  (match failure
+    ((merge-failed _) (build-failed-track log-action/merge))
+    ((signal-stop _) (build-failed-track log-action/merge))
+    ((command-failed report)
+     (failure-action-track kind (:action report)))
+    ((out-of-scope report)
+     (failure-action-track kind (:action report)))
+    ((disarmed-command-failed report)
+     (failure-action-track kind (:action (:failure report))))
+    ((placeholder-left _ _ role)
+     (placeholder-failed-track kind role))
+    (_ (failure-action-track kind (str "dispatch")))))
+
+(defn placeholder-failed-track (kind role)
+  (failure-action-track kind (brief-role-action role)))
+
+(defn brief-role-action (role)
+  (match role
+    (brief-role/worker (str "dispatch"))
+    (brief-role/reviewer (str "review"))))
+
+(defn failure-action-track (kind action)
+  (match kind
+    (build (build-failed-track (action-of-text action)))
+    (_ (write-failed-track (action-of-text action)))))
+
+(defn build-failed-track (action)
+  (match action
+    (dispatch (track/build-track stage-state/failed
+                                 stage-state/waiting
+                                 stage-state/waiting))
+    (review (track/build-track stage-state/done
+                               stage-state/failed
+                               stage-state/waiting))
+    (verify (track/build-track stage-state/done
+                               stage-state/failed
+                               stage-state/waiting))
+    (merge (track/build-track stage-state/done
+                              stage-state/done
+                              stage-state/failed))
+    (merged (track/build-track stage-state/done
+                               stage-state/done
+                               stage-state/failed))))
+
+(defn write-failed-track (action)
+  (match action
+    (dispatch (track/write-track stage-state/failed stage-state/waiting))
+    (_ (track/write-track stage-state/done stage-state/failed))))
+
+(defn action-of-text (text)
+  (cond
+    ((= (as-str text) (str "dispatch")) log-action/dispatch)
+    ((= (as-str text) (str "review")) log-action/review)
+    ((= (as-str text) (str "verify")) log-action/verify)
+    ((= (as-str text) (str "merge")) log-action/merge)
+    (else log-action/dispatch)))
+
+(type failure-sub-lines
+  (fn ((ref log-item)
+       (option string)
+       (ref controller-error))
+    (vec sub-line)))
+
+(defn failure-sub-lines (log-item manager failure)
+  (-> (vec)
+      (push-error! failure)
+      (push-exit! failure)
+      (push-pr! log-item failure)
+      (push-disarmed! failure)
+      (push-cleanup! failure)
+      (push-manager! manager)
+      (push-next! failure)))
+
+(defn push-error! (lines failure)
+  (push-line! lines
+              (sub-line/error (failure-error-text failure))))
+
+(defn push-exit! (lines failure)
+  (match failure
+    ((command-failed report)
+     (push-line! lines
+                 (sub-line/exit (:code report)
+                                (clone (:command report)))))
+    ((disarmed-command-failed report)
+     (push-line! lines
+                 (sub-line/exit (:code (:failure report))
+                                (clone (:command (:failure report))))))
+    (_ lines)))
+
+(defn push-pr! (lines log-item failure)
+  (match (failure-pr log-item failure)
+    (none lines)
+    ((some summary) (push-line! lines (sub-line/pr summary)))))
+
+(defn push-disarmed! (lines failure)
+  (match (failure-disarm-command failure)
+    (none lines)
+    ((some command)
+     (push-line! lines (sub-line/disarmed command)))))
+
+(defn push-cleanup! (lines failure)
+  (match (cleanup-session failure)
+    (none lines)
+    ((some session)
+     (push-line! lines
+                 (sub-line/cleanup
+                   (str "rmap session end " session " --reason abandoned"))))))
+
+(defn push-manager! (lines manager)
+  (match (clone manager)
+    (none lines)
+    ((some session)
+     (push-line! lines (sub-line/manager session)))))
+
+(defn push-next! (lines failure)
+  (push-line! lines (sub-line/next (failure-next failure))))
+
+(defn failure-pr (log-item failure)
+  (match failure
+    ((merge-failed cause) (merge-error-pr log-item cause))
+    ((signal-stop report) (signal-stop-pr log-item report))
+    ((command-failed _) (clone (:pull-request log-item)))
+    ((out-of-scope _) (clone (:pull-request log-item)))
+    ((disarmed-command-failed _)
+     (clone (:pull-request log-item)))
+    ((placeholder-left _ _ _) (clone (:pull-request log-item)))
+    (_ none)))
+
+(type merge-error-pr
+  (fn ((ref log-item) (ref merge-error))
+    (option pr-summary)))
+
+(defn merge-error-pr (log-item cause)
+  (match cause
+    ((settings-refused _ _) (clone (:pull-request log-item)))
+    ((head-changed _ pull-request _ _)
+     (pr-from-text log-item (clone pull-request) none))
+    ((item-fixing _ pull-request)
+     (pr-from-text log-item
+                   (clone pull-request)
+                   (item-head log-item)))
+    ((not-approved _ pull-request _)
+     (pr-from-text log-item
+                   (clone pull-request)
+                   (item-head log-item)))
+    ((timed-out _ pull-request _)
+     (pr-from-text log-item
+                   (clone pull-request)
+                   (item-head log-item)))))
+
+(defn signal-stop-pr (log-item report)
+  (pr-from-text log-item
+                (clone (:pull-request-number report))
+                none))
+
+(defn item-head (log-item)
+  (match (:pull-request log-item)
+    (none none)
+    ((some summary) (clone (:head summary)))))
+
+(type pr-from-text
+  (fn ((ref log-item) string (option string))
+    (option pr-summary)))
+
+(defn pr-from-text (log-item pull-request head)
+  (match (parse-pull-request pull-request)
+    ((ok number)
+     (some (->pr-summary :number number
+                         :branch (item-branch log-item)
+                         :head head)))
+    ((err _) none)))
+
+(defn parse-pull-request (text)
+  (the (result int parse-int-error)
+       (parse (as-str text))))
+
+(defn item-branch (log-item)
+  (unwrap-or (clone (:branch log-item))
+             (str)))
+
+(defn failure-disarm-command (failure)
+  (match failure
+    ((disarmed-command-failed report)
+     (some (clone (:command report))))
+    ((merge-failed cause) (merge-error-disarm-command cause))
+    ((signal-stop report) (signal-stop-disarm-command report))
+    (_ none)))
+
+(defn merge-error-disarm-command (cause)
+  (match cause
+    ((settings-refused _ _) none)
+    ((head-changed _ pull-request _ _)
+     (disarm-command-of (clone pull-request)))
+    ((item-fixing _ pull-request)
+     (disarm-command-of (clone pull-request)))
+    ((not-approved _ pull-request _)
+     (disarm-command-of (clone pull-request)))
+    ((timed-out _ pull-request _)
+     (disarm-command-of (clone pull-request)))))
+
+(defn signal-stop-disarm-command (report)
+  (match (:disarm report)
+    (disarmed (disarm-command-of (clone (:pull-request-number report))))
+    ((not-disarmed _ _) none)))
+
+(defn disarm-command-of (pull-request)
+  (some (str "gh pr merge " pull-request " --disable-auto")))
+
+(defn cleanup-session (failure)
+  (match failure
+    ((command-failed report)
+     (start-command-session (:command report)))
+    (_ none)))
+
+(defn start-command-session (command)
+  (if (starts-with? (as-str command) "ringleader new")
+    (named-session (as-str command))
+    none))
+
+(defn named-session (command)
+  (let (parts (collect (map (split command " --name ")
+                         (fn (part) (str part)))))
+    (if (< (len parts) 2)
+      none
+      (some (first-part (as-str (at parts 1)) " --repo ")))))
+
+(defn first-part (text separator)
+  (let (parts (collect (split text separator)))
+    (match (first parts)
+      ((some part) (str part))
+      (none (str text)))))
+
+(defn failure-error-text (failure)
+  (match failure
+    ((command-failed report) (command-error-text report))
+    ((out-of-scope report) (out-of-scope-text report))
+    ((disarmed-command-failed report)
+     (command-error-text (:failure report)))
+    ((factory-failed cause) (factory-error->message cause))
+    ((merge-failed cause) (merge-error-log-text cause))
+    ((signal-stop report) (signal-stop->log-text report))
+    ((unreadable-brief path reason)
+     (str "cannot read the brief " path ": " reason))
+    ((unreadable-repo path reason)
+     (str "cannot resolve the repository " path ": " reason))
+    ((placeholder-left _ token _)
+     (str "the brief still holds `" token "` after filling"))))
+
+(defn command-error-text (report)
+  (if (empty? (:detail report))
+    (str "`" (:command report) "` exited " (:code report))
+    (clone (:detail report))))
+
+(defn out-of-scope-text (report)
+  (str (:action report)
+       " action for "
+       (:item report)
+       " is out of scope; `"
+       (:command report)
+       "` exited "
+       (:code report)))
+
+(defn merge-error-log-text (cause)
+  (match cause
+    ((settings-refused _ detail) (clone detail))
+    ((head-changed _ pull-request approved observed)
+     (str "PR " pull-request " head is "
+          (short-head observed)
+          ", not the approved "
+          (short-head approved)))
+    ((item-fixing _ pull-request)
+     (str "the item is fixing, so auto-merge on PR "
+          pull-request " is disarmed"))
+    ((not-approved _ pull-request head)
+     (str "PR " pull-request " is not approved at head "
+          (short-head head)))
+    ((timed-out _ pull-request seconds)
+     (str "PR " pull-request " did not merge within "
+          seconds " seconds"))))
+
+(defn failure-next (failure)
+  (match failure
+    ((merge-failed cause) (merge-error-next cause))
+    ((signal-stop _) (str "rerun when you are ready"))
+    ((out-of-scope _) (str "fix the error above, then rerun"))
+    ((placeholder-left _ _ _)
+     (str "fix the brief placeholder, then rerun"))
+    (_ (str "fix the error above, then rerun"))))
+
+(defn merge-error-next (cause)
+  (match cause
+    ((head-changed _ _ _ _)
+     (str "rerun, the new head needs a review"))
+    ((timed-out _ pull-request _)
+     (str "find what holds #" pull-request " open, then rerun"))
+    ((settings-refused _ detail) (settings-next detail))
+    ((item-fixing _ _) (str "fix the error above, then rerun"))
+    ((not-approved _ _ _)
+     (str "fix the error above, then rerun"))))
+
+(defn settings-next (detail)
+  (cond
+    ((contains? (clone detail) "allow_auto_merge")
+     (str "enable \"Allow auto-merge\" in the repository settings, then rerun"))
+    ((contains? (clone detail) "required status check")
+     (str
+       "add a required status check to the main branch protection, then rerun"))
+    (else (str "fix the error above, then rerun"))))
+
+(defn controller-failure-status (failure)
+  (match failure
+    ((command-failed report)
+     (str (controller-command-text (:action report)) " failed"))
+    ((factory-failed _) (str "factory failed"))
+    ((unreadable-repo _ _) (str "repository failed"))
+    ((unreadable-brief _ _) (str "brief failed"))
+    (_ (str "controller failed"))))
+
+(defn controller-command-text (action)
+  (cond
+    ((= (as-str action) (str "next")) (str "rmap next"))
+    ((= (as-str action) (str "ready")) (str "rmap ready"))
+    ((= (as-str action) (str "base branch"))
+     (str "base branch"))
+    (else (clone action))))
+
+(defn controller-failure-sub-lines (manager failure)
+  (-> (vec)
+      (push-error! failure)
+      (push-exit! failure)
+      (push-manager! manager)
+      (push-controller-next! failure)))
+
+(defn push-controller-next! (lines failure)
+  (push-line! lines
+              (sub-line/next (controller-failure-next failure))))
+
+(defn controller-failure-next (failure)
+  (match failure
+    ((command-failed report) (command-controller-next report))
+    ((factory-failed _)
+     (str "check .kogworks/factory.json, then rerun"))
+    ((unreadable-repo _ _)
+     (str "check the --repo path, then rerun"))
+    ((unreadable-brief _ _)
+     (str "fix the brief path in .kogworks/factory.json, then rerun"))
+    (_ (str "fix the error above, then rerun"))))
+
+(defn command-controller-next (report)
+  (cond
+    ((= (as-str (:action report))
+        (str "next"))
+     (str "check the roadmap name in .kogworks/factory.knv, then rerun"))
+    ((= (as-str (:action report))
+        (str "ready"))
+     (str "check the roadmap name in .kogworks/factory.knv, then rerun"))
+    (else (str "fix the error above, then rerun"))))
+
+(defn action-item (item)
+  (if (= (as-str item) (str "-"))
+    none
+    (some (clone item))))
+
+(defn merge-error-item (cause)
+  (match cause
+    ((settings-refused item _) (clone item))
+    ((head-changed item _ _ _) (clone item))
+    ((item-fixing item _) (clone item))
+    ((not-approved item _ _) (clone item))
+    ((timed-out item _ _) (clone item))))
+
+(defn push-line! (lines line)
+  (do (push! lines line) lines))

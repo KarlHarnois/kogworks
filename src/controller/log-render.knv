@@ -8,11 +8,12 @@
                           stage-entry stage-state sub-line
                           track track-form tree-branch)
 
-(use controller/log-palette style-open text-style)
+(use controller/log-palette color-mode style-open
+                            text-style)
 
 (use controller/log-width append-lines! display-width
                           fitted-title push-line! spaces
-                          wrap-value)
+                          strip-prefix wrap-value)
 
 (export render-alive render-banner render-controller-failure
         render-item render-stop render-sub-lines)
@@ -123,8 +124,8 @@
 
 (defn item-prefix-width (item form)
   (let (status-width (max status-column-width
-                          (display-width (as-str (status-text (:status
-                                                                item))))))
+                          (display-width (as-str (status-plain-text (:status
+                                                                      item))))))
     (+ (display-width (as-str (:time item)))
        2
        (display-width (as-str (:id item)))
@@ -133,10 +134,13 @@
        2 status-width 2)))
 
 (defn status-cell (settings status)
-  (let (text (status-text status))
-    (str (styled settings (status-style status) (as-str text))
+  (let (plain (status-plain-text status))
+    (str (styled settings
+                 (status-style status)
+                 (as-str (status-text settings status)))
          (spaces (max 0
-                      (- status-column-width (display-width (as-str text))))))))
+                      (- status-column-width
+                         (display-width (as-str plain))))))))
 
 (defn stop-sub-lines (stop)
   (loop (index 0
@@ -183,8 +187,7 @@
   (let (base (sub-line-base settings owner)
         values (wrap-value (sub-line-limit settings (as-str base))
                            (sub-line-value line))
-        first-line (sub-line-first settings base branch line
-                                   (as-str (at values 0))))
+        first-line (sub-line-first settings base branch line values))
     (append-wrap-lines settings base branch line values 1
                        (vec first-line))))
 
@@ -225,7 +228,13 @@
     (refused text-style/bold-failure)
     (failed text-style/bold-failure)))
 
-(defn status-text (status)
+(defn status-text (settings status)
+  (match status
+    ((merged number)
+     (str "merged " (pr-number-text settings number)))
+    (_ (status-plain-text status))))
+
+(defn status-plain-text (status)
   (match status
     (building (str "building"))
     (researching (str "researching"))
@@ -320,11 +329,29 @@
 (defn sub-line-base (settings owner)
   (str "          " (owner-prefix settings owner)))
 
-(defn sub-line-first (settings base branch line value)
-  (str base
-       (tree-glyph branch)
-       (label-cell settings (as-str (sub-line-label line)))
-       (styled settings (sub-line-style line) value)))
+(defn sub-line-first (settings base branch line values)
+  (let (value (sub-line-display-value settings line values))
+    (str base
+         (tree-glyph branch)
+         (label-cell settings (as-str (sub-line-label line)))
+         (styled settings (sub-line-style line) (as-str value)))))
+
+(defn sub-line-display-value (settings line values)
+  (match line
+    ((pr summary) (pr-display-value settings summary values))
+    (_ (clone (at values 0)))))
+
+(defn pr-display-value (settings summary values)
+  (if (= (len values) 1)
+    (pr-value settings summary)
+    (pr-wrapped-value settings summary (clone (at values 0)))))
+
+(defn pr-wrapped-value (settings summary first-line)
+  (let (plain-number (str "#" (:number summary)))
+    (if (starts-with? (as-str first-line) (as-str plain-number))
+      (str (pr-number-text settings (:number summary))
+           (strip-prefix (as-str first-line) (as-str plain-number)))
+      (str first-line))))
 
 (defn sub-line-limit (settings base)
   (match (:width settings)
@@ -335,7 +362,7 @@
   (match line
     ((error message) (clone message))
     ((exit _ command) (clone command))
-    ((pr summary) (pr-value summary))
+    ((pr summary) (pr-plain-value summary))
     ((disarmed command) (clone command))
     ((cleanup command) (clone command))
     ((manager session) (str "message sent to " session))
@@ -362,10 +389,41 @@
   (+ (display-width (as-str (:name entry)))
      2))
 
+(type pr-number-text
+  (fn ((ref log-settings) int) string))
+
+(defn pr-number-text (settings number)
+  (match (:remote settings)
+    (none (str "#" number))
+    ((some remote) (pr-number-link settings remote number))))
+
+(defn pr-number-link (settings remote number)
+  (if (= (:colors settings) color-mode/no-color)
+    (str "#" number)
+    (osc-link (str remote "/pull/" number) (str "#" number))))
+
+(defn osc-link (url text)
+  (str "\u{1b}]8;;" url "\u{1b}\\" text "\u{1b}]8;;\u{1b}\\"))
+
 (type pr-value
+  (fn ((ref log-settings) (ref pr-summary))
+    string))
+
+(defn pr-value (settings summary)
+  (match (:head summary)
+    (none (str (pr-number-text settings (:number summary))
+               "  "
+               (:branch summary)))
+    ((some head)
+     (str (pr-number-text settings (:number summary))
+          "  "
+          (:branch summary)
+          " @ " head))))
+
+(type pr-plain-value
   (fn ((ref pr-summary)) string))
 
-(defn pr-value (summary)
+(defn pr-plain-value (summary)
   (match (:head summary)
     (none (str "#" (:number summary) "  " (:branch summary)))
     ((some head)

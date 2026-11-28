@@ -2,7 +2,6 @@
   "Merges an approved pull request through GitHub auto-merge and closes its item.")
 
 (use controller/failure controller-error merge-error)
-(use controller/factory factory-config)
 
 (use controller/json json-error->message json-field
                      json-text parse-json)
@@ -19,7 +18,7 @@
 
 (use controller/merge-poll auto-merge-state close-item
                            disarm-and-stop head-change-error
-                           item-fixing-error
+                           item-fixing-error merge-state
                            poll-armed-merge poll-merge
                            read-poll-state read-resume-state
                            stop-on-signal)
@@ -30,9 +29,10 @@
                              invalid-item-output
                              merge-approval
                              merge-command-failure
-                             merge-item-status
-                             merge-settings merge-target
-                             read-merge-target)
+                             merge-event merge-item-status
+                             merge-outcome merge-settings
+                             merge-target read-merge-target
+                             report-event)
 
 (use controller/process command command-detail execute
                         successful?)
@@ -94,11 +94,17 @@
 
 (defn resume-from-state (repo config settings item target state)
   (match (resume-verdict-of target state)
-    (merged (close-item repo item))
+    (merged (close-item repo settings item target))
     (moved (disarm-and-stop repo settings item target
                             (head-change-error item target state)))
     (polling (poll-merge repo item target settings))
-    (arming (enable-auto-merge repo config settings item target))))
+    (arming (do
+              (report-event settings merge-event/merging target)
+              (enable-auto-merge repo config settings item target)))))
+
+(type resume-verdict-of
+  (fn ((ref merge-target) (ref merge-state))
+    resume-verdict))
 
 (defn resume-verdict-of (target state)
   (if (= (:head state) (:head target))
@@ -191,7 +197,9 @@
   (match (advance-item repo item)
     ((err failure) (err failure))
     ((ok _)
-     (enable-auto-merge repo config settings item target))))
+     (do
+       (report-event settings merge-event/merging target)
+       (enable-auto-merge repo config settings item target)))))
 
 (defn advance-item (repo item)
   (let (command (advance-command item))
@@ -265,15 +273,6 @@
      (resume-at-head repo config settings item target
                      (clone (:head state))))))
 
-(type resume-at-head
-  (fn ((ref str)
-       (ref factory-config)
-       (ref merge-settings)
-       (ref string)
-       (ref merge-target)
-       (ref string))
-    (result unit controller-error)))
-
 (defn resume-at-head (repo config settings item target head)
   (let (current (clone (:head target)))
     (if (= head current)
@@ -286,7 +285,7 @@
   (let (command (record-head-command item head)
         outcome (execute repo command))
     (if (successful? outcome)
-      (ok (do))
+      (ok merge-outcome/handed-back)
       (err (merge-command-failure item command outcome)))))
 
 (defn retry-enable-auto-merge (repo config settings item target)
@@ -350,7 +349,7 @@
   (let (command (send-command worker (rebase-message item target outcome))
         outcome (execute repo command))
     (if (successful? outcome)
-      (ok (do))
+      (ok merge-outcome/handed-back)
       (err (merge-command-failure item command outcome)))))
 
 (defn rebase-message (item target outcome)

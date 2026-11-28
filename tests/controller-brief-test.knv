@@ -1,7 +1,9 @@
-(use controller/brief ->worker-values fill-brief
+(use controller/brief ->reviewer-values ->worker-values
+                      fill-brief reviewer-brief
                       worker-brief)
 
-(use controller/failure controller-error error->message)
+(use controller/failure brief-role controller-error
+                        error->message)
 
 (use fixtures/controller-fixture make-dir reset-dir
                                  write-text)
@@ -14,6 +16,32 @@
                    :base (str "main")
                    :skill (str "fake-skill")))
 
+(def reviewer-values
+  (->reviewer-values :item (str "rm-0001")
+                     :roadmap (str "fake-roadmap")
+                     :session (str "review-rm-0001-abcdef0")
+                     :pr (str "12")
+                     :head (str "abcdef0123456789")
+                     :criteria (str "(1) a criterion")
+                     :base (str "main")
+                     :skill (str "fake-reviewer-skill")
+                     :manager (str "fake-manager")))
+
+(deftest names-the-reviewer-role-for-a-reviewer-brief-token
+  (let (root (str
+               "target/knave/controller-tests/reviewer-brief-placeholder-left"))
+    (unwrap-ok (reset-dir (as-str root)))
+    (unwrap-ok (make-dir (as-str root)))
+    (unwrap-ok (write-text (as-str (str root "/brief.md"))
+                           (as-str (str "pr={{pr}} token={{nope}}"))))
+    (let (failure (unwrap-err (fill-brief (as-str (str root "/brief.md"))
+                                          (reviewer-brief (clone
+                                                            reviewer-values)))))
+      (match failure
+        ((placeholder-left _ _ role)
+         (assert (= role brief-role/reviewer)))
+        (_ (assert false))))))
+
 (deftest names-the-token-that-the-brief-leaves
   (let (root (str "target/knave/controller-tests/brief-placeholder-left"))
     (unwrap-ok (reset-dir (as-str root)))
@@ -24,8 +52,9 @@
                                           (worker-brief (clone worker-values))))
           message (error->message (clone failure)))
       (match failure
-        ((placeholder-left item token)
+        ((placeholder-left item token role)
          (assert (= item (str "rm-0001")))
          (assert (= token (str "{{")))
+         (assert (= role brief-role/worker))
          (assert (contains? message "{{")))
         (_ (assert false))))))

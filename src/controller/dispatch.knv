@@ -69,9 +69,7 @@
   (let (start (start-command repo config session prompt))
     (let (outcome (execute repo start))
       (if (successful? outcome)
-        (do
-          (println session)
-          (ok (clone session)))
+        (ok (clone session))
         (abandon-and-fail repo
                           (clone (:id item))
                           session start outcome)))))

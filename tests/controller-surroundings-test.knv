@@ -48,16 +48,16 @@
                      color-mode/no-color)
   (assert-color-mode stream/terminal env-flag/absent
                      env-flag/absent colorterm/truecolor
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/not-a-terminal env-flag/absent
                      env-flag/absent colorterm/truecolor
                      color-mode/no-color)
   (assert-color-mode stream/terminal env-flag/absent
                      env-flag/present colorterm/truecolor
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/not-a-terminal env-flag/absent
                      env-flag/present colorterm/truecolor
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/terminal env-flag/present
                      env-flag/absent colorterm/truecolor
                      color-mode/no-color)
@@ -72,16 +72,16 @@
                      color-mode/no-color)
   (assert-color-mode stream/terminal env-flag/absent
                      env-flag/absent colorterm/bit-24
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/not-a-terminal env-flag/absent
                      env-flag/absent colorterm/bit-24
                      color-mode/no-color)
   (assert-color-mode stream/terminal env-flag/absent
                      env-flag/present colorterm/bit-24
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/not-a-terminal env-flag/absent
                      env-flag/present colorterm/bit-24
-                     color-mode/true-color)
+                     color-mode/truecolor)
   (assert-color-mode stream/terminal env-flag/present
                      env-flag/absent colorterm/bit-24
                      color-mode/no-color)

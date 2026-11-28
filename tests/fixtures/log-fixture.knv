@@ -213,12 +213,14 @@
 (defn settings-256 ()
   (->log-settings :colors color-mode/colors-256
                   :width (some 118)
-                  :target output-target/terminal))
+                  :target output-target/terminal
+                  :remote none))
 
 (defn settings-truecolor ()
   (->log-settings :colors color-mode/truecolor
                   :width (some 118)
-                  :target output-target/terminal))
+                  :target output-target/terminal
+                  :remote none))
 
 (defn stream-error-actual ()
   (render-sub-lines (settings-stream)
@@ -253,17 +255,20 @@
 (defn settings-118 ()
   (->log-settings :colors color-mode/no-color
                   :width (some 118)
-                  :target output-target/terminal))
+                  :target output-target/terminal
+                  :remote none))
 
 (defn settings-80 ()
   (->log-settings :colors color-mode/no-color
                   :width (some 80)
-                  :target output-target/terminal))
+                  :target output-target/terminal
+                  :remote none))
 
 (defn settings-stream ()
   (->log-settings :colors color-mode/no-color
                   :width none
-                  :target output-target/stream))
+                  :target output-target/stream
+                  :remote none))
 
 (defn banner-of ()
   (->banner-line :time (str "14:02:11")

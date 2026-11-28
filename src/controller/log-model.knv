@@ -39,7 +39,8 @@
 (defstruct log-settings
   :colors color-mode
   :width (option int)
-  :target output-target)
+  :target output-target
+  :remote (option string))
 
 (defstruct stage-entry
   :name string

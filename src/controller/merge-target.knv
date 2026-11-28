@@ -7,25 +7,47 @@
                        required-number required-object
                        required-text)
 
-(use controller/json json-error->message parse-json)
+(use controller/json json-error->message json-field
+                     json-text parse-json)
+
 (use controller/merge-commands show-command)
 (use controller/process command-detail execute successful?)
 
-(export ->merge-settings ->merge-target invalid-item-output
-        invalid-output merge-approval merge-command-failure
-        merge-item-status merge-settings merge-target
-        read-item-status read-merge-target)
+(export ->merge-report ->merge-settings ->merge-target
+        ignore-report invalid-item-output invalid-output
+        merge-approval merge-command-failure merge-event
+        merge-item-status merge-outcome merge-report
+        merge-settings merge-target read-item-status
+        read-merge-target report-event)
+
+(defenum merge-event
+  merging
+  closed)
+
+(defenum merge-outcome
+  merged
+  handed-back)
+
+(defstruct merge-report
+  :remote (option string)
+  :item string)
 
 (defstruct merge-settings
   :poll-seconds int
   :retry-delay-seconds int
-  :timeout-seconds int)
+  :timeout-seconds int
+  :report (fn (merge-event (ref merge-target) (ref merge-report))
+            unit)
+  :report-data merge-report)
 
 (defstruct merge-target
   :pull-request string
   :head string
   :item-status merge-item-status
-  :approval merge-approval)
+  :approval merge-approval
+  :title string
+  :kind string
+  :branch (option string))
 
 (defenum merge-approval
   approved
@@ -63,6 +85,12 @@
                                      :code (:code outcome)
                                      :detail (command-detail outcome))))
 
+(defn report-event (settings event target)
+  (let (report (:report settings))
+    (report event target (:report-data settings))))
+
+(defn ignore-report (_event _target _data) (do))
+
 (defn read-item-document (repo item parse)
   (let (command (show-command item)
         outcome (execute repo command))
@@ -83,6 +111,9 @@
 
 (defn target-fields (document)
   (let-try (status (item-status-field document)
+            record (required-object document "item" "item")
+            title (required-text record "title" "item.title")
+            kind (required-text record "kind" "item.kind")
             pull (required-object document "pull_request" "pull_request")
             pr (required-number pull "number" "pull_request.number")
             approved (required-bool pull "approved" "pull_request.approved")
@@ -91,7 +122,20 @@
     (ok (->merge-target :pull-request pr
                         :head head
                         :item-status status
-                        :approval (bool->approval approved)))))
+                        :approval (bool->approval approved)
+                        :title title
+                        :kind kind
+                        :branch (session-branch record)))))
+
+(defn session-branch (item)
+  (match (json-field item "session")
+    (none none)
+    ((some session) (optional-field-text session "branch"))))
+
+(defn optional-field-text (value key)
+  (match (json-field value key)
+    (none none)
+    ((some found) (json-text found))))
 
 (defn item-status-field (document)
   (let-try (record (required-object document "item" "item")

@@ -1,7 +1,8 @@
 (use controller/log ->banner-line ->item-line ->log-settings
-                    color-mode display-width log-status
-                    output-target render-banner render-item
-                    stage-state sub-line track)
+                    ->pr-summary color-mode display-width
+                    log-status output-target render-banner
+                    render-item render-sub-lines stage-state
+                    sub-line track)
 
 (use fixtures/log-fixture banner-actual banner-expected
                           bdc-building changes-118-item
@@ -71,6 +72,13 @@
   (if (= depth 0)
     span-step/invalid
     (span-step/opened (dec depth))))
+
+(defn link-settings ()
+  (->log-settings :colors color-mode/truecolor
+                  :width (some 118)
+                  :target output-target/terminal
+                  :remote (some (str
+                                  "https://github.com/KarlHarnois/kogworks"))))
 
 (deftest renders-the-banner-example
   (assert (same-lines? (banner-actual) banner-expected)))
@@ -154,6 +162,67 @@
                                    "  building     " cut
                                    "…"))))))
 
+(deftest links-a-merged-pull-request-when-color-is-on
+  (let (item (->item-line :time (str "14:18:40")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/done
+                                                    stage-state/done
+                                                    stage-state/done)
+                          :status (log-status/merged 33)
+                          :title (str "A title")
+                          :sub-lines (vec))
+        text (join (render-item (link-settings) item) "\n"))
+    (assert (contains? (as-str text)
+                       (as-str (str "\u{1b}]8;;https://github.com/KarlHarnois/kogworks/pull/33"
+                                    "\u{1b}\\"))))
+    (assert (contains? (as-str text)
+                       (as-str (str "\u{1b}]8;;\u{1b}\\"))))))
+
+(deftest leaves-a-merged-pull-request-plain-without-color
+  (let (item (->item-line :time (str "14:18:40")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/done
+                                                    stage-state/done
+                                                    stage-state/done)
+                          :status (log-status/merged 33)
+                          :title (str "A title")
+                          :sub-lines (vec))
+        text (join (render-item (settings-118) item) "\n"))
+    (assert (not (contains? (as-str text)
+                            (as-str (str "\u{1b}]8;;")))))
+    (assert (contains? (as-str text)
+                       (as-str (str "merged #33"))))))
+
+(deftest links-a-pull-request-sub-line-when-color-is-on
+  (let (sub-lines (vec (sub-line/pr (->pr-summary :number 35
+                                                  :branch (str "build-rm-0001")
+                                                  :head none)))
+        text (join (render-sub-lines (link-settings) (str "rm-0001") sub-lines)
+                   "\n"))
+    (assert (contains? (as-str text)
+                       (as-str (str "\u{1b}]8;;https://github.com/KarlHarnois/kogworks/pull/35"
+                                    "\u{1b}\\"))))
+    (assert (contains? (as-str text)
+                       (as-str (str "build-rm-0001"))))))
+
+(deftest links-a-wrapped-pull-request-sub-line-when-color-is-on
+  (let (settings (->log-settings :colors color-mode/truecolor
+                                 :width (some 50)
+                                 :target output-target/terminal
+                                 :remote (some (str "https://github.com/KarlHarnois/kogworks")))
+        sub-lines (vec (sub-line/pr (->pr-summary :number 12
+                                                  :branch (str "build-rm-0009")
+                                                  :head (some (str
+                                                                "abcdef0")))))
+        lines (render-sub-lines settings (str "rm-0009") sub-lines)
+        text (join lines "\n"))
+    (assert (> (len lines) 1))
+    (assert (contains? (as-str text)
+                       (as-str (str "\u{1b}]8;;https://github.com/KarlHarnois/kogworks/pull/12"
+                                    "\u{1b}\\"))))
+    (assert (contains? (as-str text)
+                       (as-str (str "#12"))))))
+
 (deftest shows-no-manager-when-none-is-configured
   (let (banner (->banner-line :time (str "14:02:11")
                               :roadmap (str "factory-mvp")
@@ -213,10 +282,12 @@
   (let (item (bdc-building)
         narrow (->log-settings :colors color-mode/no-color
                                :width (some 109)
-                               :target output-target/terminal)
+                               :target output-target/terminal
+                               :remote none)
         wide (->log-settings :colors color-mode/no-color
                              :width (some 110)
-                             :target output-target/terminal))
+                             :target output-target/terminal
+                             :remote none))
     (assert (contains? (as-str (join (render-item narrow item) "\n"))
                        (as-str (str "▸○○"))))
     (assert (not (contains? (as-str (join (render-item narrow item) "\n"))

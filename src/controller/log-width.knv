@@ -2,7 +2,7 @@
   "Measures, cuts and wraps controller log text, and accumulates its lines.")
 
 (export append-lines! display-width fitted-title push-line!
-        spaces wrap-value)
+        spaces strip-prefix wrap-value)
 
 (def stream-title-width 120)
 
@@ -26,6 +26,10 @@
     result
   }}"
     (fn ((ref str) usize) string)))
+
+(def strip-prefix
+  (rust "({0}).strip_prefix({1}).unwrap_or({0}).to_string()"
+    (fn ((ref str) (ref str)) string)))
 
 (def char-control?
   (rust "({0}).is_control()" (fn (char) bool)))
