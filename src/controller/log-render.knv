@@ -5,8 +5,9 @@
                           log-settings log-status
                           output-target pr-summary
                           running-item running-status
-                          stage-entry stage-state sub-line
-                          track track-form tree-branch)
+                          stage-entry stage-state stop-line
+                          sub-line track track-form
+                          tree-branch)
 
 (use controller/log-palette color-mode style-open
                             text-style)
@@ -30,6 +31,20 @@
 
 (def narrow-track-threshold 110)
 
+(def sub-line-indent-width 10)
+
+(defstruct sub-line-gutter
+  :text string
+  :width int)
+
+(defstruct text-span
+  :style text-style
+  :text string)
+
+(defstruct running-split
+  :before string
+  :after string)
+
 (defn render-alive (settings alive)
   (let (full (full-alive-text alive))
     (if (alive-full? settings alive full)
@@ -41,18 +56,20 @@
   (vec (banner-text settings banner)))
 
 (defn render-controller-failure (settings failure)
-  (let (line (str (:time failure) "  controller  " (:status failure)))
+  (let (line (str (styled settings text-style/secondary
+                          (as-str (:time failure)))
+                  "  controller  "
+                  (:status failure)))
     (with-first-line line
-                     (render-sub-lines settings
-                                       (str "controller")
+                     (render-sub-lines settings "controller"
                                        (:sub-lines failure)))))
 
 (defn render-item (settings item)
   (let (form (track-form-of settings)
         prefix-width (item-prefix-width item form)
-        line (str (:time item)
+        line (str (styled settings text-style/secondary (as-str (:time item)))
                   "  "
-                  (:id item)
+                  (styled settings text-style/bold (as-str (:id item)))
                   "  "
                   (track-text settings (clone (:track item)))
                   "  "
@@ -63,10 +80,9 @@
     (with-first-line line sub-lines)))
 
 (defn render-stop (settings stop)
-  (let (line (stop-text stop))
+  (let (line (stop-text settings stop))
     (with-first-line line
-                     (render-sub-lines settings
-                                       (str "controller")
+                     (render-sub-lines settings "controller"
                                        (stop-sub-lines stop)))))
 
 (defn render-sub-lines (settings owner sub-lines)
@@ -94,14 +110,22 @@
   (fn (log-settings (ref banner-line)) string))
 
 (defn banner-text (settings banner)
-  (str (:time banner)
-       "  ● kogworks  roadmap "
+  (str (styled settings text-style/secondary
+               (as-str (:time banner)))
+       "  ● "
+       (styled settings text-style/bold "kogworks")
+       "  "
+       (styled settings text-style/secondary "roadmap")
+       " "
        (:roadmap banner)
-       " · "
+       " "
+       (styled settings text-style/secondary "·")
+       " "
        (manager-text settings (:manager banner))
-       " · poll "
-       (:poll-seconds banner)
-       "s"))
+       " "
+       (styled settings text-style/secondary "·")
+       " "
+       (poll-text settings (:poll-seconds banner))))
 
 (defn counts-alive-text (alive)
   (str (:time alive)
@@ -153,17 +177,34 @@
                          (sub-line/running (clone (at (:running stop)
                                                       index))))))))
 
-(defn stop-text (stop)
-  (str (:time stop)
-       "  ■ controller stopped  "
-       (:merged stop)
-       " merged · "
-       (:accepted stop)
-       " accepted · "
-       (:failed stop)
-       " failed · "
-       (len (:running stop))
-       " running"))
+(type stop-text
+  (fn ((ref log-settings) (ref stop-line))
+    string))
+
+(defn stop-text (settings stop)
+  (let (time (as-str (:time stop))
+        merged (str (:merged stop) " merged")
+        accepted (str (:accepted stop) " accepted")
+        failed (str (:failed stop) " failed")
+        running (str (len (:running stop)) " running"))
+    (str (styled settings text-style/secondary time)
+         "  "
+         (styled settings text-style/failure "■")
+         " "
+         (styled settings text-style/bold "controller stopped")
+         "  "
+         (styled settings text-style/success (as-str merged))
+         " "
+         (styled settings text-style/secondary "·")
+         " "
+         (styled settings text-style/success (as-str accepted))
+         " "
+         (styled settings text-style/secondary "·")
+         " "
+         (styled settings text-style/failure (as-str failed))
+         " "
+         (styled settings text-style/secondary "·")
+         " " running)))
 
 (defn track-text (settings track)
   (let (form (track-form-of settings)
@@ -181,15 +222,116 @@
 (defn manager-text (settings manager)
   (match manager
     (none (styled settings text-style/outcome "no manager"))
-    ((some session) (str "manager " session))))
+    ((some session)
+     (str (styled settings text-style/secondary "manager")
+          " " session))))
+
+(defn poll-text (settings poll-seconds)
+  (styled settings text-style/secondary
+          (as-str (str "poll " poll-seconds "s"))))
 
 (defn render-sub-line (settings owner branch line)
-  (let (base (sub-line-base settings owner)
-        values (wrap-value (sub-line-limit settings (as-str base))
+  (let (gutter (sub-line-base settings owner))
+    (match line
+      ((running item)
+       (render-running-sub-line settings gutter branch item))
+      (_ (render-plain-sub-line settings gutter branch line)))))
+
+(defn render-plain-sub-line (settings gutter branch line)
+  (let (values (wrap-value (sub-line-limit settings gutter)
                            (sub-line-value line))
-        first-line (sub-line-first settings base branch line values))
-    (append-wrap-lines settings base branch line values 1
+        first-line (sub-line-first settings gutter branch line values))
+    (append-wrap-lines settings gutter branch line values 1
                        (vec first-line))))
+
+(defn render-running-sub-line (settings gutter branch item)
+  (let (values (wrap-value (sub-line-limit settings gutter)
+                           (running-sub-line-value item)))
+    (render-running-lines settings gutter branch item values)))
+
+(defn render-running-lines (settings gutter branch item values)
+  (loop (index 0
+         in-suffix false
+         lines (vec))
+    (if (>= index (len values))
+      lines
+      (let (value (as-str (at values index))
+            line (running-sub-line-render settings gutter
+                                          branch item value
+                                          (= index 0)
+                                          in-suffix))
+        (recur (inc index)
+               (or in-suffix (running-suffix-line? value))
+               (push-line! lines line))))))
+
+(defn running-sub-line-render (settings gutter branch item
+                                        value first?
+                                        in-suffix)
+  (let (spans (running-line-spans item value first? in-suffix))
+    (if first?
+      (str (:text gutter)
+           (styled settings text-style/secondary (tree-glyph branch))
+           (label-cell settings "running")
+           (spans-text settings spans))
+      (str (continuation-prefix settings gutter branch)
+           (spans-text settings spans)))))
+
+(defn running-line-spans (item value first? in-suffix)
+  (if in-suffix
+    (vec (secondary-span value))
+    (running-prefix-line-spans item value first?)))
+
+(defn running-prefix-line-spans (item value first?)
+  (match (running-suffix-split value)
+    (none (running-prefix-spans item value first?))
+    ((some halves)
+     (append-spans! (running-prefix-spans item (as-str (:before halves)) first?)
+                    (vec (secondary-span (str "·" (:after halves))))))))
+
+(defn running-prefix-spans (item value first?)
+  (if first?
+    (vec (->text-span :style text-style/bold
+                      :text (clone (:id item)))
+         (->text-span :style text-style/plain
+                      :text (strip-prefix value (as-str (:id item)))))
+    (vec (->text-span :style text-style/plain :text (str value)))))
+
+(defn running-suffix-line? (value) (contains? value "·"))
+
+(defn running-suffix-split (value)
+  (let (halves (collect (map (split value "·")
+                          (fn (part) (str part)))))
+    (if (= (len halves) 2)
+      (some (->running-split :before (clone (at halves 0))
+                             :after (clone (at halves 1))))
+      none)))
+
+(defn secondary-span (text)
+  (->text-span :style text-style/secondary :text (str text)))
+
+(type spans-text
+  (fn ((ref log-settings)
+       (iterator (ref text-span)))
+    string))
+
+(defn spans-text (settings spans)
+  (join (collect (map spans
+                   (fn (span)
+                     (styled settings
+                             (:style span)
+                             (as-str (:text span))))))
+        ""))
+
+(defn append-spans! (left right)
+  (loop (index 0
+         spans left)
+    (if (>= index (len right))
+      spans
+      (recur (inc index)
+             (push-span! spans (clone (at right index)))))))
+
+(defn push-span! (spans span)
+  (do (push! spans span) spans))
 
 (defn rendered-track (settings form stages)
   (match form
@@ -213,15 +355,15 @@
     (researching text-style/secondary)
     (designing text-style/secondary)
     (working text-style/secondary)
-    (reviewing text-style/plain)
-    (verifying text-style/plain)
+    (reviewing text-style/secondary)
+    (verifying text-style/secondary)
     (changes text-style/outcome)
     ((fixing _) text-style/secondary)
     (new-head text-style/outcome)
     (abandoned text-style/outcome)
-    (merging text-style/plain)
+    (merging text-style/secondary)
     ((merged _) text-style/success)
-    (reported text-style/plain)
+    (reported text-style/secondary)
     (accepted text-style/success)
     (head-moved text-style/bold-failure)
     (timed-out text-style/bold-failure)
@@ -285,15 +427,15 @@
      (vec (->stage-entry :name (str "write") :state write)
           (->stage-entry :name (str "accept") :state accept)))))
 
-(defn append-wrap-lines (settings base branch line values index lines)
+(defn append-wrap-lines (settings gutter branch line values index lines)
   (if (>= index (len values))
     lines
-    (recur settings base branch line values
+    (recur settings gutter branch line values
            (inc index)
            (push-line! lines
-                       (sub-line-continuation settings base
-                                              branch line
-                                              (as-str (at values index)))))))
+                       (sub-line-continuation
+                         settings gutter branch line
+                         (as-str (at values index)))))))
 
 (type full-track
   (fn ((ref log-settings)
@@ -327,12 +469,15 @@
        (max 0 (- count 1)))))
 
 (defn sub-line-base (settings owner)
-  (str "          " (owner-prefix settings owner)))
+  (->sub-line-gutter :text (str (spaces sub-line-indent-width)
+                                (owner-prefix settings owner))
+                     :width (+ sub-line-indent-width
+                               (owner-plain-width settings owner))))
 
-(defn sub-line-first (settings base branch line values)
+(defn sub-line-first (settings gutter branch line values)
   (let (value (sub-line-display-value settings line values))
-    (str base
-         (tree-glyph branch)
+    (str (:text gutter)
+         (styled settings text-style/secondary (tree-glyph branch))
          (label-cell settings (as-str (sub-line-label line)))
          (styled settings (sub-line-style line) (as-str value)))))
 
@@ -353,10 +498,10 @@
            (strip-prefix (as-str first-line) (as-str plain-number)))
       (str first-line))))
 
-(defn sub-line-limit (settings base)
+(defn sub-line-limit (settings gutter)
   (match (:width settings)
     (none none)
-    ((some width) (sub-line-limit-at width base))))
+    ((some width) (sub-line-limit-at width (:width gutter)))))
 
 (defn sub-line-value (line)
   (match line
@@ -383,7 +528,12 @@
 (defn owner-prefix (settings owner)
   (match (:target settings)
     (terminal (str))
-    (stream (str owner "  "))))
+    (stream (str (styled settings text-style/secondary owner) "  "))))
+
+(defn owner-plain-width (settings owner)
+  (match (:target settings)
+    (terminal 0)
+    (stream (+ (display-width owner) 2))))
 
 (defn plain-stage-width (entry)
   (+ (display-width (as-str (:name entry)))
@@ -450,8 +600,8 @@
                (stage-glyph-style (:state entry))
                (stage-glyph (:state entry)))))
 
-(defn sub-line-continuation (settings base branch line value)
-  (str (continuation-prefix (as-str base) branch)
+(defn sub-line-continuation (settings gutter branch line value)
+  (str (continuation-prefix settings gutter branch)
        (styled settings (sub-line-style line) value)))
 
 (defn sub-line-label (line)
@@ -471,17 +621,18 @@
     ((running _) (str "running"))
     ((rerun _) (str "rerun"))))
 
-(defn sub-line-limit-at (width base)
-  (some (max 1
-             (- width (+ (display-width base) value-column-offset)))))
+(defn sub-line-limit-at (width base-width)
+  (some (max 1 (- width (+ base-width value-column-offset)))))
 
 (defn tree-glyph (branch)
   (match branch (middle "├─ ") (last "╰─ ")))
 
-(defn continuation-prefix (base branch)
-  (str base
-       (continuation-marker branch)
-       (spaces (dec value-column-offset))))
+(defn continuation-prefix (settings gutter branch)
+  (match branch
+    (middle (str (:text gutter)
+                 (styled settings text-style/secondary "│")
+                 (spaces (dec value-column-offset))))
+    (last (str (:text gutter) (spaces value-column-offset)))))
 
 (defn running-status-text (status)
   (match status
@@ -539,6 +690,3 @@
   (if (= open (str))
     (str text)
     (str open text "\u{1b}[0m")))
-
-(defn continuation-marker (branch)
-  (match branch (middle "│") (last " ")))

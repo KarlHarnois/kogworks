@@ -110,15 +110,15 @@ The status is at most 11 characters. It carries no SHA and no duration.
 | `researching` | research | the item is claimed | gray |
 | `designing` | design | the item is claimed | gray |
 | `working` | other | the item is claimed | gray |
-| `reviewing` | build | a review session starts | plain |
-| `verifying` | build | a verify session starts | plain |
+| `reviewing` | build | a review session starts | gray |
+| `verifying` | build | a verify session starts | gray |
 | `changes` | build | a review records the verdict `changes` | yellow |
 | `fixing (n)` | build | the item moves to `fixing`; `n` is the round that follows | gray |
 | `new head` | build | a new head is recorded during a review | yellow |
 | `abandoned` | build | a review session ends with no verdict | yellow |
-| `merging` | build | the item moves to `merging` | plain |
+| `merging` | build | the item moves to `merging` | gray |
 | `merged #n` | build | the item closes as `merged`; `#n` is the pull request | `merged` green |
-| `reported` | research, design | the item moves to `reported` | plain |
+| `reported` | research, design | the item moves to `reported` | gray |
 | `accepted` | research, design | the item closes as `accepted` | green |
 | `head moved` | build | merge failure: the head is not the approved head | bold red |
 | `timed out` | build | merge failure: the pull request did not merge in time | bold red |
@@ -252,6 +252,31 @@ Colors are fixed 24-bit values so that the terminal theme does not change them.
 | active | `#4fc7c7` |
 | review outcome | `#e0b05c` |
 | secondary | `#7a7f87` |
+
+### Styles
+
+| Part | Style |
+|---|---|
+| the time at the start of any line | secondary |
+| the item ID on an item line | bold |
+| `kogworks` in the banner | bold |
+| `roadmap` and `manager` in the banner | secondary |
+| each `·` in the banner | secondary |
+| `poll <n>s` in the banner | secondary |
+| `no manager` in the banner | yellow |
+| the roadmap name and the manager session in the banner | default |
+| the tree glyphs `├─` and `╰─` | secondary |
+| the continuation glyph `│` | secondary |
+| `■` in the stop line | failure |
+| `controller stopped` in the stop line | bold |
+| `<n> merged` and `<n> accepted` in the stop line | success |
+| `<n> failed` in the stop line | failure |
+| each `·` in the stop line | secondary |
+| `<n> running` in the stop line | default |
+| the item ID on a `running` sub-line | bold |
+| `· its session keeps running` on a `running` sub-line | secondary |
+| the owner before a sub-line when output is not a terminal | secondary |
+| the title | default |
 
 Rules:
 

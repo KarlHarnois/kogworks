@@ -224,7 +224,7 @@
 
 (defn stream-error-actual ()
   (render-sub-lines (settings-stream)
-                    (str "rm-35cb")
+                    "rm-35cb"
                     (head-moved-sub-lines)))
 
 (defn stream-stop-actual ()
@@ -393,7 +393,7 @@
 
 (defn cb-head-moved-stream-sub-lines-actual ()
   (render-sub-lines (settings-stream)
-                    (str "rm-35cb")
+                    "rm-35cb"
                     (head-moved-tail-sub-lines)))
 
 (defn cb-merging ()
