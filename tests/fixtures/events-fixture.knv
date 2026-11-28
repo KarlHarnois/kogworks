@@ -2,6 +2,7 @@
   "Holds the rmap event fixtures that replay a lifecycle into the controller log.")
 
 (export build-events build-expected build-item-json
+        head-abandon-events head-abandon-expected
         research-events research-expected research-item-json
         running-events)
 
@@ -50,3 +51,17 @@
   (str "{\"id\":1,\"type\":\"item-claimed\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"open\",\"new\":\"dispatched\"}}}}\n"
        "{\"id\":2,\"type\":\"item-reported\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"dispatched\",\"new\":\"in_review\"}}}}\n"
        "{\"id\":3,\"type\":\"review-started\",\"item_id\":\"rm-0001\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0001\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"))
+
+(def head-abandon-events
+  (str "{\"id\":1,\"type\":\"item-claimed\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"status\":{\"old\":\"open\",\"new\":\"dispatched\"}}}}\n"
+       "{\"id\":2,\"type\":\"review-started\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0003\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
+       "{\"id\":3,\"type\":\"head-recorded\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"head_sha\":{\"old\":\"abcdef0\",\"new\":\"1234567\"}}}}\n"
+       "{\"id\":4,\"type\":\"review-started\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0003-2\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
+       "{\"id\":5,\"type\":\"session-ended\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"session\":\"review-rm-0003-2\",\"session_kind\":\"review\",\"payload\":{\"changes\":{\"end_reason\":{\"old\":null,\"new\":\"abandoned\"}}}}\n"))
+
+(def head-abandon-expected
+  (vec (str "rm-0003  build ▸ review ○ merge ○  building     Build the thing")
+       (str "rm-0003  build ✓ review ▸ merge ○  reviewing    Build the thing")
+       (str "rm-0003  build ✓ review ○ merge ○  new head     Build the thing")
+       (str "rm-0003  build ✓ review ▸ merge ○  reviewing    Build the thing")
+       (str "rm-0003  build ✓ review ○ merge ○  abandoned    Build the thing")))

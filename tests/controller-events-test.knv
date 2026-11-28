@@ -4,7 +4,10 @@
                                  write-text)
 
 (use fixtures/events-fixture build-events build-expected
-                             build-item-json research-events
+                             build-item-json
+                             head-abandon-events
+                             head-abandon-expected
+                             research-events
                              research-expected
                              research-item-json
                              running-events)
@@ -133,3 +136,14 @@
       (assert (= (exit-code output) 1))
       (assert (= (item-lines (stderr-text output) (str "rm-0001"))
                  build-expected)))))
+
+(deftest replays-a-recorded-head-and-an-abandoned-review
+  (let (root (unwrap-ok (setup "events-head-abandon"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone head-abandon-events)))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0003"))
+                 head-abandon-expected)))))
