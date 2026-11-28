@@ -10,14 +10,27 @@
                         join-path successful?)
 
 (use controller/repo default-branch)
+(use controller/rules item-kind)
 (use controller/session abandon-command failed-start-detail)
 
 (export dispatch)
 
 (defn dispatch (repo config item)
-  (let (session (str "build-" (:id item)))
+  (let (session (session-name item))
     (let (branch (clone session))
       (dispatch-with-base repo config item session branch))))
+
+(defn session-name (item)
+  (str (session-prefix (:kind item))
+       "-"
+       (:id item)))
+
+(defn session-prefix (kind)
+  (match kind
+    (build (str "build"))
+    (research (str "research"))
+    (design (str "design"))
+    (_ (str "work"))))
 
 (defn dispatch-with-base (repo config item session branch)
   (match (default-branch repo)

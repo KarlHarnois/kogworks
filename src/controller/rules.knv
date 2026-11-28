@@ -4,9 +4,9 @@
 (use controller/fields field-error->message required-field)
 (use controller/json json json-array json-field json-text)
 
-(export action-kind action-kind->text actor first-build
-        first-controller-action item-action item-kind
-        item-kind-of next-action next-line
+(export action-kind action-kind->text actor
+        first-controller-action first-dispatch item-action
+        item-kind item-kind-of next-action next-line
         parse-next-response parse-ready-response ready-item
         subject)
 
@@ -78,11 +78,6 @@
   (failure string)
   done)
 
-(defenum build-step
-  (found ready-item)
-  absent
-  done)
-
 (defn action-kind->text (kind)
   (match kind
     (work (str "work"))
@@ -109,12 +104,10 @@
   (let-try (items (required-array document "ready"))
     (parse-ready-items items)))
 
-(defn first-build (items)
-  (loop (index 0)
-    (match (build-step-at items index)
-      ((found item) (some item))
-      (absent (recur (inc index)))
-      (done none))))
+(defn first-dispatch (items)
+  (match (first items)
+    (none none)
+    ((some item) (some (clone item)))))
 
 (defn item-kind-of (text)
   (cond
@@ -326,16 +319,3 @@
   (match (json-text found)
     ((some text) (ok text))
     (none (err (str "`" (str key) "` is not text")))))
-
-(defn build-step-at (items index)
-  (if (>= index (len items))
-    build-step/done
-    (build-step-of (at items index))))
-
-(type build-step-of
-  (fn ((ref ready-item)) build-step))
-
-(defn build-step-of (item)
-  (match (:kind item)
-    (build (build-step/found (clone item)))
-    (_ build-step/absent)))

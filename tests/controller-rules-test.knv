@@ -1,7 +1,7 @@
 (use controller/json parse-json)
 
 (use controller/rules action-kind action-kind->text actor
-                      first-build first-controller-action
+                      first-controller-action first-dispatch
                       parse-next-response
                       parse-ready-response subject)
 
@@ -71,12 +71,12 @@
     ((some controller) (assert true))
     (_ (assert false))))
 
-(defn assert-build-item (found id)
+(defn assert-first-item (found id)
   (match found
     ((some item) (assert (= (as-str (:id item)) (as-str id))))
     (none (assert false))))
 
-(defn assert-no-build (found)
+(defn assert-no-item (found)
   (match found
     (none (assert true))
     (_ (assert false))))
@@ -154,20 +154,25 @@
        (assert (= reason (str "`ready` is missing"))))
       ((ok _) (assert false)))))
 
-(deftest first-build-takes-the-first-build
+(deftest first-dispatch-takes-the-first-ready-item
   (match (ready-items-from (str "{\"ready\":["
                                 "{\"id\":\"rm-1\",\"kind\":\"research\"},"
                                 "{\"id\":\"rm-2\",\"kind\":\"build\"},"
-                                "{\"id\":\"rm-3\",\"kind\":\"build\"}]}"))
+                                "{\"id\":\"rm-3\",\"kind\":\"design\"}]}"))
     ((ok items)
-     (assert-build-item (first-build items) (str "rm-2")))
+     (assert-first-item (first-dispatch items) (str "rm-1")))
     ((err _) (assert false))))
 
-(deftest first-build-is-none-without-a-build
+(deftest first-dispatch-takes-a-design
   (match (ready-items-from (str "{\"ready\":["
-                                "{\"id\":\"rm-1\",\"kind\":\"research\"},"
-                                "{\"id\":\"rm-2\",\"kind\":\"design\"}]}"))
-    ((ok items) (assert-no-build (first-build items)))
+                                "{\"id\":\"rm-1\",\"kind\":\"design\"}]}"))
+    ((ok items)
+     (assert-first-item (first-dispatch items) (str "rm-1")))
+    ((err _) (assert false))))
+
+(deftest first-dispatch-is-none-without-items
+  (match (ready-items-from (str "{\"ready\":[]}"))
+    ((ok items) (assert-no-item (first-dispatch items)))
     ((err _) (assert false))))
 
 (deftest action-kind->text-names-each-action

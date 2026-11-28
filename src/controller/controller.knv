@@ -39,7 +39,7 @@
 (use controller/review review-mode start-review)
 
 (use controller/rules action-kind action-kind->text
-                      first-build first-controller-action
+                      first-controller-action first-dispatch
                       item-action next-line
                       parse-next-response
                       parse-ready-response)
@@ -326,7 +326,7 @@
      (dispatch-first repo config manager settings items))))
 
 (defn dispatch-first (repo config manager settings items)
-  (match (first-build items)
+  (match (first-dispatch items)
     (none (ok pass-outcome/idle))
     ((some item)
      (dispatch-ready repo config manager settings item))))
