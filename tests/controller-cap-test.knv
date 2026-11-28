@@ -1,5 +1,5 @@
 (use apply-fixture export-document prepare-real-repo
-                   roadmap-max-active)
+                   rmap-path roadmap-max-active)
 
 (use fixtures/controller-fixture default-settings exit-code
                                  max-active-call-count
@@ -142,16 +142,15 @@
       (assert (not (contains? (sequence-text (as-str root)) "rmap next"))))))
 
 (deftest stores-the-cap-in-a-real-scratch-ledger
-  (match (prepare-real-repo "target/knave/controller-tests/cap-real"
-                            (as-str real-factory)
-                            "real-roadmap")
-    ((err reason) (assert false))
-    ((ok _)
+  (match (rmap-path)
+    (none (println "rmap is not on PATH; skipping the real ledger check"))
+    ((some _)
      (let (root (str "target/knave/controller-tests/cap-real"))
+       (unwrap-ok (prepare-real-repo (as-str root)
+                                     (as-str real-factory)
+                                     "real-roadmap"))
        (let (output (unwrap-ok (run root (vec (str "--once")))))
          (assert (= (exit-code output) 0))
-         (match (export-document (as-str root))
-           ((ok document)
-            (assert (= (roadmap-max-active document "real-roadmap")
-                       (some (str "3")))))
-           ((err _) (assert false))))))))
+         (let (document (unwrap-ok (export-document (as-str root))))
+           (assert (= (roadmap-max-active document "real-roadmap")
+                      (some (str "3"))))))))))
