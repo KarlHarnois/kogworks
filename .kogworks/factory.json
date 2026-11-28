@@ -3,7 +3,7 @@
   "name": "kogworks",
   "manager": "kw-manager",
   "roadmap": "factory-mvp",
-  "max_active": 3,
+  "max_active": 6,
   "merge": "gh-auto",
   "roles": {
     "worker": {

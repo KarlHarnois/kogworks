@@ -1,7 +1,7 @@
 (deffactory kogworks
   :manager "kw-manager"
   :roadmap "factory-mvp"
-  :max-active 3
+  :max-active 6
   :merge gh-auto
   (roles (worker :agent "opencode"
                  :skill "writing-knave"
