@@ -29,30 +29,49 @@
     (fn ((ref str) (ref str))
       (result unit string))))
 
-(def run-knave-eval
+(def run-knave-run
   (rust "{{
-    use std::io::Write;
-    std::process::Command::new(\"knave\")
-      .args([\"eval\", \"--stdin\", \"factory.knv\", \"(do (print (factory-json)) (exit 0))\"])
-      .current_dir({0})
-      .stdin(std::process::Stdio::piped())
-      .stdout(std::process::Stdio::piped())
-      .stderr(std::process::Stdio::piped())
-      .spawn()
-      .map_err(|error| error.to_string())
-      .and_then(|mut child| {{
-        let mut input = child
-          .stdin
-          .take()
-          .ok_or_else(|| \"knave did not open standard input\".to_string())?;
-        input
-          .write_all({1}.as_bytes())
-          .map_err(|error| error.to_string())?;
-        drop(input);
-        child.wait_with_output().map_err(|error| error.to_string())
-      }})
-  }}"
-    (fn ((ref str) (ref str))
+  (|| -> Result<std::process::Output, String> {{
+    let factory_dir = {0};
+    let factory_path = {1};
+    let module_text = {2};
+    let start = std::path::Path::new(factory_path)
+      .canonicalize()
+      .map_err(|error| error.to_string())?;
+    let mut root = start.parent();
+    while let Some(dir) = root {{
+      if dir.join(\"project.knv\").is_file() {{
+        break;
+      }}
+      root = dir.parent();
+    }}
+    let root = root.ok_or_else(|| \"cannot find the project root\".to_string())?;
+    let temp_root = root
+      .join(\"target\")
+      .join(\"knave\")
+      .join(\"synth\")
+      .join(std::process::id().to_string());
+    std::fs::create_dir_all(&temp_root).map_err(|error| error.to_string())?;
+    let temp_file = temp_root.join(\"factory.knv\");
+    let mut program = String::from(module_text);
+    program.push_str(\"\\n\\n(defn main () (print (factory-json)))\\n\");
+    std::fs::write(&temp_file, program).map_err(|error| error.to_string())?;
+    let output = std::process::Command::new(\"knave\")
+      .args([\"run\", temp_file.to_str().unwrap_or_default()])
+      .current_dir(factory_dir)
+      .output()
+      .map_err(|error| error.to_string());
+    let _ = std::fs::remove_dir_all(&temp_root);
+    let mut output = output?;
+    let temp_text = temp_file.to_string_lossy().into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if stderr.contains(&temp_text) {{
+      output.stderr = stderr.replace(&temp_text, factory_path).into_bytes();
+    }}
+    Ok(output)
+  }})()
+}}"
+    (fn ((ref str) (ref str) (ref str))
       (result process-output string))))
 
 (def succeeded?
@@ -106,8 +125,8 @@
       (err (synth-error/missing-factory (str factory-file))))))
 
 (defn eval-factory-json (factory-file module-text)
-  (match (run-knave-eval (as-str (parent-path factory-file))
-                         module-text)
+  (match (run-knave-run (as-str (parent-path factory-file))
+                        factory-file module-text)
     ((ok output) (checked-factory-json factory-file output))
     ((err reason)
      (err (synth-error/factory-eval-failed (str factory-file) reason)))))
