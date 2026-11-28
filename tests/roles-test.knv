@@ -16,3 +16,12 @@
                           :agent (str "opencode")
                           :skill (str "reviewing-prs")
                           :brief (str ".kogworks/briefs/reviewer.md"))))))
+
+(deftest roles-accept-keys-in-any-order
+  (assert (= (roles (worker :brief ".kogworks/briefs/worker.md"
+                            :skill "writing-knave"
+                            :agent "opencode"))
+             (vec (->role :name role-name/worker
+                          :agent (str "opencode")
+                          :skill (str "writing-knave")
+                          :brief (str ".kogworks/briefs/worker.md"))))))
