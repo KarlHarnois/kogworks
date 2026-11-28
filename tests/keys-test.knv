@@ -1,0 +1,64 @@
+(use code empty? first list)
+(use prelude/macros template)
+
+(use factory/keys after-key has-value? key-named?
+                  member-name? repeated-key?)
+
+(defmacro key-named-probe? (part name)
+  (if (key-named? part name)
+    (template true)
+    (template false)))
+
+(defmacro member-name-probe? (first-name second-name key)
+  (if (member-name? (list first-name second-name) key)
+    (template true)
+    (template false)))
+
+(defmacro repeated-key-probe? (key parts ...)
+  (if (repeated-key? parts key)
+    (template true)
+    (template false)))
+
+(defmacro has-value-probe? (parts ...)
+  (if (has-value? parts)
+    (template true)
+    (template false)))
+
+(defmacro after-key-empty? (parts ...)
+  (if (empty? (after-key parts))
+    (template true)
+    (template false)))
+
+(defmacro after-key-key? (expected parts ...)
+  (if (key-named? (first (after-key parts)) expected)
+    (template true)
+    (template false)))
+
+(deftest key-named-matches-a-keyword-by-name
+  (assert (key-named-probe? :manager "manager"))
+  (assert (not (key-named-probe? :manager "roadmap")))
+  (assert (not (key-named-probe? "manager" "manager"))))
+
+(deftest member-name-finds-a-name
+  (assert (member-name-probe? "manager" "roadmap" "roadmap"))
+  (assert (not (member-name-probe? "manager" "roadmap" "merge"))))
+
+(deftest has-value-rejects-a-missing-or-keyword-value
+  (assert (has-value-probe? :manager "m"))
+  (assert (not (has-value-probe? :manager)))
+  (assert (not (has-value-probe? :manager :roadmap))))
+
+(deftest after-key-skips-a-value-or-only-the-key
+  (assert (after-key-key? "roadmap" :manager "m" :roadmap "r"))
+  (assert (after-key-key? "roadmap" :manager :roadmap "r"))
+  (assert (after-key-empty? :manager "m"))
+  (assert (after-key-empty? :bogus)))
+
+(deftest repeated-key-finds-a-later-key-and-stops-at-the-end
+  (assert (repeated-key-probe? "manager"
+                               :roadmap "r"
+                               :manager "again"))
+  (assert (not (repeated-key-probe? "manager" :roadmap "r")))
+  (assert (repeated-key-probe? "skill" :brief "b" :skill))
+  (assert (not (repeated-key-probe? "manager" :bogus)))
+  (assert (not (repeated-key-probe? "manager"))))

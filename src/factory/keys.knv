@@ -1,0 +1,36 @@
+(module
+  "Steps over the keys and values of a factory form.")
+
+(use code bool-not empty? first keyword-name keyword? nth
+          rest value-eq)
+
+(export after-key has-value? key-named? member-name?
+        repeated-key?)
+
+(defn member-name? (names key)
+  (cond
+    ((empty? names) false)
+    ((value-eq (first names) key) true)
+    (else (member-name? (rest names) key))))
+
+(defn repeated-key? (parts key)
+  (cond
+    ((empty? parts) false)
+    ((bool-not (keyword? (first parts)))
+     (repeated-key? (rest parts) key))
+    ((key-named? (first parts) key) true)
+    (else (repeated-key? (after-key parts) key))))
+
+(defn after-key (parts)
+  (if (has-value? parts)
+    (rest (rest parts))
+    (rest parts)))
+
+(defn key-named? (part name)
+  (if (keyword? part)
+    (value-eq (keyword-name part) name)
+    false))
+
+(defn has-value? (parts)
+  (and (bool-not (empty? (rest parts)))
+       (bool-not (keyword? (nth parts 1)))))

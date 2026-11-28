@@ -2,10 +2,14 @@
   "Defines deffactory, the form a factory file holds.")
 
 (use code bool-not empty? fail first keyword-name keyword?
-          list list? nth rest string symbol symbol-name
-          symbol? value-eq)
+          list list? nth rest string string? symbol
+          symbol-name symbol? value-eq)
 
 (use factory/json factory->json)
+
+(use factory/keys after-key has-value? key-named?
+                  member-name? repeated-key?)
+
 (use factory/roles roles)
 (use factory/types ->factory merge-method)
 (use prelude/macros header-shape template)
@@ -20,7 +24,7 @@
   `(deffactory acme :manager \"manager\" :roadmap \"roadmap\" :max-active 1
      :merge gh-auto (roles (worker ...)))`."
   (do
-    (check-parts parts)
+    (check-parts parts false)
     (template (do
                 (export (unquote (symbol name "factory-json"))
                         (unquote (symbol name "factory-value")))
@@ -36,23 +40,23 @@
                 (defn (unquote (symbol name "factory-json")) ()
                   (factory->json (unquote (symbol name "factory-value"))))))))
 
-(defn check-parts (parts)
+(defn check-parts (parts roles-before?)
   (cond
     ((empty? parts) (do))
     ((keyword? (first parts))
-     (check-setting parts)
-     (check-parts (rest (rest parts))))
+     (check-setting parts roles-before?)
+     (check-parts (after-key parts) roles-before?))
     ((list? (first parts))
      (check-list-form (first parts))
-     (check-parts (rest parts)))
-    (else (check-parts (rest parts)))))
+     (check-parts (rest parts)
+                  (named? (first parts) "roles")))
+    (else (check-parts (rest parts) roles-before?))))
 
-(defn check-setting (parts)
+(defn check-setting (parts roles-before?)
   (let (key (keyword-name (first parts)))
     (check-known-setting (first parts) key)
-    (check-repeated-setting (first parts)
-                            key
-                            (rest (rest parts)))))
+    (check-repeated-setting (first parts) key (after-key parts))
+    (check-list-value parts key roles-before?)))
 
 (defn check-known-setting (form key)
   (if (known-setting? key)
@@ -60,12 +64,6 @@
     (unknown-setting form key)))
 
 (defn known-setting? (key) (member-name? setting-names key))
-
-(defn member-name? (names key)
-  (cond
-    ((empty? names) false)
-    ((value-eq (first names) key) true)
-    (else (member-name? (rest names) key))))
 
 (defn unknown-setting (form key)
   (fail (string "deffactory does not know `:" key
@@ -78,18 +76,30 @@
     (repeated-setting form key)
     (do)))
 
-(defn repeated-key? (parts key)
-  (cond
-    ((empty? parts) false)
-    ((bool-not (keyword? (first parts)))
-     (repeated-key? (rest parts) key))
-    ((setting-key? (first parts) key) true)
-    (else (repeated-key? (rest (rest parts)) key))))
-
 (defn repeated-setting (form key)
   (fail (string "deffactory writes `:" key "` twice")
     form
     (string "keep one `:" key "` setting")))
+
+(defn check-list-value (parts key roles-before?)
+  (if (list-value? parts)
+    (check-list-value-form (nth parts 1)
+                           key parts roles-before?)
+    (do)))
+
+(defn check-list-value-form (form key parts roles-before?)
+  (if (manager-expression? key parts roles-before?)
+    (do)
+    (unknown-list form)))
+
+(defn manager-expression? (key parts roles-before?)
+  (and roles-before?
+       (value-eq key "manager")
+       (empty? (after-key parts))))
+
+(defn list-value? (parts)
+  (and (has-value? parts)
+       (list? (nth parts 1))))
 
 (defn check-list-form (form)
   (if (named? form "roles")
@@ -109,19 +119,18 @@
      (string "deffactory takes only a `roles` form beside its settings, not `"
              (symbol-name (first form))
              "`"))
+    ((string? (first form))
+     (string "deffactory takes only a `roles` form beside its settings, not `"
+             (first form)
+             "`"))
     (else "deffactory takes only a `roles` form beside its settings")))
 
 (defn setting (parts key)
   (cond
     ((empty? parts) (missing-setting parts key))
-    ((setting-key? (first parts) key) (setting-value parts key))
-    ((keyword? (first parts)) (setting (rest (rest parts)) key))
+    ((key-named? (first parts) key) (setting-value parts key))
+    ((keyword? (first parts)) (setting (after-key parts) key))
     (else (setting (rest parts) key))))
-
-(defn setting-key? (part key)
-  (if (keyword? part)
-    (value-eq (keyword-name part) key)
-    false))
 
 (defn setting-value (parts key)
   (cond
