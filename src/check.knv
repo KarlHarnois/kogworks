@@ -1,0 +1,342 @@
+(module
+  "Checks a factory and its generated modules without writing to the repository.")
+
+(use controller/process ->command canonical-path execute
+                        join-path read-text-file successful?
+                        text-file?)
+
+(use synth factory-format-module-text factory-module-text)
+
+(export check-and-exit check-error check-error->message
+        check-factory)
+
+(def project-file (str "project.knv"))
+
+(def module-file (str "src/main.knv"))
+
+(def format-file (str "format.knv"))
+
+(def path-marker (str ":path \""))
+
+(def entry-marker (str ":entry \""))
+
+(def project-root
+  (rust "{{
+    let start = std::path::Path::new({0});
+    let mut found = None;
+    for ancestor in start.ancestors() {{
+      if ancestor.join(\"project.knv\").is_file() {{
+        found = Some(ancestor.to_path_buf());
+        break;
+      }}
+    }}
+    match found {{
+      Some(path) => Ok(path.to_string_lossy().into_owned()),
+      None => Err(format!(\"no project.knv above {{}}\", start.display())),
+    }}
+  }}"
+    (fn ((ref str)) (result string string))))
+
+(def create-temp-dir
+  (rust "{{
+    let base = std::env::temp_dir();
+    let mut candidate = base.join(format!(\"kogworks-check-{{}}\", std::process::id()));
+    let mut suffix = 0;
+    while candidate.exists() {{
+      suffix += 1;
+      candidate = base.join(format!(\"kogworks-check-{{}}-{{}}\", std::process::id(), suffix));
+    }}
+    std::fs::create_dir(&candidate)
+      .map_err(|error| error.to_string())
+      .and_then(|_| {{
+        std::fs::canonicalize(&candidate).map_err(|error| error.to_string())
+      }})
+      .map(|path| path.to_string_lossy().into_owned())
+  }}"
+    (fn () (result string string))))
+
+(def remove-dir
+  (rust "std::fs::remove_dir_all({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
+(def write-text
+  (rust "{{
+    let prepared = match std::path::Path::new({0}).parent() {{
+      Some(parent) => std::fs::create_dir_all(parent).map_err(|error| error.to_string()),
+      None => Ok(()),
+    }};
+    prepared.and_then(|_| std::fs::write({0}, {1}).map_err(|error| error.to_string()))
+  }}"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def join-absolute
+  (rust "std::path::Path::new({0}).join({1}).to_string_lossy().into_owned()"
+    (fn ((ref str) (ref str)) string)))
+
+(def run-eval
+  (rust "{{
+    use std::io::Write;
+    std::process::Command::new(\"knave\")
+      .args([\"eval\", \"--stdin\", \"factory.knv\", \"(do (print (factory-json)) (exit 0))\"])
+      .current_dir({0})
+      .env(\"TMPDIR\", {2})
+      .stdin(std::process::Stdio::piped())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::piped())
+      .spawn()
+      .map_err(|error| error.to_string())
+      .and_then(|mut child| {{
+        let mut input = child
+          .stdin
+          .take()
+          .ok_or_else(|| \"knave did not open standard input\".to_string())?;
+        input
+          .write_all({1}.as_bytes())
+          .map_err(|error| error.to_string())?;
+        drop(input);
+        child.wait_with_output().map_err(|error| error.to_string())
+      }})
+  }}"
+    (fn ((ref str) (ref str) (ref str))
+      (result process-output string))))
+
+(def eval-succeeded?
+  (rust "{0}.status.success()"
+    (fn ((ref process-output)) bool)))
+
+(def eval-output
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def eval-failure
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).trim().to_owned()"
+    (fn ((ref process-output)) string)))
+
+(deftype process-output (rust "std::process::Output"))
+
+(defenum check-error
+  (missing-factory string)
+  (unreadable-factory string string)
+  (missing-project string)
+  (unreadable-project string string)
+  (temp-dir string)
+  (unwritable-file string string)
+  (check-failed string)
+  (lint-failed string)
+  (format-failed string)
+  (factory-eval-failed string string)
+  (missing-factory-json string)
+  (unreadable-factory-json string string)
+  (stale-factory-json string string)
+  (cleanup-failed string string))
+
+(defn check-and-exit (dir)
+  (match (check-factory (str dir))
+    ((ok _) (do))
+    ((err failure)
+     (eprintln (check-error->message failure))
+     (exit 1))))
+
+(defn check-error->message (failure)
+  (match failure
+    ((missing-factory path) (str "no factory at " path))
+    ((unreadable-factory path reason)
+     (str "cannot read " path ": " reason))
+    ((missing-project reason) (str "kogworks check: " reason))
+    ((unreadable-project path reason)
+     (str "cannot read " path ": " reason))
+    ((temp-dir reason)
+     (str "kogworks check: cannot create a temporary directory: "
+          reason))
+    ((unwritable-file path reason)
+     (str "cannot write " path ": " reason))
+    ((check-failed detail)
+     (str "kogworks check: `knave check` failed:\n" detail))
+    ((lint-failed detail)
+     (str "kogworks check: `knave lint` failed:\n" detail))
+    ((format-failed detail)
+     (str "kogworks check: `knave fmt --check` failed:\n" detail))
+    ((factory-eval-failed path reason)
+     (str "cannot evaluate " path ": " reason))
+    ((missing-factory-json path)
+     (str "no factory output at " path))
+    ((unreadable-factory-json path reason)
+     (str "cannot read " path ": " reason))
+    ((stale-factory-json dir path)
+     (str path " is stale; run `kogworks synth " dir "`"))
+    ((cleanup-failed path reason)
+     (str "cannot remove the temporary directory " path ": "
+          reason))))
+
+(defn check-factory (dir)
+  (let-try (factory-text (read-factory dir))
+    (let-try (root (governed-root dir))
+      (match (create-temp-dir)
+        ((ok temporary)
+         (finish-check (check-in dir root factory-text temporary)
+                       temporary))
+        ((err reason) (err (check-error/temp-dir reason)))))))
+
+(defn read-factory (dir)
+  (let (path (join-path (as-str dir) "factory.knv"))
+    (if (text-file? (as-str path))
+      (map-err (read-text-file (as-str path))
+        (fn (reason) (check-error/unreadable-factory path reason)))
+      (err (check-error/missing-factory path)))))
+
+(defn governed-root (dir)
+  (let-try (absolute (map-err (canonical-path (as-str dir))
+                       (fn (reason) (check-error/missing-project reason))))
+    (map-err (project-root (as-str absolute))
+      (fn (reason) (check-error/missing-project reason)))))
+
+(defn check-in (dir root factory-text temporary)
+  (let-try (_ (write-project root temporary)
+            _ (write-modules temporary factory-text)
+            _ (check-module temporary)
+            _ (lint-module temporary)
+            _ (format-module temporary))
+    (verify-factory-json dir factory-text temporary)))
+
+(defn write-project (root temporary)
+  (let-try (text (read-project root))
+    (write-temp-file (join-path (as-str temporary) (as-str project-file))
+                     (rewrite-project root text))))
+
+(defn read-project (root)
+  (let (path (join-path (as-str root) (as-str project-file)))
+    (map-err (read-text-file (as-str path))
+      (fn (reason) (check-error/unreadable-project path reason)))))
+
+(defn write-modules (temporary factory-text)
+  (let-try (_ (write-temp-file (join-path (as-str temporary)
+                                          (as-str module-file))
+                               (factory-module-text (as-str factory-text)))
+            _ (write-temp-file
+                (join-path (as-str temporary) (as-str format-file))
+                (factory-format-module-text (as-str factory-text))))
+    (ok (do))))
+
+(defn write-temp-file (path text)
+  (map-err (write-text (as-str path) (as-str text))
+    (fn (reason) (check-error/unwritable-file path reason))))
+
+(defn rewrite-project (root text)
+  (rewrite-entry (rewrite-paths root text)))
+
+(defn rewrite-paths (root text)
+  (rewrite-marker-values path-marker
+                         (fn (segment) (rewrite-path-segment root segment))
+                         text))
+
+(defn rewrite-path-segment (root segment)
+  (let (parts (collect (split segment "\"")))
+    (if (empty? parts)
+      (str)
+      (str (join-absolute (as-str root)
+                          (deref (at parts 0)))
+           (quote-tail parts 1)))))
+
+(defn rewrite-entry (text)
+  (rewrite-marker-values entry-marker
+                         (fn (segment)
+                           (replace-segment-value module-file segment))
+                         text))
+
+(defn rewrite-marker-values (marker rewriter text)
+  (let (segments (collect (split (as-str text) (as-str marker))))
+    (str (clone (at segments 0))
+         (rewrite-marker-segments marker rewriter segments 1))))
+
+(defn rewrite-marker-segments (marker rewriter segments index)
+  (if (>= index (len segments))
+    (str)
+    (str marker
+         (rewriter (clone (at segments index)))
+         (rewrite-marker-segments marker rewriter segments
+                                  (inc index)))))
+
+(defn replace-segment-value (replacement segment)
+  (let (parts (collect (split segment "\"")))
+    (if (empty? parts)
+      (str)
+      (str replacement (quote-tail parts 1)))))
+
+(defn quote-tail (parts index)
+  (if (>= index (len parts))
+    (str)
+    (str "\""
+         (clone (at parts index))
+         (quote-tail parts (inc index)))))
+
+(defn check-module (temporary)
+  (command-step temporary (vec (str "check") (clone module-file))
+    (fn (detail) (check-error/check-failed detail))))
+
+(defn lint-module (temporary)
+  (command-step temporary (vec (str "lint") (clone module-file))
+    (fn (detail) (check-error/lint-failed detail))))
+
+(defn format-module (temporary)
+  (command-step temporary
+                (vec (str "fmt")
+                     (str "--check")
+                     (clone format-file))
+                (fn (detail) (check-error/format-failed detail))))
+
+(defn command-step (temporary args fail-with)
+  (let (label (str "knave " (join args " "))
+        outcome (execute
+                  (as-str temporary)
+                  (->command :program (str "knave") :args args :label label)))
+    (match (successful? outcome)
+      (true (ok (do)))
+      (false (err (fail-with (str (command-output outcome))))))))
+
+(defn command-output (outcome)
+  (str (trim (as-str (str (:stderr outcome) (:stdout outcome))))))
+
+(defn verify-factory-json (dir factory-text temporary)
+  (let-try (json (eval-factory-json dir factory-text temporary))
+    (compare-factory-json dir json)))
+
+(defn eval-factory-json (dir factory-text temporary)
+  (let (path (join-path (as-str dir) "factory.knv"))
+    (match (run-eval (as-str dir)
+                     (as-str (factory-module-text (as-str factory-text)))
+                     (as-str temporary))
+      ((ok output) (eval-json-outcome path output))
+      ((err reason)
+       (err (check-error/factory-eval-failed path reason))))))
+
+(defn eval-json-outcome (path output)
+  (match (eval-succeeded? output)
+    (true (ok (eval-output output)))
+    (false (err (check-error/factory-eval-failed path (eval-failure output))))))
+
+(defn compare-factory-json (dir json)
+  (let (path (join-path (as-str dir) "factory.json"))
+    (let-try (committed (read-factory-json (clone path)))
+      (if (= (as-str committed) (as-str json))
+        (ok (do))
+        (err (check-error/stale-factory-json (str dir) path))))))
+
+(defn read-factory-json (path)
+  (if (text-file? (as-str path))
+    (map-err (read-text-file (as-str path))
+      (fn (reason)
+        (check-error/unreadable-factory-json path reason)))
+    (err (check-error/missing-factory-json path))))
+
+(defn finish-check (outcome temporary)
+  (let (cleaned (remove-dir (as-str temporary)))
+    (match outcome
+      ((ok _) (require-cleanup cleaned temporary))
+      ((err failure) (err failure)))))
+
+(defn require-cleanup (cleaned temporary)
+  (match cleaned
+    ((ok _) (ok (do)))
+    ((err reason)
+     (err (check-error/cleanup-failed temporary reason)))))

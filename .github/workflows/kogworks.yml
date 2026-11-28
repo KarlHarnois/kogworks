@@ -30,19 +30,7 @@ jobs:
         run: knave lint
       - name: Build
         run: knave build
-      - name: Write the factory module
-        run: ./target/knave/kogworks/kogworks module .kogworks > target/factory-module.knv
-      - name: Lint the factory module
-        run: knave lint target/factory-module.knv
-      - name: Check the factory module
-        run: knave check target/factory-module.knv
-      - name: Write the factory format module
-        run: ./target/knave/kogworks/kogworks format .kogworks > target/factory-format.knv
-      - name: Format the factory module
-        run: knave fmt --check target/factory-format.knv
+      - name: Check the factory
+        run: ./target/knave/kogworks/kogworks check .kogworks
       - name: Test
         run: knave test
-      - name: Synthesize the factory
-        run: ./target/knave/kogworks/kogworks synth .kogworks
-      - name: Diff the synthesized factory
-        run: git diff --exit-code .kogworks/factory.json
