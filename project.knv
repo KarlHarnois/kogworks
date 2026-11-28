@@ -7,4 +7,4 @@
                       :rev "811d6dc4558cfdabd10d895e26d3087df1ad03e5")
     (ledelint :git "https://github.com/KarlHarnois/ledelint"
               :rev "67d735e0d9c632fc04508b53d4c42dcd1102e95b"))
-  (dev-dependencies (unicode-width "0.2.3")))
+  (dependencies (unicode-width "0.2.3")))
