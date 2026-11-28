@@ -595,9 +595,7 @@
     string))
 
 (defn styled (settings style text)
-  (match (:colors settings)
-    (no-color (str text))
-    (_ (colored-span (style-open (:colors settings) style) text))))
+  (colored-span (style-open (:colors settings) style) text))
 
 (defn sub-line-style (line)
   (match line
