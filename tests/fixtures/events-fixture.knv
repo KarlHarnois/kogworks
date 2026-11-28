@@ -57,7 +57,7 @@
        "{\"id\":2,\"type\":\"review-started\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0003\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
        "{\"id\":3,\"type\":\"head-recorded\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"head_sha\":{\"old\":\"abcdef0\",\"new\":\"1234567\"}}}}\n"
        "{\"id\":4,\"type\":\"review-started\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"session\":{\"old\":null,\"new\":\"review-rm-0003-2\"},\"session_kind\":{\"old\":null,\"new\":\"review\"}}}}\n"
-       "{\"id\":5,\"type\":\"session-ended\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"session\":\"review-rm-0003-2\",\"session_kind\":\"review\",\"payload\":{\"changes\":{\"end_reason\":{\"old\":null,\"new\":\"abandoned\"}}}}\n"))
+       "{\"id\":5,\"type\":\"session-ended\",\"item_id\":\"rm-0003\",\"roadmap_id\":\"rm-fake\",\"payload\":{\"changes\":{\"end_reason\":{\"old\":null,\"new\":\"abandoned\"},\"ended_at\":{\"old\":null,\"new\":\"2026-11-26T09:22:56.586Z\"}},\"session\":\"review-rm-0003-2\",\"session_kind\":\"review\"}}\n"))
 
 (def head-abandon-expected
   (vec (str "rm-0003  build ▸ review ○ merge ○  building     Build the thing")

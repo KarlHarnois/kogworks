@@ -207,14 +207,15 @@
 (defn session-ended-change (id roadmap record changes index)
   (let-try (item (item-field record index)
             reason (change-new changes "end_reason" index)
-            kind (text-field record "session_kind" index))
-    (ended-review-session id roadmap item reason kind record
-                          index)))
+            payload (object-field record "payload" index)
+            kind (text-field payload "session_kind" index))
+    (ended-review-session id roadmap item reason kind
+                          payload index)))
 
-(defn ended-review-session (id roadmap item reason kind record index)
+(defn ended-review-session (id roadmap item reason kind payload index)
   (if (and (= (as-str kind) (str "review"))
            (= (as-str reason) (str "abandoned")))
-    (let-try (session (text-field record "session" index))
+    (let-try (session (text-field payload "session" index))
       (ok (changed-event id roadmap
                          (lifecycle-change/abandoned item session))))
     (ok (unchanged-event id))))
