@@ -3,10 +3,24 @@
 
 (use controller/failure brief-role controller-error)
 (use controller/process read-text-file)
+(use controller/rules item-kind)
 
 (export ->brief ->reviewer-values ->worker-values brief
         fill-brief reviewer-brief reviewer-values
         worker-brief worker-values)
+
+(defenum section-state
+  keeping
+  skipping)
+
+(defenum line-marker
+  (content string)
+  (begin worker-section)
+  (end worker-section))
+
+(defenum worker-section
+  build
+  report)
 
 (defstruct worker-values
   :item string
@@ -14,7 +28,8 @@
   :session string
   :branch string
   :base string
-  :skill string)
+  :skill string
+  :kind item-kind)
 
 (defstruct reviewer-values
   :item string
@@ -30,6 +45,7 @@
 (defstruct brief
   :item string
   :role brief-role
+  :section (option worker-section)
   :placeholders (vec placeholder))
 
 (defstruct placeholder
@@ -42,6 +58,7 @@
 (defn worker-brief (values)
   (->brief :item (clone (:item values))
            :role brief-role/worker
+           :section (some (section-of (:kind values)))
            :placeholders (worker-placeholders values)))
 
 (type reviewer-brief
@@ -50,6 +67,7 @@
 (defn reviewer-brief (values)
   (->brief :item (clone (:item values))
            :role brief-role/reviewer
+           :section none
            :placeholders (reviewer-placeholders values)))
 
 (defn fill-brief (path values)
@@ -57,9 +75,72 @@
     ((err reason)
      (err (controller-error/unreadable-brief (str path) reason)))
     ((ok text)
-     (filled-brief (fill (as-str text) (:placeholders values))
+     (filled-brief (fill (as-str (select-section (as-str text)
+                                                 (:section values)))
+                         (:placeholders values))
                    (:item values)
                    (:role values)))))
+
+(defn section-of (kind)
+  (match kind
+    (item-kind/build worker-section/build)
+    (_ worker-section/report)))
+
+(defn select-section (text section)
+  (match section
+    (none (str text))
+    ((some kind)
+     (str (section-lines (collect (map (lines text) str))
+                         kind 0 section-state/keeping
+                         (vec))
+          "\n"))))
+
+(defn section-lines (lines kind index state kept)
+  (if (>= index (len lines))
+    (join kept "\n")
+    (next-section-line lines kind index state kept
+                       (line-marker-of (str (at lines index))))))
+
+(defn next-section-line (lines kind index state kept marker)
+  (match marker
+    ((content text)
+     (with-section-line lines kind index state kept text))
+    ((begin block)
+     (section-lines lines kind
+                    (inc index)
+                    (state-for block kind)
+                    kept))
+    ((end _)
+     (section-lines lines kind
+                    (inc index)
+                    section-state/keeping kept))))
+
+(defn with-section-line (lines kind index state kept text)
+  (section-lines lines kind
+                 (inc index)
+                 state
+                 (append-when-kept kept state text)))
+
+(defn append-when-kept (kept state text)
+  (match state
+    (keeping (appended kept (clone text)))
+    (skipping kept)))
+
+(defn appended (kept text)
+  (do (push! kept text) kept))
+
+(defn state-for (block kind)
+  (if (= block kind)
+    section-state/keeping section-state/skipping))
+
+(defn line-marker-of (line)
+  (match (trim (as-str line))
+    ("<!-- build -->" (line-marker/begin worker-section/build))
+    ("<!-- /build -->" (line-marker/end worker-section/build))
+    ("<!-- report -->"
+     (line-marker/begin worker-section/report))
+    ("<!-- /report -->" (line-marker/end worker-section/report))
+    (_ (line-marker/content (clone line)))))
 
 (type worker-placeholders
   (fn ((ref worker-values))

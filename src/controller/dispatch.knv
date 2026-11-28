@@ -52,7 +52,8 @@
                                   :session (clone session)
                                   :branch (clone branch)
                                   :base (clone base)
-                                  :skill (clone (:skill (:worker config)))))
+                                  :skill (clone (:skill (:worker config)))
+                                  :kind (clone (:kind item))))
       (fill-brief (as-str path) (worker-brief values)))))
 
 (defn claim-and-start (repo config item session branch prompt)
