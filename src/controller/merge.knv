@@ -17,8 +17,11 @@
                                send-command show-command
                                update-branch-command)
 
-(use controller/merge-poll disarm-and-stop item-fixing-error
-                           poll-merge read-poll-state)
+(use controller/merge-poll auto-merge-state close-item
+                           disarm-and-stop head-change-error
+                           item-fixing-error poll-merge
+                           read-poll-state
+                           read-resume-state)
 
 (use controller/merge-retry execute-github)
 
@@ -37,6 +40,12 @@
 
 (def clean-status-message
   (str "Pull request is in clean status"))
+
+(defenum resume-verdict
+  merged
+  moved
+  polling
+  arming)
 
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
@@ -57,10 +66,45 @@
                                    (not-approved-error item target)))))
 
 (defn prepare-merge (repo config settings item target)
+  (match (:item-status target)
+    (merging (resume-merge repo config settings item target))
+    (_ (first-merge repo config settings item target))))
+
+(defn first-merge (repo config settings item target)
   (match (preflight repo settings item)
     ((err failure) (err failure))
     ((ok _)
      (advance-and-enable repo config settings item target))))
+
+(defn resume-merge (repo config settings item target)
+  (match (read-resume-state repo settings item target)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok state)
+     (resume-from-state repo config settings item target state))))
+
+(defn resume-from-state (repo config settings item target state)
+  (match (resume-verdict-of target state)
+    (merged (close-item repo item))
+    (moved (disarm-and-stop repo settings item target
+                            (head-change-error item target state)))
+    (polling (poll-merge repo item target settings))
+    (arming (enable-auto-merge repo config settings item target))))
+
+(defn resume-verdict-of (target state)
+  (if (= (:head state) (:head target))
+    (resume-state-verdict (:state state) (:auto-merge state))
+    resume-verdict/moved))
+
+(defn resume-state-verdict (state auto-merge)
+  (if (= (as-str state) (str "MERGED"))
+    resume-verdict/merged
+    (auto-merge-verdict auto-merge)))
+
+(defn auto-merge-verdict (state)
+  (match state
+    (armed resume-verdict/polling)
+    (not-armed resume-verdict/arming)))
 
 (defn preflight (repo settings item)
   (match (repo-slug repo settings item)
