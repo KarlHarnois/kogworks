@@ -4,6 +4,9 @@
 
 (defcommand synth "Writes <dir>/factory.json." (dir string))
 
+(defcommand check "Checks <dir>/factory.knv without writing <dir>/factory.json."
+  (dir string))
+
 (defcommand module "Writes the module." (dir string))
 
 (defcommand format "Writes the shape module." (dir string))
@@ -34,4 +37,4 @@
          :about "The governed repository"))
 
 (defcli kogworks "Factory."
-  (commands synth module format controller apply))
+  (commands synth check module format controller apply))

@@ -1,5 +1,6 @@
 (use knave-commandant run-command)
 (use apply apply-and-exit)
+(use check check-and-exit)
 (use controller/controller controller-and-exit)
 (use cli kogworks-command kogworks-spec matches->kogworks)
 
@@ -10,6 +11,8 @@
   (match (:command (run-command kogworks))
     ((kogworks-command/synth options)
      (synth-and-exit (:dir options)))
+    ((kogworks-command/check options)
+     (check-and-exit (:dir options)))
     ((kogworks-command/module options)
      (module-and-exit (:dir options)))
     ((kogworks-command/format options)
