@@ -6,10 +6,11 @@
 (use fixtures/fake-factory fake-factory)
 
 (export ->fake-settings absolute-path default-settings
-        exit-code fake-settings make-dir prepare-repo
-        read-text reset-dir run-controller
+        exit-code fake-settings make-dir
+        max-active-call-count max-active-command
+        prepare-repo read-text reset-dir run-controller
         run-controller-colored stderr-text stdout-text
-        write-fakes write-text)
+        stored-max-active write-fakes write-text)
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -70,8 +71,15 @@
   (str
     "#!/bin/sh\n"
     "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-    "printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\"\n"
-    "case \"$1\" in\n" "  next)\n"
+    "if [ \"$1 $2\" != \"roadmap set\" ]; then\n"
+    "  printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\"\n"
+    "fi\n" "case \"$1\" in\n" "  roadmap)\n"
+    "    printf 'rmap %s\\n' \"$*\" >> \"$root/max-active-commands\"\n"
+    "    if [ [MAX_ACTIVE_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[MAX_ACTIVE_ERROR]' >&2\n"
+    "      exit [MAX_ACTIVE_EXIT]\n" "    fi\n"
+    "    printf '%s' \"$5\" > \"$root/stored-max-active\"\n"
+    "    ;;\n" "  next)\n"
     "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
     "      kill -s [NEXT_SIGNAL] \"$PPID\"\n" "    fi\n"
     "    count=0\n"
@@ -355,7 +363,9 @@
   :view-error string
   :view-signal string
   :view-json string
-  :later-view-json string)
+  :later-view-json string
+  :max-active-exit int
+  :max-active-error string)
 
 (deftype process-output (rust "std::process::Output"))
 
@@ -412,7 +422,9 @@
                    :view-error (str)
                    :view-signal (str)
                    :view-json (str "{}")
-                   :later-view-json (str "{}")))
+                   :later-view-json (str "{}")
+                   :max-active-exit 0
+                   :max-active-error (str)))
 
 (defn prepare-repo (root)
   (let-try (_ (reset-dir root)
@@ -435,6 +447,24 @@
                             (replaced-script git-script settings)))
     (write-script (str root "/bin/gh")
                   (replaced-script gh-script settings))))
+
+(defn max-active-command (root)
+  (match (read-option (as-str (str root "/max-active-commands")))
+    ((some text) (some (str (trim (as-str text)))))
+    (none none)))
+
+(defn max-active-call-count (root)
+  (match (read-option (as-str (str root "/max-active-commands")))
+    ((some text) (len (collect (lines (as-str text)))))
+    (none 0)))
+
+(defn stored-max-active (root)
+  (read-option (as-str (str root "/stored-max-active"))))
+
+(defn read-option (path)
+  (match (read-text path)
+    ((ok text) (some text))
+    ((err _) none)))
 
 (defn replaced-script (script settings)
   (-> script
@@ -529,7 +559,11 @@
       (replace-token (str "[ALLOW_AUTO_MERGE]")
                      (:allow-auto-merge settings))
       (replace-token (str "[REQUIRED_CHECKS]")
-                     (:required-checks settings))))
+                     (:required-checks settings))
+      (replace-token (str "[MAX_ACTIVE_EXIT]")
+                     (str (:max-active-exit settings)))
+      (replace-token (str "[MAX_ACTIVE_ERROR]")
+                     (clone (:max-active-error settings)))))
 
 (defn replace-token (text token value)
   (-> text as-str

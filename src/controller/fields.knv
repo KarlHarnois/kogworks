@@ -12,6 +12,7 @@
   (non-text-field string)
   (non-object-field string)
   (non-number-field string)
+  (non-whole-number-field string (parse-error int))
   (non-boolean-field string))
 
 (defn field-error->message (failure)
@@ -21,6 +22,8 @@
     ((non-object-field path)
      (str "`" path "` is not an object"))
     ((non-number-field path) (str "`" path "` is not a number"))
+    ((non-whole-number-field path cause)
+     (str "`" path "` is not a whole number: " cause))
     ((non-boolean-field path)
      (str "`" path "` is not a boolean"))))
 

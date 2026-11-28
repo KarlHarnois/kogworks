@@ -1,26 +1,17 @@
 (module
   "Applies the factory's max active to the governed repository's roadmap.")
 
-(use controller/factory read-factory-document)
+(use controller/cap read-cap roadmap-cap set-command)
 
 (use controller/failure factory-error
                         factory-error->message)
 
-(use controller/fields required-number required-text)
+(use controller/process canonical-path execute)
 
-(use controller/process ->command canonical-path command
-                        execute)
-
-(export apply-and-exit apply-error apply-error->message
-        cap-from-document roadmap-cap)
-
-(defstruct roadmap-cap
-  :roadmap string
-  :max-active int)
+(export apply-and-exit apply-error apply-error->message)
 
 (defenum apply-error
   (factory factory-error)
-  (invalid-max-active string (parse-error int))
   (unreadable-repo string string))
 
 (defstruct apply-target
@@ -37,19 +28,8 @@
 (defn apply-error->message (failure)
   (match failure
     ((factory cause) (factory-error->message cause))
-    ((invalid-max-active path cause)
-     (str "the factory field `" path
-          "` is not a whole number: " cause))
     ((unreadable-repo path reason)
      (str "cannot resolve the repository " path ": " reason))))
-
-(defn cap-from-document (document)
-  (let-try (roadmap (factory-field (required-text document "roadmap" "roadmap"))
-            max-active-text (factory-field (required-number document
-                                                            "max_active"
-                                                            "max_active"))
-            max-active (whole-number max-active-text "max_active"))
-    (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
 
 (defn read-target (repo)
   (let-try (dir (absolute-repo repo)
@@ -61,29 +41,6 @@
     (fn (reason)
       (apply-error/unreadable-repo (str repo) reason))))
 
-(defn read-cap (repo)
-  (let-try (document (factory-document repo))
-    (cap-from-document document)))
-
-(defn factory-document (repo)
-  (map-err (read-factory-document repo)
-    (fn (failure) (apply-error/factory failure))))
-
-(defn factory-field (found)
-  (map-err found
-    (fn (failure)
-      (apply-error/factory (factory-error/field failure)))))
-
-(type whole-number
-  (fn ((ref string) (ref str))
-    (result int apply-error)))
-
-(defn whole-number (text path)
-  (match (parse (as-str text))
-    ((ok value) (ok value))
-    ((err cause)
-     (err (apply-error/invalid-max-active (str path) cause)))))
-
 (type apply-cap
   (fn ((ref apply-target)) unit))
 
@@ -93,21 +50,6 @@
     (print (as-str (:stdout outcome)))
     (eprint (as-str (:stderr outcome)))
     (exit (exit-code (:code outcome)))))
-
-(type set-command
-  (fn ((ref roadmap-cap)) command))
-
-(defn set-command (cap)
-  (->command :program (str "rmap")
-             :args (vec (str "roadmap")
-                        (str "set")
-                        (clone (:roadmap cap))
-                        (str "--max-active")
-                        (str (:max-active cap)))
-             :label (str "rmap roadmap set "
-                         (:roadmap cap)
-                         " --max-active "
-                         (:max-active cap))))
 
 (defn exit-code (code)
   (if (< code 0)

@@ -1,0 +1,156 @@
+(use apply-fixture export-document prepare-real-repo
+                   rmap-path roadmap-max-active)
+
+(use fixtures/controller-fixture default-settings exit-code
+                                 max-active-call-count
+                                 max-active-command
+                                 prepare-repo read-text
+                                 run-controller stderr-text
+                                 stored-max-active
+                                 write-fakes write-text)
+
+(def wait-next
+  (str "{\"next\":[{\"item\":\"rm-0001\",\"actions\":["
+       "{\"action\":\"wait\",\"actor\":\"controller\"}]}]}"))
+
+(def no-ready (str "{\"ready\":[]}"))
+
+(def real-factory
+  (str "{\"schema\":0,\"name\":\"cap\",\"manager\":\"fake-manager\","
+       "\"roadmap\":\"real-roadmap\",\"max_active\":3,"
+       "\"merge\":\"gh-auto\",\"roles\":{"
+       "\"worker\":{\"agent\":\"fake-agent\",\"skill\":\"fake-skill\","
+       "\"brief\":\".kogworks/briefs/worker.md\"},"
+       "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
+       "\"skill\":\"fake-reviewer-skill\","
+       "\"brief\":\".kogworks/briefs/reviewer.md\"}}}"))
+
+(defn factory-with (max-active-text)
+  (str "{\"schema\":0,\"name\":\"cap\",\"manager\":\"fake-manager\","
+       "\"roadmap\":\"fake-roadmap\",\"max_active\":"
+       max-active-text ","
+       "\"merge\":\"gh-auto\",\"roles\":{"
+       "\"worker\":{\"agent\":\"fake-agent\",\"skill\":\"fake-skill\","
+       "\"brief\":\".kogworks/briefs/worker.md\"},"
+       "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
+       "\"skill\":\"fake-reviewer-skill\","
+       "\"brief\":\".kogworks/briefs/reviewer.md\"}}}"))
+
+(defn setup (name settings)
+  (let (root (str "target/knave/controller-tests/" name))
+    (match (prepare-repo (as-str root))
+      ((err reason) (err reason))
+      ((ok _)
+       (match (write-fakes (as-str root) settings)
+         ((err reason) (err reason))
+         ((ok _) (ok root)))))))
+
+(defn run (root args)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str (str root "/repo"))
+                  args))
+
+(defn write-factory (root text)
+  (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+              (as-str text)))
+
+(defn sequence-text (root)
+  (match (read-text (as-str (str root "/sequence")))
+    ((ok text) text)
+    ((err _) (str))))
+
+(deftest sets-the-cap-once-before-the-first-pass
+  (let (root (unwrap-ok (setup "cap-once"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone no-ready))
+                                      :stop-after 3))))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (max-active-command (as-str root))
+                 (some (str "rmap roadmap set fake-roadmap --max-active 1"))))
+      (assert (= (stored-max-active (as-str root))
+                 (some (str "1"))))
+      (assert (= (max-active-call-count (as-str root)) 1))
+      (assert (starts-with? (sequence-text (as-str root))
+                            "rmap next --roadmap fake-roadmap --json")))))
+
+(deftest rejects-a-fractional-max-active
+  (let (root (unwrap-ok (setup "cap-fractional"
+                               (default-settings (clone wait-next)
+                                                 (clone no-ready)))))
+    (unwrap-ok (write-factory (as-str root)
+                              (factory-with (str "1.5"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "max_active"))
+      (assert (contains? (stderr-text output) "not a whole number"))
+      (assert (= (max-active-call-count (as-str root)) 0))
+      (assert (not (contains? (sequence-text (as-str root)) "rmap next")))
+      (assert (not (contains? (sequence-text (as-str root))
+                              "ringleader new"))))))
+
+(deftest rejects-a-text-max-active
+  (let (root (unwrap-ok (setup "cap-text"
+                               (default-settings (clone wait-next)
+                                                 (clone no-ready)))))
+    (unwrap-ok (write-factory (as-str root)
+                              (factory-with (str "\"3\""))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "max_active"))
+      (assert (contains? (stderr-text output) "not a number"))
+      (assert (= (max-active-call-count (as-str root)) 0)))))
+
+(deftest rejects-a-missing-max-active
+  (let (root (unwrap-ok (setup "cap-missing"
+                               (default-settings (clone wait-next)
+                                                 (clone no-ready)))))
+    (unwrap-ok (write-factory (as-str root)
+                              (str "{\"schema\":0,\"name\":\"cap\","
+                                   "\"manager\":\"fake-manager\","
+                                   "\"roadmap\":\"fake-roadmap\","
+                                   "\"merge\":\"gh-auto\",\"roles\":{"
+                                   "\"worker\":{\"agent\":\"fake-agent\","
+                                   "\"skill\":\"fake-skill\","
+                                   "\"brief\":\".kogworks/briefs/worker.md\"},"
+                                   "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
+                                   "\"skill\":\"fake-reviewer-skill\","
+                                   "\"brief\":\".kogworks/briefs/reviewer.md\"}}}")))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "max_active"))
+      (assert (contains? (stderr-text output) "is missing"))
+      (assert (= (max-active-call-count (as-str root)) 0)))))
+
+(deftest stops-when-the-cap-set-fails
+  (let (root (unwrap-ok (setup "cap-set-fails"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone no-ready))
+                                      :max-active-exit 5
+                                      :max-active-error (str "capacity must be at least 1")))))
+    (unwrap-ok (write-factory (as-str root)
+                              (factory-with (str "3"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "rmap roadmap set failed"))
+      (assert (contains? (stderr-text output) "exit 5"))
+      (assert (contains? (stderr-text output)
+                         "rmap roadmap set fake-roadmap --max-active 3"))
+      (assert (= (max-active-call-count (as-str root)) 1))
+      (assert (= (stored-max-active (as-str root)) none))
+      (assert (not (contains? (sequence-text (as-str root)) "rmap next"))))))
+
+(deftest stores-the-cap-in-a-real-scratch-ledger
+  (match (rmap-path)
+    (none (println "rmap is not on PATH; skipping the real ledger check"))
+    ((some _)
+     (let (root (str "target/knave/controller-tests/cap-real"))
+       (unwrap-ok (prepare-real-repo (as-str root)
+                                     (as-str real-factory)
+                                     "real-roadmap"))
+       (let (output (unwrap-ok (run root (vec (str "--once")))))
+         (assert (= (exit-code output) 0))
+         (let (document (unwrap-ok (export-document (as-str root))))
+           (assert (= (roadmap-max-active document "real-roadmap")
+                      (some (str "3"))))))))))
