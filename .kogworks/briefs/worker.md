@@ -16,6 +16,40 @@
 5. Invoke the `writing-knave` skill.
 6. Read `AGENTS.md` and `.agents/skills/writing-knave/SKILL.md`.
 
+## Rulings
+
+**Record a ruling when you make a choice that the item does not settle and that shows outside the pull request.** Such a choice covers these.
+
+- What a flag or a setting means.
+- A file format.
+- A message or an exit code that someone may depend on.
+- A departure from the item's text.
+
+**NEVER record a ruling for a name, for the structure of the code or for style.**
+
+**Read the existing rulings and accepted decisions before you make such a choice.** Run:
+
+```sh
+rmap ruling list --item {{item}}
+rmap settled --roadmap {{roadmap}}
+```
+
+**Follow a ruling or an accepted decision that already answers the question.**
+
+**Record the ruling with one sentence for the question, one for the choice and one for the reason.** Run:
+
+```sh
+rmap ruling add --item {{item}} --question '<one sentence>' --choice '<one sentence>' --reason '<one sentence>'
+```
+
+**Record a choice in this list as a question report, not a ruling.**
+
+- A choice that is hard to undo.
+- A choice that changes a stated rule, the spec or an accepted decision.
+- A choice that changes what another item will build.
+
+**Record the question report as the Limits section says, then stop.**
+
 ## Work
 
 **Work only on item `{{item}}`.** Make one logical change per commit.
