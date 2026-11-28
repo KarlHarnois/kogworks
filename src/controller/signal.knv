@@ -1,0 +1,74 @@
+(module
+  "Turns SIGINT and SIGTERM into a stop signal that a merge wait can act on.")
+
+(export install-stop-handlers read-stop-signal
+        restore-stop-handlers stop-signal stop-signal->text)
+
+(def signal-control
+  (rust "{{
+    #[cfg(unix)]
+    fn control(command: i64) -> i64 {{
+      use std::sync::atomic::{{AtomicI32, Ordering}};
+      static SIGNAL: AtomicI32 = AtomicI32::new(0);
+      extern \"C\" fn remember(signal: i32) {{
+        SIGNAL.store(signal, Ordering::SeqCst);
+      }}
+      unsafe extern \"C\" {{
+        fn signal(signum: i32, handler: usize) -> usize;
+      }}
+      const SIGINT: i32 = 2;
+      const SIGTERM: i32 = 15;
+      const SIG_DFL: usize = 0;
+      match command {{
+        0 => {{
+          SIGNAL.store(0, Ordering::SeqCst);
+          unsafe {{
+            signal(SIGINT, remember as usize);
+            signal(SIGTERM, remember as usize);
+          }}
+          0
+        }}
+        1 => {{
+          unsafe {{
+            signal(SIGINT, SIG_DFL);
+            signal(SIGTERM, SIG_DFL);
+          }}
+          0
+        }}
+        _ => i64::from(SIGNAL.load(Ordering::SeqCst)),
+      }}
+    }}
+    #[cfg(not(unix))]
+    fn control(_command: i64) -> i64 {{
+      0
+    }}
+    control({0})
+  }}"
+    (fn (int) int)))
+
+(defenum stop-signal
+  sigint
+  sigterm)
+
+(defn install-stop-handlers ()
+  (do (control-stop-signal 0) (do)))
+
+(defn read-stop-signal ()
+  (stop-signal-of (control-stop-signal 2)))
+
+(defn restore-stop-handlers ()
+  (do (control-stop-signal 1) (do)))
+
+(defn stop-signal->text (signal)
+  (match signal
+    (sigint (str "SIGINT"))
+    (sigterm (str "SIGTERM"))))
+
+(defn control-stop-signal (command)
+  (signal-control command))
+
+(defn stop-signal-of (number)
+  (cond
+    ((= number 2) (some stop-signal/sigint))
+    ((= number 15) (some stop-signal/sigterm))
+    (else none)))

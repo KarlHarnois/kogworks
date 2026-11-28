@@ -2,11 +2,13 @@
   "Names the failures the controller reports to its manager.")
 
 (use controller/fields field-error field-error->message)
+(use controller/signal stop-signal stop-signal->text)
 
-(export ->action-failure ->failure-report action-failure
-        controller-error error->message factory-error
+(export ->action-failure ->failure-report
+        ->signal-stop-report action-failure controller-error
+        disarm-status error->message factory-error
         factory-error->message failure-report merge-error
-        merge-error->message)
+        merge-error->message signal-stop-report)
 
 (defstruct failure-report
   :manager (option string)
@@ -17,9 +19,20 @@
   (out-of-scope action-failure)
   (factory-failed factory-error)
   (merge-failed merge-error)
+  (signal-stop signal-stop-report)
   (unreadable-brief string string)
   (unreadable-repo string string)
   (placeholder-left string string))
+
+(defstruct signal-stop-report
+  :item string
+  :pull-request-number string
+  :signal stop-signal
+  :disarm disarm-status)
+
+(defenum disarm-status
+  disarmed
+  (not-disarmed int string))
 
 (defenum factory-error
   (missing-factory string)
@@ -58,6 +71,7 @@
     ((factory-failed cause)
      (str "controller: " (factory-error->message cause)))
     ((merge-failed cause) (merge-error->message cause))
+    ((signal-stop report) (signal-stop->message report))
     ((unreadable-brief path reason)
      (str "controller: cannot read the brief " path ": " reason))
     ((unreadable-repo path reason)
@@ -97,6 +111,30 @@
     ((timed-out item pull-request seconds)
      (str "merge: " item ": PR " pull-request
           " did not merge within " seconds " seconds"))))
+
+(defn signal-stop->message (report)
+  (str "merge: "
+       (:item report)
+       ": PR "
+       (:pull-request-number report)
+       " stopped on "
+       (stop-signal->text (:signal report))
+       "; auto-merge "
+       (disarm-status->text (:pull-request-number report)
+                            (:disarm report))))
+
+(defn disarm-status->text (pull-request status)
+  (match status
+    (disarmed (str "is disarmed"))
+    ((not-disarmed code detail)
+     (str "is not disarmed: `gh pr merge " pull-request
+          " --disable-auto` exited " code
+          (detail-suffix detail)))))
+
+(defn detail-suffix (detail)
+  (if (empty? detail)
+    (str)
+    (str ": " detail)))
 
 (defn command-failure->message (failure)
   (let (detail (:detail failure))

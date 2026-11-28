@@ -70,7 +70,10 @@
     "#!/bin/sh\n"
     "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
     "printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\"\n"
-    "case \"$1\" in\n" "  next)\n" "    count=0\n"
+    "case \"$1\" in\n" "  next)\n"
+    "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
+    "      kill -s [NEXT_SIGNAL] \"$PPID\"\n" "    fi\n"
+    "    count=0\n"
     "    if [ -f \"$root/counter\" ]; then count=$(cat \"$root/counter\"); fi\n"
     "    count=$((count + 1))\n"
     "    printf '%s' \"$count\" > \"$root/counter\"\n"
@@ -210,6 +213,8 @@
     "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
     "        ;;\n" "    esac\n" "    ;;\n"
     "  \"pr view\")\n"
+    "    if [ -n \"[VIEW_SIGNAL]\" ]; then\n"
+    "      kill -s [VIEW_SIGNAL] \"$PPID\"\n" "    fi\n"
     "    if [ [VIEW_EXIT] -ne 0 ]; then\n"
     "      printf '%s\\n' '[VIEW_ERROR]' >&2\n"
     "      exit [VIEW_EXIT]\n" "    fi\n"
@@ -259,6 +264,7 @@
 
 (defstruct fake-settings
   :next-json string
+  :next-signal string
   :ready-json string
   :item-json string
   :item-later-json string
@@ -304,6 +310,7 @@
   :required-checks string
   :view-exit int
   :view-error string
+  :view-signal string
   :view-json string
   :later-view-json string)
 
@@ -311,6 +318,7 @@
 
 (defn default-settings (next-json ready-json)
   (->fake-settings :next-json next-json
+                   :next-signal (str)
                    :ready-json ready-json
                    :item-json (str "{}")
                    :item-later-json (str)
@@ -356,6 +364,7 @@
                    :required-checks (str "1")
                    :view-exit 0
                    :view-error (str)
+                   :view-signal (str)
                    :view-json (str "{}")
                    :later-view-json (str "{}")))
 
@@ -383,6 +392,8 @@
 
 (defn replaced-script (script settings)
   (-> script
+      (replace-token (str "[NEXT_SIGNAL]")
+                     (clone (:next-signal settings)))
       (replace-token (str "[STOP_AFTER]")
                      (str (:stop-after settings)))
       (replace-token (str "[CLAIM_EXIT]")
@@ -438,6 +449,8 @@
                      (str (:view-exit settings)))
       (replace-token (str "[VIEW_ERROR]")
                      (clone (:view-error settings)))
+      (replace-token (str "[VIEW_SIGNAL]")
+                     (clone (:view-signal settings)))
       (replace-token (str "[VIEW_NETWORK_FAILURES]")
                      (str (:view-network-failures settings)))
       (replace-token (str "[UPDATE_BRANCH_EXIT]")

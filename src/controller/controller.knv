@@ -275,10 +275,20 @@
 
 (defn fail-stop (repo report)
   (let (message (error->message (:error report)))
-    (match (:manager report)
-      ((some manager)
-       (let (_outcome (execute repo (send-command manager message)))
-         (do)))
-      (none (do)))
+    (if (manager-message? (:error report))
+      (send-to-manager repo (:manager report) message)
+      (do))
     (eprintln message)
     (exit 1)))
+
+(defn manager-message? (failure)
+  (match failure
+    ((signal-stop _) false)
+    (_ true)))
+
+(defn send-to-manager (repo manager message)
+  (match manager
+    ((some name)
+     (let (_outcome (execute repo (send-command name message)))
+       (do)))
+    (none (do))))

@@ -175,6 +175,10 @@
 (defn disarm-line ()
   (str "gh pr merge " merge-pr " --disable-auto\n"))
 
+(defn signal-stop-line (signal disarm)
+  (str "merge: " merge-item ": PR " merge-pr " stopped on "
+       signal "; auto-merge " disarm "\n"))
+
 (defn close-line ()
   (str "rmap item close " merge-item "\n"))
 
@@ -883,3 +887,97 @@
                         approved-head))))
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (not (contains? (sequence-text root) "item close"))))))
+
+(deftest disarms-on-sigint-during-the-merge-wait
+  (let (root (unwrap-ok (setup "merge-signal-int"
+                               (assoc (merge-settings)
+                                      :view-signal (str "INT")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (poll-preface)
+                      (view-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest disarms-on-sigterm-during-the-merge-wait
+  (let (root (unwrap-ok (setup "merge-signal-term"
+                               (assoc (merge-settings)
+                                      :view-signal (str "TERM")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (poll-preface)
+                      (view-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGTERM") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest keeps-the-disarmed-status-when-a-signal-finds-auto-merge-off
+  (let (root (unwrap-ok (setup "merge-signal-already-disarmed"
+                               (assoc (merge-settings)
+                                      :view-signal (str "INT")
+                                      :disarm-exit 1
+                                      :disarm-error (clone already-disarmed-error)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (poll-preface)
+                      (view-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest reports-a-refused-signal-disarm-and-still-exits
+  (let (root (unwrap-ok (setup "merge-signal-disarm-refused"
+                               (assoc (merge-settings)
+                                      :view-signal (str "INT")
+                                      :disarm-exit 9
+                                      :disarm-error (str "cannot disarm")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (poll-preface)
+                      (view-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT")
+                                   (str "is not disarmed: `gh pr merge "
+                                        merge-pr
+                                        " --disable-auto` exited 9: cannot disarm"))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest exits-on-a-signal-outside-the-merge-wait
+  (let (root (unwrap-ok (setup "merge-signal-outside"
+                               (assoc (merge-settings)
+                                      :next-signal (str "INT")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) -1))
+      (assert (contains? (sequence-text root)
+                         (as-str (next-line))))
+      (assert (not (contains? (sequence-text root) "pr merge")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest reports-the-signal-when-the-view-also-fails
+  (let (root (unwrap-ok (setup "merge-signal-view-failure"
+                               (assoc (merge-settings)
+                                      :view-signal (str "INT")
+                                      :view-exit 9
+                                      :view-error (str "interrupted")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (poll-preface)
+                      (view-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
