@@ -1,6 +1,5 @@
-(use apply apply-error apply-error->message
-           cap-from-document)
-
+(use apply apply-error apply-error->message)
+(use controller/cap cap-from-document)
 (use controller/failure factory-error)
 (use controller/fields field-error)
 (use controller/json parse-json)
@@ -31,35 +30,35 @@
 (deftest cap-from-document-rejects-a-fractional-max-active
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": 3.5}")))))
     (match (cap-from-document document)
-      ((err (invalid-max-active path _))
+      ((err (field (non-whole-number-field path _)))
        (assert (= path (str "max_active"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-missing-roadmap
   (let (document (unwrap-ok (parse-json (as-str (str "{\"max_active\": 3}")))))
     (match (cap-from-document document)
-      ((err (factory (field (missing-field path))))
+      ((err (field (missing-field path)))
        (assert (= path (str "roadmap"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-missing-max-active
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\"}")))))
     (match (cap-from-document document)
-      ((err (factory (field (missing-field path))))
+      ((err (field (missing-field path)))
        (assert (= path (str "max_active"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-text-max-active
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": \"factory-mvp\", \"max_active\": \"3\"}")))))
     (match (cap-from-document document)
-      ((err (factory (field (non-number-field path))))
+      ((err (field (non-number-field path)))
        (assert (= path (str "max_active"))))
       (_ (assert false)))))
 
 (deftest cap-from-document-rejects-a-text-roadmap
   (let (document (unwrap-ok (parse-json (as-str (str "{\"roadmap\": 7, \"max_active\": 3}")))))
     (match (cap-from-document document)
-      ((err (factory (field (non-text-field path))))
+      ((err (field (non-text-field path)))
        (assert (= path (str "roadmap"))))
       (_ (assert false)))))
 
@@ -90,8 +89,10 @@
   (match (the (result int (parse-error int))
               (parse "3.5"))
     ((err cause)
-     (assert (= (apply-error->message (apply-error/invalid-max-active (str "max_active")
-                                                                      cause))
+     (assert (= (apply-error->message
+                  (apply-error/factory (factory-error/field (field-error/non-whole-number-field
+                                                              (str "max_active")
+                                                              cause))))
                 (str "the factory field `max_active` is not a whole number: "
                      "invalid digit found in string"))))
     ((ok _) (assert false)))

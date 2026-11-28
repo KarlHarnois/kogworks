@@ -484,6 +484,8 @@
   (cond
     ((= (as-str action) (str "next")) (str "rmap next"))
     ((= (as-str action) (str "ready")) (str "rmap ready"))
+    ((= (as-str action) (str "max active"))
+     (str "rmap roadmap set"))
     ((= (as-str action) (str "base branch"))
      (str "base branch"))
     (else (clone action))))
@@ -518,6 +520,9 @@
     ((= (as-str (:action report))
         (str "ready"))
      (str "check the roadmap name in .kogworks/factory.knv, then rerun"))
+    ((= (as-str (:action report))
+        (str "max active"))
+     (str "check the roadmap and max_active in .kogworks/factory.json, then rerun"))
     (else (str "fix the error above, then rerun"))))
 
 (defn action-item (item)

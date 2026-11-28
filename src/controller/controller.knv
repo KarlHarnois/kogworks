@@ -2,6 +2,7 @@
   "Runs the controller loop.")
 
 (use knave-commandant switch-state)
+(use controller/cap read-cap set-command)
 (use controller/dispatch dispatch)
 
 (use controller/failure ->action-failure ->failure-report
@@ -140,13 +141,52 @@
                                                            failure))
                         :merged 0)))
     ((ok config)
-     (do
-       (print-banner (:remote settings)
-                     (:roadmap config)
-                     (some (clone (:manager config)))
-                     (:poll-seconds settings))
-       (run-controller-loop repo config settings mode
-                            (->run-state :notices (vec) :merged 0))))))
+     (match (set-start-cap repo config)
+       ((err report) (err (->failed-run :report report :merged 0)))
+       ((ok _) (begin-run repo config settings mode))))))
+
+(type set-start-cap
+  (fn ((ref str) (ref factory-config))
+    (result unit failure-report)))
+
+(defn set-start-cap (repo config)
+  (match (read-cap repo)
+    ((err failure)
+     (err (->failure-report :manager (some (clone (:manager config)))
+                            :error (controller-error/factory-failed failure))))
+    ((ok cap) (run-set-cap repo config cap))))
+
+(defn run-set-cap (repo config cap)
+  (let (command (set-command cap)
+        outcome (execute repo command))
+    (if (successful? outcome)
+      (ok (do))
+      (err (->failure-report :manager (some (clone (:manager config)))
+                             :error (cap-command-failed command outcome))))))
+
+(defn cap-command-failed (command outcome)
+  (controller-error/command-failed (->action-failure
+                                     :action (str "max active")
+                                     :item (str "-")
+                                     :command (clone (:label command))
+                                     :code (:code outcome)
+                                     :detail (command-detail outcome))))
+
+(type begin-run
+  (fn ((ref str)
+       (ref factory-config)
+       (ref controller-settings)
+       run-mode)
+    (result unit failed-run)))
+
+(defn begin-run (repo config settings mode)
+  (do
+    (print-banner (:remote settings)
+                  (:roadmap config)
+                  (some (clone (:manager config)))
+                  (:poll-seconds settings))
+    (run-controller-loop repo config settings mode
+                         (->run-state :notices (vec) :merged 0))))
 
 (type run-controller-loop
   (fn ((ref str)

@@ -1,0 +1,59 @@
+(module
+  "Reads the factory's max active and builds the command that sets it on the roadmap.")
+
+(use controller/failure factory-error)
+(use controller/factory read-factory-document)
+
+(use controller/fields field-error required-number
+                       required-text)
+
+(use controller/process ->command command)
+
+(export ->roadmap-cap cap-from-document read-cap roadmap-cap
+        set-command)
+
+(defstruct roadmap-cap
+  :roadmap string
+  :max-active int)
+
+(defn read-cap (repo)
+  (let-try (document (read-factory-document repo))
+    (cap-from-document document)))
+
+(defn cap-from-document (document)
+  (let-try (roadmap (factory-field (required-text document "roadmap" "roadmap"))
+            max-active-text (factory-field (required-number document
+                                                            "max_active"
+                                                            "max_active"))
+            max-active (whole-number max-active-text "max_active"))
+    (ok (->roadmap-cap :roadmap roadmap :max-active max-active))))
+
+(type set-command
+  (fn ((ref roadmap-cap)) command))
+
+(defn set-command (cap)
+  (->command :program (str "rmap")
+             :args (vec (str "roadmap")
+                        (str "set")
+                        (clone (:roadmap cap))
+                        (str "--max-active")
+                        (str (:max-active cap)))
+             :label (str "rmap roadmap set "
+                         (:roadmap cap)
+                         " --max-active "
+                         (:max-active cap))))
+
+(type whole-number
+  (fn ((ref string) (ref str))
+    (result int factory-error)))
+
+(defn whole-number (text path)
+  (match (parse (as-str text))
+    ((ok value) (ok value))
+    ((err cause)
+     (err (factory-error/field (field-error/non-whole-number-field (str path)
+                                                                   cause))))))
+
+(defn factory-field (found)
+  (map-err found
+    (fn (failure) (factory-error/field failure))))
