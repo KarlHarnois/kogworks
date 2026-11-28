@@ -567,6 +567,7 @@
       (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
       (assert (stderr-has? output
                            (str "disarmed     gh pr merge 12 --disable-auto")))
+      (assert (stderr-has? output (str "build ✓ review ✓ merge ✗")))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
 (deftest disarms-when-the-poll-view-is-invalid
@@ -639,7 +640,8 @@
                                         merge-item
                                         " merging` exited 2: not-approved"))))
       (assert (not (contains? (sequence-text root) "pr merge")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (stderr-has? output (str "merge ○  merging")))))))
 
 (deftest stops-when-the-merge-command-fails
   (let (root (unwrap-ok (setup "merge-refused"
@@ -898,7 +900,8 @@
                       (close-line))))
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● kogworks"))))
+      (assert (stderr-has? output (str "merging"))))))
 
 (deftest closes-a-merge-that-finished-while-the-controller-was-down
   (let (root (unwrap-ok (setup "merge-resume-merged"

@@ -186,7 +186,11 @@
                     (str "manager")
                     (str "next"))))
     (assert (= (disarmed-value (:sub-lines line))
-               (str "gh pr merge 12 --disable-auto")))))
+               (str "gh pr merge 12 --disable-auto")))
+    (assert (= (:track line)
+               (track/build-track stage-state/done
+                                  stage-state/done
+                                  stage-state/failed)))))
 
 (deftest a-refused-signal-disarm-has-no-disarmed-sub-line
   (let (report (->signal-stop-report :item (str "rm-0001")
@@ -222,6 +226,7 @@
     (assert (= (:status line) log-status/failed))
     (assert (= labels
                (vec (str "error")
+                    (str "pr")
                     (str "manager")
                     (str "next"))))))
 

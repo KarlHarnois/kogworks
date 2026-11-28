@@ -366,6 +366,20 @@
                               (as-str substituted-criterion))))
       (assert (contains? (prompt-text root) "manager=fake-manager")))))
 
+(deftest reports-a-reviewer-placeholder-failure-with-its-pr-line
+  (let (root (unwrap-ok (setup "review-placeholder"
+                               (review-settings (next-with (str "review")
+                                                           review-item)))))
+    (unwrap-ok (write-text (as-str (str root
+                                        "/repo/.kogworks/briefs/reviewer.md"))
+                           (as-str (str "item={{item}} token={{nope}}"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (stderr-has? output (str "build ✓ review ✗ merge ○")))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
+      (assert (stderr-has? output
+                           (str "the brief still holds `{{` after filling"))))))
+
 (deftest starts-a-reviewer-for-a-controller-verify
   (let (root (unwrap-ok (setup "verify"
                                (review-settings (next-with (str "verify")

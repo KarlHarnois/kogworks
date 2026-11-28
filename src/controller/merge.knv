@@ -82,9 +82,7 @@
   (match (preflight repo settings item)
     ((err failure) (err failure))
     ((ok _)
-     (do
-       (report-event settings merge-event/merging target)
-       (advance-and-enable repo config settings item target)))))
+     (advance-and-enable repo config settings item target))))
 
 (defn resume-merge (repo config settings item target)
   (match (read-resume-state repo settings item target)
@@ -99,7 +97,9 @@
     (moved (disarm-and-stop repo settings item target
                             (head-change-error item target state)))
     (polling (poll-merge repo item target settings))
-    (arming (enable-auto-merge repo config settings item target))))
+    (arming (do
+              (report-event settings merge-event/merging target)
+              (enable-auto-merge repo config settings item target)))))
 
 (type resume-verdict-of
   (fn ((ref merge-target) (ref merge-state))
@@ -196,7 +196,9 @@
   (match (advance-item repo item)
     ((err failure) (err failure))
     ((ok _)
-     (enable-auto-merge repo config settings item target))))
+     (do
+       (report-event settings merge-event/merging target)
+       (enable-auto-merge repo config settings item target)))))
 
 (defn advance-item (repo item)
   (let (command (advance-command item))
