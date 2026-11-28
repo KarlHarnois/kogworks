@@ -20,7 +20,8 @@
 (use controller/merge-target invalid-output
                              merge-command-failure
                              merge-event merge-item-status
-                             read-item-status report-event)
+                             merge-outcome read-item-status
+                             report-event)
 
 (use controller/process command-detail execute successful?)
 
@@ -107,7 +108,7 @@
     (if (successful? outcome)
       (do
         (report-event settings merge-event/closed target)
-        (ok (do)))
+        (ok merge-outcome/merged))
       (err (merge-command-failure item command outcome)))))
 
 (defn with-disarmed-command (failure command)

@@ -30,8 +30,9 @@
                              merge-approval
                              merge-command-failure
                              merge-event merge-item-status
-                             merge-settings merge-target
-                             read-merge-target report-event)
+                             merge-outcome merge-settings
+                             merge-target read-merge-target
+                             report-event)
 
 (use controller/process command command-detail execute
                         successful?)
@@ -284,7 +285,7 @@
   (let (command (record-head-command item head)
         outcome (execute repo command))
     (if (successful? outcome)
-      (ok (do))
+      (ok merge-outcome/handed-back)
       (err (merge-command-failure item command outcome)))))
 
 (defn retry-enable-auto-merge (repo config settings item target)
@@ -348,7 +349,7 @@
   (let (command (send-command worker (rebase-message item target outcome))
         outcome (execute repo command))
     (if (successful? outcome)
-      (ok (do))
+      (ok merge-outcome/handed-back)
       (err (merge-command-failure item command outcome)))))
 
 (defn rebase-message (item target outcome)

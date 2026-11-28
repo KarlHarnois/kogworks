@@ -16,13 +16,17 @@
 (export ->merge-report ->merge-settings ->merge-target
         ignore-report invalid-item-output invalid-output
         merge-approval merge-command-failure merge-event
-        merge-item-status merge-report merge-settings
-        merge-target read-item-status read-merge-target
-        report-event)
+        merge-item-status merge-outcome merge-report
+        merge-settings merge-target read-item-status
+        read-merge-target report-event)
 
 (defenum merge-event
   merging
   closed)
+
+(defenum merge-outcome
+  merged
+  handed-back)
 
 (defstruct merge-report
   :remote (option string)

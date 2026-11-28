@@ -23,7 +23,8 @@
                       start-merge)
 
 (use controller/merge-commands send-command)
-(use controller/merge-target ->merge-report ignore-report)
+(use controller/merge-target ->merge-report ignore-report
+                             merge-outcome)
 (use controller/notice ->notice-clock notice
                        waiting-actions)
 
@@ -58,6 +59,7 @@
 (defenum pass-outcome
   dispatched
   merged
+  handed-back
   idle)
 
 (defstruct controller-settings
@@ -282,7 +284,9 @@
                           :report-data (->merge-report :remote (clone (:remote settings))
                                                        :item (clone (:item action)))))
     (match (start-merge repo config merge-wait (:item action))
-      ((ok _) (ok pass-outcome/merged))
+      ((ok merge-outcome/merged) (ok pass-outcome/merged))
+      ((ok merge-outcome/handed-back)
+       (ok pass-outcome/handed-back))
       ((err failure)
        (err (->failure-report :manager manager :error failure))))))
 

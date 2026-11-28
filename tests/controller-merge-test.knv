@@ -424,6 +424,56 @@
                                         " forbidden"))))
       (assert (not (contains? (sequence-text root) "item advance"))))))
 
+(deftest does-not-count-a-rebased-hand-back-as-merged
+  (let (root (unwrap-ok (setup "merge-conflict-rebase-poll"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :update-branch-exit 4
+                                      :update-branch-error (str "branch cannot be updated")
+                                      :stop-after 2))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--poll")
+                                           (str "0")
+                                           (str "--merge-retry-delay")
+                                           (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (sequence-text root)
+                         "item advance rm-0009 fixing"))
+      (assert (contains? (sequence-text root)
+                         "ringleader send build-rm-0009"))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (stderr-has? output (str "stopped  0 merged"))))))
+
+(deftest does-not-count-a-moved-head-hand-back-as-merged
+  (let (root (unwrap-ok (setup "merge-conflict-update-moved-poll"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :view-json (moved-view)
+                                      :stop-after 2))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--poll")
+                                           (str "0")
+                                           (str "--merge-retry-delay")
+                                           (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (sequence-text root) "rmap pr head rm-0009"))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (stderr-has? output (str "stopped  0 merged"))))))
+
+(deftest counts-a-closed-merge-once
+  (let (root (unwrap-ok (setup "merge-count-poll"
+                               (assoc (merge-settings) :stop-after 2))))
+    (let (output (unwrap-ok (run-with root
+                                      (vec (str "--poll")
+                                           (str "0")
+                                           (str "--merge-retry-delay")
+                                           (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (sequence-text root) "item close rm-0009"))
+      (assert (stderr-has? output (str "stopped  1 merged"))))))
+
 (deftest stops-when-the-head-moved
   (let (root (unwrap-ok (setup "merge-head-moved"
                                (assoc (merge-settings)

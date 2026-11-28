@@ -151,12 +151,15 @@
   (match (optional-number-text pull "number")
     (none none)
     ((some number-text)
-     (match (parse-int-text (str number-text))
-       ((ok number)
-        (some (->pr-summary :number number
-                            :branch (unwrap-or (session-branch item) (str))
-                            :head (head-option pull))))
-       ((err _) none)))))
+     (pull-summary-from-text item pull number-text))))
+
+(defn pull-summary-from-text (item pull number-text)
+  (match (parse-int-text (str number-text))
+    ((ok number)
+     (some (->pr-summary :number number
+                         :branch (unwrap-or (session-branch item) (str))
+                         :head (head-option pull))))
+    ((err _) none)))
 
 (defn head-option (pull)
   (match (optional-text-option pull "head")
