@@ -1,0 +1,197 @@
+(module
+  "Reads the terminal, the color settings and the local time for the controller log.")
+
+(export ->clock-time ->color-settings clock-time
+        clock-time->text color-mode color-settings
+        color-settings->color-mode colorterm env-flag
+        local-time read-color-mode read-color-settings
+        second-of-day->clock-time stderr-terminal?
+        stderr-width stream)
+
+(def environment-set?
+  (rust "std::env::var_os({0}).is_some()"
+    (fn ((ref str)) bool)))
+
+(def environment-value
+  (rust "std::env::var_os({0}).and_then(|value| value.into_string().ok())"
+    (fn ((ref str)) (option string))))
+
+(def stderr-terminal?
+  (rust "{{
+    use std::io::IsTerminal;
+    std::io::stderr().is_terminal()
+  }}"
+    (fn () bool)))
+
+(def stderr-width
+  (rust "{{
+    use std::io::IsTerminal;
+    use std::os::raw::{{c_int, c_ulong}};
+    #[repr(C)]
+    struct WinSize {{
+      rows: u16,
+      columns: u16,
+      x_pixels: u16,
+      y_pixels: u16,
+    }}
+    unsafe extern \"C\" {{
+      fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
+    }}
+    let stderr = std::io::stderr();
+    if !stderr.is_terminal() {{
+      None
+    }} else {{
+      let mut size =
+        WinSize {{ rows: 0, columns: 0, x_pixels: 0, y_pixels: 0 }};
+      let fd = std::os::fd::AsRawFd::as_raw_fd(&stderr);
+      let result = unsafe {{ ioctl(fd, 0x5413, &mut size as *mut WinSize) }};
+      if result == 0 && size.columns > 0 {{
+        Some(i64::from(size.columns))
+      }} else {{
+        None
+      }}
+    }}
+  }}"
+    (fn () (option int))))
+
+(def local-second-of-day
+  (rust "{{
+    use std::os::raw::{{c_char, c_int, c_long}};
+    #[repr(C)]
+    struct LocalTime {{
+      seconds: c_int,
+      minutes: c_int,
+      hours: c_int,
+      day: c_int,
+      month: c_int,
+      year: c_int,
+      weekday: c_int,
+      year_day: c_int,
+      daylight: c_int,
+      offset: c_long,
+      zone: *const c_char,
+    }}
+    unsafe extern \"C\" {{
+      fn localtime_r(time: *const i64, result: *mut LocalTime) -> *mut LocalTime;
+    }}
+    let seconds = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|duration| duration.as_secs() as i64)
+      .unwrap_or(0);
+    let mut time = LocalTime {{
+      seconds: 0,
+      minutes: 0,
+      hours: 0,
+      day: 0,
+      month: 0,
+      year: 0,
+      weekday: 0,
+      year_day: 0,
+      daylight: 0,
+      offset: 0,
+      zone: std::ptr::null(),
+    }};
+    let result = unsafe {{ localtime_r(&seconds, &mut time) }};
+    if result.is_null() {{
+      0
+    }} else {{
+      i64::from(time.hours) * 3600
+        + i64::from(time.minutes) * 60
+        + i64::from(time.seconds)
+    }}
+  }}"
+    (fn () int)))
+
+(defstruct color-settings
+  :stream stream
+  :no-color env-flag
+  :force-color env-flag
+  :colorterm colorterm)
+
+(defenum stream
+  terminal
+  not-a-terminal)
+
+(defenum env-flag
+  present
+  absent)
+
+(defenum colorterm
+  unset
+  truecolor
+  bit-24
+  other)
+
+(defenum color-mode
+  no-color
+  colors-256
+  true-color)
+
+(defstruct clock-time
+  :hours int
+  :minutes int
+  :seconds int)
+
+(defn read-color-mode ()
+  (color-settings->color-mode (read-color-settings)))
+
+(defn read-color-settings ()
+  (->color-settings :stream (stderr-stream)
+                    :no-color (environment-flag (str "NO_COLOR"))
+                    :force-color (environment-flag (str "FORCE_COLOR"))
+                    :colorterm (colorterm-of (environment-value (as-str (str "COLORTERM"))))))
+
+(defn color-settings->color-mode (settings)
+  (if (color-on? settings)
+    (colorterm-mode (:colorterm settings))
+    color-mode/no-color))
+
+(defn local-time ()
+  (second-of-day->clock-time (local-second-of-day)))
+
+(defn second-of-day->clock-time (second-of-day)
+  (->clock-time :hours (/ second-of-day 3600)
+                :minutes (/ (rem second-of-day 3600) 60)
+                :seconds (rem second-of-day 60)))
+
+(defn clock-time->text (time)
+  (str (two-digit (:hours time))
+       ":"
+       (two-digit (:minutes time))
+       ":"
+       (two-digit (:seconds time))))
+
+(defn color-on? (settings)
+  (and (= (:no-color settings) env-flag/absent)
+       (or (= (:force-color settings) env-flag/present)
+           (= (:stream settings) stream/terminal))))
+
+(defn colorterm-mode (setting)
+  (match setting
+    (truecolor color-mode/true-color)
+    (bit-24 color-mode/true-color)
+    (_ color-mode/colors-256)))
+
+(defn stderr-stream ()
+  (if (stderr-terminal?)
+    stream/terminal stream/not-a-terminal))
+
+(defn environment-flag (name)
+  (if (environment-set? (as-str name))
+    env-flag/present env-flag/absent))
+
+(defn colorterm-of (value)
+  (match value
+    ((some text) (colorterm-text text))
+    (none colorterm/unset)))
+
+(defn colorterm-text (text)
+  (cond
+    ((= text (str "truecolor")) colorterm/truecolor)
+    ((= text (str "24bit")) colorterm/bit-24)
+    (else colorterm/other)))
+
+(defn two-digit (value)
+  (if (< value 10)
+    (str "0" value)
+    (str value)))
