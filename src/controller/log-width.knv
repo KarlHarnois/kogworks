@@ -1,0 +1,128 @@
+(module
+  "Measures, cuts and wraps controller log text, and accumulates its lines.")
+
+(export append-lines display-width fitted-title push-line!
+        spaces wrap-value)
+
+(defenum word-fit
+  (fits string)
+  (overflow string))
+
+(defn display-width (text)
+  (the int (convert (string-width text))))
+
+(defn fitted-title (width prefix-width title)
+  (let (limit (title-limit width prefix-width)
+        cleaned (clean-title (as-str title)))
+    (if (<= (display-width (as-str cleaned)) limit)
+      cleaned
+      (fit-title limit (as-str cleaned)))))
+
+(defn title-limit (width prefix-width)
+  (match width
+    (none 120)
+    ((some columns) (max 0 (- columns prefix-width)))))
+
+(defn clean-title (title)
+  (join (collect (map (chars title) title-piece))
+        ""))
+
+(defn title-piece (character)
+  (if (title-space? character)
+    (str " ")
+    (if (char-control? character)
+      (str)
+      (str character))))
+
+(defn title-space? (character)
+  (or (= (str character) (str "\n"))
+      (= (str character) (str "\t"))))
+
+(defn fit-title (limit text)
+  (if (<= limit 0)
+    (str)
+    (truncate-with-ellipsis text
+                            (the usize (convert (dec limit))))))
+
+(defn wrap-value (limit text)
+  (match limit
+    (none (vec (clone text)))
+    ((some width) (wrap-words-from width (words-of text)))))
+
+(defn wrap-words-from (limit words)
+  (loop (index 0
+         line (str)
+         lines (vec))
+    (if (>= index (len words))
+      (finish-wrapped lines line)
+      (let (word (clone (at words index)))
+        (match (wrap-decision limit line word)
+          ((fits next-line) (recur (inc index) next-line lines))
+          ((overflow next-line)
+           (recur (inc index) next-line (push-line! lines line))))))))
+
+(defn wrap-decision (limit line word)
+  (if (empty? line)
+    (word-fit/fits (clone word))
+    (candidate-decision limit (word-after line word) word)))
+
+(defn candidate-decision (limit candidate word)
+  (if (<= (display-width (as-str candidate)) limit)
+    (word-fit/fits candidate)
+    (word-fit/overflow (clone word))))
+
+(defn word-after (line word)
+  (if (empty? line)
+    (str word)
+    (str line " " word)))
+
+(defn finish-wrapped (lines line)
+  (if (empty? lines)
+    (push-line! lines line)
+    (finish-nonempty-lines lines line)))
+
+(defn finish-nonempty-lines (lines line)
+  (if (empty? line) lines (push-line! lines line)))
+
+(defn words-of (text)
+  (collect (map (split (as-str text) " ")
+             (fn (word) (str word)))))
+
+(defn spaces (count)
+  (join (collect (map (range 0 count) (fn (_) (str " "))))
+        ""))
+
+(defn push-line! (lines line)
+  (do (push! lines line) lines))
+
+(defn append-lines (left right)
+  (loop (index 0
+         lines left)
+    (if (>= index (len right))
+      lines
+      (recur (inc index)
+             (push-line! lines (clone (at right index)))))))
+
+(def string-width
+  (rust "unicode_width::UnicodeWidthStr::width({0})"
+    (fn ((ref str)) usize)))
+
+(def truncate-with-ellipsis
+  (rust "{{
+    let budget = {1};
+    let mut best = 0usize;
+    for (index, character) in {0}.char_indices() {{
+      let end = index + character.len_utf8();
+      if unicode_width::UnicodeWidthStr::width(&{0}[..end]) > budget {{
+        break;
+      }}
+      best = end;
+    }}
+    let mut result = String::from(&{0}[..best]);
+    result.push('…');
+    result
+  }}"
+    (fn ((ref str) usize) string)))
+
+(def char-control?
+  (rust "({0}).is_control()" (fn (char) bool)))
