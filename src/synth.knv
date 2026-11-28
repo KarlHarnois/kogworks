@@ -56,13 +56,27 @@
     let mut program = String::from(module_text);
     program.push_str(\"\\n\\n(defn main () (print (factory-json)))\\n\");
     std::fs::write(&temp_file, program).map_err(|error| error.to_string())?;
-    let output = std::process::Command::new(\"knave\")
-      .args([\"run\", temp_file.to_str().unwrap_or_default()])
-      .current_dir(factory_dir)
+    let binary_file = temp_root.join(\"factory-bin\");
+    let build = std::process::Command::new(\"knave\")
+      .args([
+        \"build\",
+        temp_file.to_str().unwrap_or_default(),
+        \"-o\",
+        binary_file.to_str().unwrap_or_default(),
+      ])
+      .current_dir(root)
       .output()
-      .map_err(|error| error.to_string());
+      .map_err(|error| error.to_string())?;
+    let output = if build.status.success() {{
+      std::process::Command::new(&binary_file)
+        .current_dir(factory_dir)
+        .output()
+        .map_err(|error| error.to_string())?
+    }} else {{
+      build
+    }};
     let _ = std::fs::remove_dir_all(&temp_root);
-    let mut output = output?;
+    let mut output = output;
     let temp_text = temp_file.to_string_lossy().into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     if stderr.contains(&temp_text) {{
@@ -125,11 +139,12 @@
       (err (synth-error/missing-factory (str factory-file))))))
 
 (defn eval-factory-json (factory-file module-text)
-  (match (run-knave-run (as-str (parent-path factory-file))
-                        factory-file module-text)
-    ((ok output) (checked-factory-json factory-file output))
-    ((err reason)
-     (err (synth-error/factory-eval-failed (str factory-file) reason)))))
+  (let (factory-dir (parent-path factory-file))
+    (match (run-knave-run (as-str factory-dir)
+                          factory-file module-text)
+      ((ok output) (checked-factory-json factory-file output))
+      ((err reason)
+       (err (synth-error/factory-eval-failed (str factory-file) reason))))))
 
 (defn checked-factory-json (factory-file output)
   (match (succeeded? output)
