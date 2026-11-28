@@ -18,7 +18,8 @@
   :roadmap string
   :merge merge-method
   :worker role
-  :reviewer role)
+  :reviewer role
+  :design-reviewer (option role))
 
 (defenum merge-method gh-auto)
 
@@ -70,12 +71,15 @@
             merge (merge-method-of merge-text)
             roles (factory-object document "roles" "roles")
             worker (required-role roles "worker" "roles.worker")
-            reviewer (required-role roles "reviewer" "roles.reviewer"))
+            reviewer (required-role roles "reviewer" "roles.reviewer")
+            design (optional-role roles "design_reviewer"
+                                  "roles.design_reviewer"))
     (ok (->factory-config :manager manager
                           :roadmap roadmap
                           :merge merge
                           :worker worker
-                          :reviewer reviewer))))
+                          :reviewer reviewer
+                          :design-reviewer design))))
 
 (defn merge-method-of (text)
   (cond
@@ -88,6 +92,15 @@
             skill (factory-text value "skill" (as-str (str path ".skill")))
             brief (factory-text value "brief" (as-str (str path ".brief"))))
     (ok (->role :agent agent :skill skill :brief brief))))
+
+(defn optional-role (roles name path)
+  (match (json-field roles name)
+    (none (ok none))
+    ((some _) (present-role roles name path))))
+
+(defn present-role (roles name path)
+  (map-ok (required-role roles name path)
+    (fn (role) (some role))))
 
 (defn factory-text (value key path)
   (map-err (required-text value key path) factory-field-error))

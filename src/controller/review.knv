@@ -5,10 +5,11 @@
                       reviewer-brief)
 
 (use controller/failure ->action-failure controller-error)
-(use controller/factory factory-config)
+(use controller/factory factory-config role)
 
-(use controller/item criteria->text item-detail
-                     item-error->message parse-item-detail)
+(use controller/item criteria->text design-approval
+                     item-detail item-error->message
+                     parse-item-detail)
 
 (use controller/json json-error->message parse-json)
 
@@ -18,12 +19,13 @@
 (use controller/repo default-branch)
 (use controller/session abandon-command failed-start-detail)
 
-(export review-mode review-mode->text start-review
-        started-review)
+(export design-review-gate review-mode review-mode->text
+        start-review started-review)
 
 (defenum review-mode
   review
-  verify)
+  verify
+  design)
 
 (defstruct started-review
   :session string
@@ -31,14 +33,32 @@
 
 (defn review-mode->text (mode)
   (match mode
-    (review (str "review"))
-    (verify (str "verify"))))
+    (verify (str "verify"))
+    (_ (str "review"))))
 
 (defn start-review (repo config item mode)
   (match (show-item repo mode item)
     ((err failure) (err failure))
     ((ok detail)
-     (review-with-item repo config item mode detail))))
+     (start-review-with-role repo config item mode
+                             (:reviewer config)
+                             detail))))
+
+(defn design-review-gate (repo config item role)
+  (match (show-item repo review-mode/design item)
+    ((err failure) (err failure))
+    ((ok detail)
+     (approved-or-started repo config item role detail))))
+
+(defn approved-or-started (repo config item role detail)
+  (match (:design-approval detail)
+    (design-approval/design-approved (ok none))
+    (design-approval/design-missing
+      (match (start-review-with-role repo config item
+                                     review-mode/design role
+                                     detail)
+        ((ok started) (ok (some started)))
+        ((err failure) (err failure))))))
 
 (defn show-item (repo mode item)
   (let (command (show-command item))
@@ -62,34 +82,41 @@
      (err (invalid-item-output mode item command
                                (item-error->message failure))))))
 
-(defn review-with-item (repo config item mode detail)
+(defn start-review-with-role (repo config item mode role detail)
   (match (default-branch repo)
     ((err failure) (err failure))
-    ((ok base) (begin-review repo config item mode detail base))))
+    ((ok base)
+     (begin-review repo config item mode role detail base))))
 
 (type begin-review
   (fn ((ref str)
        (ref factory-config)
        (ref string)
-       review-mode item-detail
+       review-mode
+       (ref role)
+       (ref item-detail)
        (ref string))
     (result started-review controller-error)))
 
-(defn begin-review (repo config item mode detail base)
-  (let (session (reviewer-session item (clone (:head detail))))
-    (match (reviewer-prompt repo config item mode
+(defn begin-review (repo config item mode role detail base)
+  (let (session (reviewer-session item mode (clone (:head detail))))
+    (match (reviewer-prompt repo config item mode role
                             (clone detail)
                             session base)
       ((err failure) (err failure))
       ((ok prompt)
-       (start-review-session repo config item mode detail
+       (start-review-session repo item mode role
+                             (clone detail)
                              session prompt)))))
 
 (type reviewer-session
-  (fn ((ref string) (ref string)) string))
+  (fn ((ref string) review-mode (ref string))
+    string))
 
-(defn reviewer-session (item head)
-  (str "review-" item "-" (head-prefix head)))
+(defn reviewer-session (item mode head)
+  (match mode
+    (design (str "design-" item "-" (head-prefix head)))
+    (_ (str "review-" item "-" (head-prefix head)))))
 
 (type head-prefix
   (fn ((ref str)) string))
@@ -103,14 +130,15 @@
   (fn ((ref str)
        (ref factory-config)
        (ref string)
-       review-mode item-detail
+       review-mode
+       (ref role)
+       item-detail
        (ref string)
        (ref string))
     (result string controller-error)))
 
-(defn reviewer-prompt (repo config item mode detail session base)
-  (let (path (join-path repo
-                        (as-str (:brief (:reviewer config)))))
+(defn reviewer-prompt (repo config item mode role detail session base)
+  (let (path (join-path repo (as-str (:brief role))))
     (let (values (->reviewer-values :item (clone item)
                                     :roadmap (clone (:roadmap config))
                                     :session (clone session)
@@ -119,7 +147,7 @@
                                     :criteria (criteria->text (:criteria
                                                                 detail))
                                     :base (clone base)
-                                    :skill (clone (:skill (:reviewer config)))
+                                    :skill (clone (:skill role))
                                     :manager (clone (:manager config))))
       (match (fill-brief (as-str path) (reviewer-brief values))
         ((err failure) (err failure))
@@ -127,8 +155,8 @@
 
 (defn stressed-prompt (mode prompt)
   (match mode
-    (review (clone prompt))
-    (verify (verify-stress prompt))))
+    (verify (verify-stress prompt))
+    (_ (clone prompt))))
 
 (defn verify-stress (prompt)
   (str "Verify action: the head is approved, but at least one acceptance "
@@ -138,33 +166,35 @@
 
 (type start-review-session
   (fn ((ref str)
-       (ref factory-config)
        (ref string)
-       review-mode item-detail
+       review-mode
+       (ref role)
+       item-detail
        (ref string)
        (ref string))
     (result started-review controller-error)))
 
-(defn start-review-session (repo config item mode detail session prompt)
+(defn start-review-session (repo item mode role detail session prompt)
   (let (start (review-start-command item session))
     (let (outcome (execute repo start))
       (if (successful? outcome)
-        (start-reviewer repo config item mode
+        (start-reviewer repo item mode role
                         (clone detail)
                         session prompt)
         (err (command-failure mode item start outcome))))))
 
 (type start-reviewer
   (fn ((ref str)
-       (ref factory-config)
        (ref string)
-       review-mode item-detail
+       review-mode
+       (ref role)
+       item-detail
        (ref string)
        (ref string))
     (result started-review controller-error)))
 
-(defn start-reviewer (repo config item mode detail session prompt)
-  (let (start (reviewer-start-command repo config session
+(defn start-reviewer (repo item mode role detail session prompt)
+  (let (start (reviewer-start-command repo role session
                                       (clone (:branch detail))
                                       prompt))
     (let (outcome (execute repo start))
@@ -222,8 +252,8 @@
                         (clone session))
              :label (str "rmap review start " item " --session " session)))
 
-(defn reviewer-start-command (repo config session branch prompt)
-  (let (agent (:agent (:reviewer config)))
+(defn reviewer-start-command (repo role session branch prompt)
+  (let (agent (:agent role))
     (->command :program (str "ringleader")
                :args (vec (str "new")
                           (str "--name")

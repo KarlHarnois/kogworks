@@ -1,0 +1,93 @@
+(use controller/factory read-factory)
+(use factory/json factory->json)
+(use factory/roles roles)
+(use factory/types ->factory ->role merge-method role-name)
+
+(use fixtures/controller-fixture prepare-design-repo
+                                 prepare-repo)
+
+(use fixtures/factory-fixture prepare-factory)
+(use synth synth-factory)
+
+(def design-factory
+  (->factory :schema 0
+             :name (str "design-sample")
+             :manager (str "fake-manager")
+             :roadmap (str "fake-roadmap")
+             :max-active 1
+             :merge merge-method/gh-auto
+             :roles (vec (->role :name role-name/worker
+                                 :agent (str "fake-agent")
+                                 :skill (str "fake-skill")
+                                 :brief (str ".kogworks/briefs/worker.md"))
+                         (->role :name role-name/reviewer
+                                 :agent (str "fake-reviewer-agent")
+                                 :skill (str "fake-reviewer-skill")
+                                 :brief (str ".kogworks/briefs/reviewer.md"))
+                         (->role :name role-name/design-reviewer
+                                 :agent (str "fake-design-agent")
+                                 :skill (str "fake-design-skill")
+                                 :brief (str ".kogworks/briefs/design-reviewer.md")))))
+
+(deftest roles-builds-a-design-reviewer-role
+  (assert
+    (= (roles (design-reviewer :agent "opencode"
+                               :skill "reviewing-prs"
+                               :brief ".kogworks/briefs/design-reviewer.md"))
+       (vec (->role :name role-name/design-reviewer
+                    :agent (str "opencode")
+                    :skill (str "reviewing-prs")
+                    :brief (str ".kogworks/briefs/design-reviewer.md"))))))
+
+(deftest factory-json-writes-the-design-reviewer-key
+  (assert (contains? (factory->json (clone design-factory))
+                     (as-str (str "\"design_reviewer\": {\n"
+                                  "      \"agent\": \"fake-design-agent\",\n"
+                                  "      \"skill\": \"fake-design-skill\",\n"
+                                  "      \"brief\": \".kogworks/briefs/design-reviewer.md\"\n"
+                                  "    }")))))
+
+(deftest read-factory-reads-an-optional-design-reviewer
+  (let (root (str "target/knave/controller-tests/design-factory"))
+    (unwrap-ok (prepare-design-repo (as-str root)))
+    (match (read-factory (as-str (str root "/repo")))
+      ((ok config)
+       (match (:design-reviewer config)
+         ((some role)
+          (assert (= (:agent role) (str "fake-design-agent")))
+          (assert (= (:skill role) (str "fake-design-skill")))
+          (assert (= (:brief role)
+                     (str ".kogworks/briefs/design-reviewer.md"))))
+         (none (assert false))))
+      ((err _) (assert false)))))
+
+(deftest read-factory-leaves-out-a-missing-design-reviewer
+  (let (root (str "target/knave/controller-tests/design-factory-absent"))
+    (unwrap-ok (prepare-repo (as-str root)))
+    (match (read-factory (as-str (str root "/repo")))
+      ((ok config)
+       (match (:design-reviewer config)
+         (none (assert true))
+         ((some _) (assert false))))
+      ((err _) (assert false)))))
+
+(deftest deffactory-writes-a-design-reviewer-role
+  (let (dir (str "target/knave/test-factories/design-sample"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory design-sample\n"
+                                     "  :manager \"fake-manager\"\n"
+                                     "  :roadmap \"fake-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"fake-agent\"\n"
+                                     "                  :skill \"fake-skill\"\n"
+                                     "                  :brief \".kogworks/briefs/worker.md\")\n"
+                                     "          (reviewer :agent \"fake-reviewer-agent\"\n"
+                                     "                    :skill \"fake-reviewer-skill\"\n"
+                                     "                    :brief \".kogworks/briefs/reviewer.md\")\n"
+                                     "          (design-reviewer :agent \"fake-design-agent\"\n"
+                                     "                           :skill \"fake-design-skill\"\n"
+                                     "                           :brief \".kogworks/briefs/design-reviewer.md\")))\n")))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (assert (contains? (unwrap-ok (slurp (as-str (str dir "/factory.json"))))
+                       (as-str (str "\"design_reviewer\": {"))))))
