@@ -1,9 +1,10 @@
 (use fixtures/controller-fixture ->fake-settings
                                  absolute-path
                                  default-settings exit-code
-                                 prepare-repo read-text
-                                 run-controller
+                                 make-dir prepare-repo
+                                 read-text run-controller
                                  run-controller-colored
+                                 run-controller-in
                                  stderr-text stdout-text
                                  write-fakes write-text)
 
@@ -138,6 +139,11 @@
   (run-controller-colored (as-str (str root "/bin"))
                           (as-str (str root "/repo"))
                           args))
+
+(defn run-defaulted (root args)
+  (run-controller-in (as-str (str root "/bin"))
+                     args
+                     (as-str (repo-of root))))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
@@ -345,6 +351,40 @@
                  (str "item=rm-0001 roadmap=fake-roadmap "
                       "session=build-rm-0001 branch=build-rm-0001 "
                       "base=main skill=fake-skill\n"))))))
+
+(deftest accepts-the-repo-option-and-defaults-to-the-current-directory
+  (let (explicit-root (unwrap-ok (setup "repo-explicit"
+                                        (default-settings (clone ignored-next)
+                                                          (clone build-ready))))
+        default-root (unwrap-ok (setup "repo-default"
+                                       (default-settings (clone ignored-next)
+                                                         (clone build-ready)))))
+    (let (explicit (unwrap-ok (run explicit-root (vec (str "--once"))))
+          default (unwrap-ok (run-defaulted default-root (vec (str "--once")))))
+      (assert (= (exit-code explicit) 0))
+      (assert (= (exit-code default) 0))
+      (assert (= (sequence-text explicit-root)
+                 (dispatch-sequence explicit-root)))
+      (assert (= (sequence-text default-root)
+                 (dispatch-sequence default-root))))))
+
+(deftest reports-a-missing-factory-in-the-working-directory
+  (let (root (unwrap-ok (setup "default-repo-missing"
+                               (default-settings (clone ignored-next)
+                                                 (clone build-ready))))
+        nested (as-str (str (repo-of root) "/nested")))
+    (unwrap-ok (make-dir nested))
+    (let (output (unwrap-ok (run-controller-in (as-str (str root "/bin"))
+                                               (vec (str "--once"))
+                                               nested)))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "no factory at"))
+      (assert (contains? (stderr-text output)
+                         (as-str (str (unwrap-ok (absolute-path nested))
+                                      "/.kogworks/factory.json"))))
+      (assert (contains? (stderr-text output)
+                         "rerun        kogworks controller --once"))
+      (assert (not (contains? (stderr-text output) "--repo"))))))
 
 (deftest dispatches-the-first-ready-build
   (let (root (unwrap-ok (setup "dispatch"

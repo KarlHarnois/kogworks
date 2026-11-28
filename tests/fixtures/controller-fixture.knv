@@ -9,9 +9,9 @@
         design-controller-factory exit-code fake-settings
         make-dir max-active-call-count max-active-command
         prepare-design-repo prepare-repo read-text reset-dir
-        run-controller run-controller-colored stderr-text
-        stdout-text stored-max-active write-fakes
-        write-text)
+        run-controller run-controller-colored
+        run-controller-in stderr-text stdout-text
+        stored-max-active write-fakes write-text)
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -316,6 +316,25 @@
     (fn ((ref str) (ref str) (ref (vec string)))
       (result process-output string))))
 
+(def run-controller-in-process
+  (rust "{{
+    let program = std::fs::canonicalize(\"./target/knave/kogworks/kogworks\")
+      .map_err(|error| error.to_string())?;
+    let bin = std::fs::canonicalize({0}).map_err(|error| error.to_string())?;
+    let path = format!(\"{{}}:{{}}\",
+                       bin.display(),
+                       std::env::var(\"PATH\").unwrap_or_default());
+    std::process::Command::new(program)
+      .arg(\"controller\")
+      .args({1}.iter().map(|argument| argument.as_str()))
+      .current_dir({2})
+      .env(\"PATH\", path)
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref (vec string)) (ref str))
+      (result process-output string))))
+
 (def exit-code
   (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
     (fn ((ref process-output)) int)))
@@ -450,6 +469,9 @@
                    :later-view-json (str "{}")
                    :max-active-exit 0
                    :max-active-error (str)))
+
+(defn run-controller-in (bin args directory)
+  (run-controller-in-process bin args directory))
 
 (defn prepare-repo (root)
   (let-try (_ (reset-dir root)
