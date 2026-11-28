@@ -33,6 +33,7 @@
 
 (defenum merge-item-status
   fixing
+  merging
   other)
 
 (defn read-merge-target (repo item)
@@ -98,8 +99,10 @@
     (ok (text->item-status status))))
 
 (defn text->item-status (text)
-  (if (= text (str "fixing"))
-    merge-item-status/fixing merge-item-status/other))
+  (cond
+    ((= text (str "fixing")) merge-item-status/fixing)
+    ((= text (str "merging")) merge-item-status/merging)
+    (else merge-item-status/other)))
 
 (defn bool->approval (approved)
   (if approved

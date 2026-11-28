@@ -41,6 +41,14 @@
        "\"approved\":false," "\"approval\":{\"head\":\""
        approved-head "\"}}}"))
 
+(def merging-item-json
+  (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"status\":\"merging\"," "\"session\":{\"name\":\""
+       merge-worker "\"}}," "\"pull_request\":{\"number\":"
+       merge-pr "," "\"head\":\"" approved-head "\","
+       "\"approved\":true," "\"approval\":{\"head\":\""
+       approved-head "\"}}}"))
+
 (def merge-item (str "rm-0009"))
 
 (def merge-pr (str "12"))
@@ -72,6 +80,24 @@
 
 (def approved-head
   (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(defn armed-view ()
+  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" approved-head
+       "\","
+       "\"autoMergeRequest\":{\"enabledAt\":\"2026-11-26T00:00:00Z\","
+       "\"mergeMethod\":\"MERGE\"}}"))
+
+(defn unarmed-view ()
+  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" approved-head
+       "\"," "\"autoMergeRequest\":null}"))
+
+(defn merged-resume-view ()
+  (str "{\"state\":\"MERGED\",\"headRefOid\":\""
+       approved-head "\"," "\"autoMergeRequest\":null}"))
+
+(defn moved-resume-view ()
+  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" moved-head
+       "\"," "\"autoMergeRequest\":null}"))
 
 (defn assert-transient-retry (name error)
   (let (root (unwrap-ok (setup name
@@ -141,6 +167,10 @@
 (defn view-line ()
   (str "gh pr view " merge-pr
        " --json state,mergedAt,headRefOid\n"))
+
+(defn resume-view-line ()
+  (str "gh pr view " merge-pr
+       " --json state,headRefOid,autoMergeRequest\n"))
 
 (defn disarm-line ()
   (str "gh pr merge " merge-pr " --disable-auto\n"))
@@ -780,3 +810,76 @@
                       (view-line)
                       (close-line))))
       (assert (empty? (stderr-text output))))))
+
+(deftest resumes-a-merge-whose-auto-merge-is-armed
+  (let (root (unwrap-ok (setup "merge-resume-armed"
+                               (assoc (merge-settings)
+                                      :item-json (clone merging-item-json)
+                                      :view-json (armed-view)
+                                      :later-view-json (clone merged-view)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (next-line)
+                      (show-line)
+                      (resume-view-line)
+                      (show-line)
+                      (view-line)
+                      (close-line))))
+      (assert (not (contains? (sequence-text root) "item advance")))
+      (assert (not (contains? (sequence-text root) "pr merge")))
+      (assert (empty? (stderr-text output))))))
+
+(deftest resumes-a-merge-whose-auto-merge-is-not-armed
+  (let (root (unwrap-ok (setup "merge-resume-unarmed"
+                               (assoc (merge-settings)
+                                      :item-json (clone merging-item-json)
+                                      :view-json (unarmed-view)
+                                      :later-view-json (clone merged-view)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (next-line)
+                      (show-line)
+                      (resume-view-line)
+                      (merge-line)
+                      (show-line)
+                      (view-line)
+                      (close-line))))
+      (assert (not (contains? (sequence-text root) "item advance")))
+      (assert (empty? (stderr-text output))))))
+
+(deftest closes-a-merge-that-finished-while-the-controller-was-down
+  (let (root (unwrap-ok (setup "merge-resume-merged"
+                               (assoc (merge-settings)
+                                      :item-json (clone merging-item-json)
+                                      :view-json (merged-resume-view)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (str (next-line)
+                      (show-line)
+                      (resume-view-line)
+                      (close-line))))
+      (assert (not (contains? (sequence-text root) "pr merge")))
+      (assert (empty? (stderr-text output))))))
+
+(deftest disarms-a-resumed-merge-when-the-head-moved
+  (let (root (unwrap-ok (setup "merge-resume-head-moved"
+                               (assoc (merge-settings)
+                                      :item-json (clone merging-item-json)
+                                      :view-json (moved-resume-view)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (refusal-sequence
+                   (str (next-line)
+                        (show-line)
+                        (resume-view-line)
+                        (disarm-line))
+                   (str "merge: " merge-item ": PR "
+                        merge-pr " head is " moved-head
+                        ", not the approved "
+                        approved-head))))
+      (assert (not (contains? (sequence-text root) "item advance")))
+      (assert (not (contains? (sequence-text root) "item close"))))))
