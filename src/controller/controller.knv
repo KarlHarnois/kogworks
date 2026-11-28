@@ -15,7 +15,7 @@
 (use controller/json json-error->message parse-json)
 
 (use controller/lifecycle ->log-progress log-progress
-                          remember-items)
+                          remember-items review-approval)
 
 (use controller/log-lines log-item)
 
@@ -27,7 +27,6 @@
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
-(use controller/merge-target merge-approval)
 (use controller/merge-commands send-command)
 
 (use controller/merge-target ->merge-report ignore-report
@@ -155,8 +154,8 @@
                         :progress (empty-progress))))
     ((ok config)
      (match (set-start-cap repo config)
-       ((err report) (err (->failed-run :report report
-                                        :progress (empty-progress))))
+       ((err report)
+        (err (->failed-run :report report :progress (empty-progress))))
        ((ok _) (run-controller-from repo config settings mode))))))
 
 (type set-start-cap
@@ -425,7 +424,8 @@
 (defn start-review-report (repo config manager _settings action mode)
   (match (start-review repo config (:item action) mode)
     ((ok result)
-     (started-review-progress _settings (:item action)
+     (started-review-progress _settings
+                              (:item action)
                               result mode))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
@@ -440,12 +440,6 @@
                                        (clone (:pr (:detail result)))
                                        (clone (:head (:detail result)))
                                        (review-approval mode))))))
-
-(defn review-approval (mode)
-  (match mode
-    (review-mode/verify merge-approval/approved)
-    (review-mode/design merge-approval/not-approved)
-    (review-mode/review merge-approval/not-approved)))
 
 (defn out-of-scope-report (config manager action)
   (err (->failure-report :manager manager

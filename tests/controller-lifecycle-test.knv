@@ -2,13 +2,14 @@
 
 (use controller/lifecycle ->log-progress advance-progress
                           event-line fixing-round-for
-                          review-outcome)
+                          review-approval review-outcome)
 
 (use controller/log ->pr-summary ->running-item log-status
                     running-status stage-state track)
 
 (use controller/log-lines ->log-item)
 (use controller/merge-target merge-approval)
+(use controller/review review-mode)
 (use controller/rules item-kind)
 
 (defn build-item (approval)
@@ -36,6 +37,10 @@
                      review-outcome/none 0 change item)
     ((some line) (:status line))
     (none log-status/failed)))
+
+(deftest a-design-review-is-not-approved
+  (assert (= (review-approval review-mode/design)
+             merge-approval/not-approved)))
 
 (deftest a-review-start-shows-reviewing-or-verifying
   (assert (= (line-status (lifecycle-change/review-started (str "rm-0001"))

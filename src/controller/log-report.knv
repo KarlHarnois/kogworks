@@ -1,8 +1,9 @@
 (module
   "Prints the controller log lines to standard error.")
 
-(use controller/events event-entry event-error->message
-                       event-log fixing-baselines latest-id
+(use controller/events event-entry event-error
+                       event-error->message event-log
+                       fixing-baselines latest-id
                        parse-event-log roadmap-id-of)
 
 (use controller/failure ->action-failure controller-error)
@@ -180,12 +181,12 @@
         (ok (assoc current
                    :event-id (max (:event-id current) (latest-id log))))
         (recur (inc index)
-               (print-entry repo
-                            (clone remote)
-                            current items
-                            (at entries index)))))))
+               (process-entry repo
+                              (clone remote)
+                              current items
+                              (at entries index)))))))
 
-(defn print-entry (repo remote progress items entry)
+(defn process-entry (repo remote progress items entry)
   (if (entry-wanted? progress entry)
     (print-wanted-entry repo remote progress items entry)
     progress))
@@ -236,13 +237,19 @@
       (= (:id (clone found)) item))))
 
 (defn invalid-log (command failure)
-  (controller-error/command-failed
-    (->action-failure :action (str "log")
-                      :item (str "-")
-                      :command (clone (:label command))
-                      :code 0
-                      :detail (str "invalid JSON: "
-                                   (event-error->message failure)))))
+  (controller-error/command-failed (->action-failure
+                                     :action (str "log")
+                                     :item (str "-")
+                                     :command (clone (:label command))
+                                     :code 0
+                                     :detail (log-detail failure))))
+
+(defn log-detail (failure)
+  (match failure
+    ((event-error/json cause)
+     (str "invalid JSON: "
+          (event-error->message (event-error/json (clone cause)))))
+    (_ (event-error->message failure))))
 
 (defn log-failure (command outcome)
   (controller-error/command-failed (->action-failure

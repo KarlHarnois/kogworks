@@ -134,6 +134,17 @@
       (assert (contains? (stderr-text output) "controller  log failed"))
       (assert (contains? (stderr-text output) "invalid JSON")))))
 
+(deftest stops-when-the-event-log-is-structurally-invalid
+  (let (root (unwrap-ok (setup "events-structural"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-structural")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "`changes` is missing"))
+      (assert (not (contains? (stderr-text output) "invalid JSON"))))))
+
 (deftest stops-when-the-event-log-command-fails
   (let (root (unwrap-ok (setup "events-failed"
                                (default-settings (clone wait-next)

@@ -10,12 +10,17 @@
 
 (use controller/log-lines log-item)
 (use controller/merge-target merge-approval)
+(use controller/review review-mode)
 (use controller/rules item-kind)
 
 (export ->item-review ->log-progress advance-progress
         event-item-id event-line fixing-round-for
         item-review last-review-of log-progress
-        remember-items review-outcome)
+        remember-items review-approval review-outcome)
+
+(def fixing-round-offset (inc current-fixing-move))
+
+(def current-fixing-move 1)
 
 (defstruct log-progress
   :event-id int
@@ -39,6 +44,12 @@
   (set running-status)
   remove
   keep)
+
+(defn review-approval (mode)
+  (match mode
+    (review-mode/verify merge-approval/approved)
+    (review-mode/design merge-approval/not-approved)
+    (review-mode/review merge-approval/not-approved)))
 
 (type remember-items
   (fn ((ref (vec log-item))
@@ -123,7 +134,8 @@
 
 (defn fixing-round-of (progress item status)
   (if (= (as-str status) (str "fixing"))
-    (+ (fixing-count-of (:fixing-counts progress) item) 2)
+    (+ (fixing-count-of (:fixing-counts progress) item)
+       fixing-round-offset)
     0))
 
 (defn find-review (reviews item)

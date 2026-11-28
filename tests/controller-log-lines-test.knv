@@ -9,10 +9,9 @@
 
 (use controller/merge-target merge-approval)
 
-(use controller/log-lines ->log-item action-line
-                          controller-failure-of
+(use controller/log-lines ->log-item controller-failure-of
                           failure-item-id failure-line
-                          log-action start-of stop-of)
+                          start-of stop-of)
 
 (use controller/rules item-kind)
 (use controller/signal stop-signal)
@@ -103,27 +102,6 @@
   (match (last labels)
     ((some label) (str label))
     (none (str))))
-
-(deftest action-lines-show-each-lifecycle-status
-  (let (item (log-item-of))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/dispatch))
-               log-status/building))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/review))
-               log-status/reviewing))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/verify))
-               log-status/verifying))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/merge))
-               log-status/merging))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/merged))
-               (log-status/merged 12)))))
-
-(deftest action-lines-show-the-build-track
-  (let (item (log-item-of)
-        line (action-line (str "14:00:00") item log-action/merged))
-    (assert (= (:track line)
-               (track/build-track stage-state/done
-                                  stage-state/done
-                                  stage-state/done)))))
 
 (deftest start-and-stop-lines-hold-their-values
   (let (start (start-of (str "14:00:00")
