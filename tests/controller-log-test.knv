@@ -1,7 +1,7 @@
 (use controller/log ->banner-line ->item-line ->log-settings
                     color-mode display-width log-status
                     output-target render-banner render-item
-                    stage-state track)
+                    stage-state sub-line track)
 
 (use fixtures/log-fixture banner-actual banner-expected
                           bdc-building changes-118-item
@@ -13,7 +13,7 @@
                           narrow-actual narrow-expected
                           review-actual review-expected
                           settings-118 settings-256
-                          settings-truecolor
+                          settings-80 settings-truecolor
                           stream-error-actual
                           stream-stop-actual
                           stream-stop-expected
@@ -171,7 +171,11 @@
                  (str "界")
                  (str "🙂")
                  (str "a\u{300}b")
-                 (str "コン"))
+                 (str "コン")
+                 (str "✅")
+                 (str "🚀")
+                 (str "⌚")
+                 (str "✅✅✅"))
             (fn (text)
               (assert (= (display-width (as-str text))
                          (the int
@@ -210,3 +214,34 @@
                             (as-str (str "build ▸")))))
     (assert (contains? (as-str (join (render-item wide (bdc-building)) "\n"))
                        (as-str (str "build ▸"))))))
+
+(deftest cuts-a-wide-emoji-title-at-80-columns
+  (let (marks (join (collect (map (range 0 30) (fn (_) (str "✅"))))
+                    "")
+        cut (join (collect (map (range 0 21) (fn (_) (str "✅"))))
+                  "")
+        item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/active
+                                                    stage-state/waiting
+                                                    stage-state/waiting)
+                          :status log-status/building
+                          :title marks
+                          :sub-lines (vec)))
+    (assert (same-lines? (render-item (settings-80) item)
+                         (vec (str "14:02:12  rm-8bdc  ▸○○  building     "
+                                   cut "…"))))))
+
+(deftest renders-an-empty-sub-line-value
+  (let (item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/done
+                                                    stage-state/sent-back
+                                                    stage-state/waiting)
+                          :status log-status/changes
+                          :title (str "Empty note")
+                          :sub-lines (vec (sub-line/criterion 2 (str)))))
+    (assert (same-lines? (render-item (settings-118) item)
+                         (vec (str "14:02:12  rm-8bdc  build ✓ review ↺ merge ○"
+                                   "  changes      Empty note")
+                              (str "          ╰─ criterion 2  "))))))
