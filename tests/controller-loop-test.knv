@@ -127,6 +127,9 @@
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
 
+(defn stderr-has? (output text)
+  (contains? (stderr-text output) (as-str text)))
+
 (defn prompt-text (root)
   (unwrap-ok (read-text (as-str (str root "/prompt")))))
 
@@ -398,7 +401,8 @@
     (let (output (unwrap-ok (run root (vec (str "--once")))))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root) (review-new-failure-sequence root)))
-      (assert (contains? (stderr-text output) "cannot start session")))))
+      (assert (contains? (stderr-text output) "cannot start session"))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0"))))))
 
 (deftest stops-when-the-item-detail-is-missing
   (let (root (unwrap-ok (setup "review-no-pull"

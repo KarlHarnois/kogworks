@@ -19,7 +19,8 @@
   (str "{\"item\":{\"id\":\"" merge-item "\","
        "\"title\":\"Merge the approved head\","
        "\"kind\":\"build\"," "\"status\":\"in_review\","
-       "\"session\":{\"name\":\"" merge-worker "\"}},"
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
        "\"approved\":true," "\"approval\":{\"head\":\""
@@ -29,7 +30,8 @@
   (str "{\"item\":{\"id\":\"" merge-item "\","
        "\"title\":\"Merge the approved head\","
        "\"kind\":\"build\"," "\"status\":\"fixing\","
-       "\"session\":{\"name\":\"" merge-worker "\"}},"
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
        "\"approved\":false," "\"approval\":{\"head\":\""
@@ -39,7 +41,8 @@
   (str "{\"item\":{\"id\":\"" merge-item "\","
        "\"title\":\"Merge the approved head\","
        "\"kind\":\"build\"," "\"status\":\"in_review\","
-       "\"session\":{\"name\":\"" merge-worker "\"}},"
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
        "\"approved\":false," "\"approval\":{\"head\":\""
@@ -49,7 +52,8 @@
   (str "{\"item\":{\"id\":\"" merge-item "\","
        "\"title\":\"Merge the approved head\","
        "\"kind\":\"build\"," "\"status\":\"merging\","
-       "\"session\":{\"name\":\"" merge-worker "\"}},"
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
        "\"pull_request\":{\"number\":" merge-pr ","
        "\"head\":\"" approved-head "\","
        "\"approved\":true," "\"approval\":{\"head\":\""
@@ -155,6 +159,19 @@
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
+
+(defn stderr-has? (output text)
+  (contains? (stderr-text output) (as-str text)))
+
+(defn appears-before? (text first second)
+  (let (parts (collect (map (split (as-str text) (as-str first))
+                         (fn (part) (str part)))))
+    (if (< (len parts) 2)
+      false
+      (contains? (join (collect (map (range 1 (len parts))
+                                  (fn (index) (clone (at parts index)))))
+                       (as-str first))
+                 (as-str second)))))
 
 (defn merged-sequence ()
   (str (poll-preface)
@@ -276,7 +293,8 @@
       (assert (not (contains? (sequence-text root) "item close")))
       (assert (not (contains? (sequence-text root) "ringleader send")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● kogworks"))))
+      (assert (stderr-has? output (str "merging"))))))
 
 (deftest retries-the-merge-when-the-update-leaves-the-head
   (let (root (unwrap-ok (setup "merge-conflict-update-same"
@@ -320,7 +338,8 @@
       (assert (not (contains? (sequence-text root) "pr view")))
       (assert (not (contains? (sequence-text root) "item close")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● kogworks"))))
+      (assert (stderr-has? output (str "merging"))))))
 
 (deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request
   (let (root (unwrap-ok (setup "merge-clean-status"
@@ -332,7 +351,10 @@
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (clean-status-sequence)))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● kogworks"))))
+      (assert (appears-before? (stderr-text output)
+                               (str "merging")
+                               (str "merged #12"))))))
 
 (deftest stops-when-the-clean-pull-request-merge-is-refused
   (let (root (unwrap-ok (setup "merge-clean-status-refused"
@@ -367,6 +389,7 @@
                         ": `gh api repos/" merge-slug
                         " --jq .allow_auto_merge` printed `false`,"
                         " not `true`"))))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
       (assert (not (contains? (sequence-text root) "item advance"))))))
 
 (deftest stops-before-advancing-without-a-required-check
@@ -541,6 +564,9 @@
                                         merge-pr
                                         " --json state,mergedAt,headRefOid`"
                                         " exited 9: view refused"))))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
+      (assert (stderr-has? output
+                           (str "disarmed     gh pr merge 12 --disable-auto")))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
 (deftest disarms-when-the-poll-view-is-invalid
@@ -558,6 +584,8 @@
                                         " --json state,mergedAt,headRefOid`"
                                         " exited 0: invalid poll JSON:"
                                         " unexpected end at 1"))))
+      (assert (stderr-has? output
+                           (str "disarmed     gh pr merge 12 --disable-auto")))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
 (deftest disarms-when-the-poll-item-show-is-refused
@@ -573,6 +601,8 @@
                                         ": `rmap item show "
                                         merge-item
                                         " --json` exited 9: show refused"))))
+      (assert (stderr-has? output
+                           (str "disarmed     gh pr merge 12 --disable-auto")))
       (assert (not (contains? (sequence-text root) "pr view"))))))
 
 (deftest disarms-when-the-poll-item-show-is-invalid
@@ -589,6 +619,8 @@
                                         " --json` exited 0:"
                                         " invalid item JSON:"
                                         " unexpected end at 1"))))
+      (assert (stderr-has? output
+                           (str "disarmed     gh pr merge 12 --disable-auto")))
       (assert (not (contains? (sequence-text root) "pr view"))))))
 
 (deftest stops-when-the-advance-is-refused
@@ -639,7 +671,8 @@
                                    (str "merge: " merge-item
                                         ": `rmap item close "
                                         merge-item
-                                        "` exited 5: not-approved")))))))
+                                        "` exited 5: not-approved"))))
+      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0"))))))
 
 (deftest names-the-timeout-in-the-manager-line
   (assert (= (merge-error->message
@@ -664,6 +697,7 @@
                                    (str "merge: " merge-item
                                         ": PR " merge-pr
                                         " did not merge within 0 seconds"))))
+      (assert (stderr-has? output (str "@ abcdef0")))
       (assert (not (contains? (sequence-text root) "item close"))))))
 
 (deftest polls-again-when-the-first-view-is-open
@@ -969,6 +1003,7 @@
                          (as-str (str "SIGINT"))))
       (assert (contains? (stderr-text output)
                          (as-str (str "cannot disarm"))))
+      (assert (not (stderr-has? output (str "disarmed     gh pr merge"))))
       (assert (not (contains? (sequence-text root) "item close")))
       (assert (not (contains? (sequence-text root) "ringleader send"))))))
 

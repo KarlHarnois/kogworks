@@ -1,7 +1,8 @@
 (module
   "Polls a pull request that has auto-merge armed and disarms it before any stop that leaves the item open.")
 
-(use controller/failure ->signal-stop-report
+(use controller/failure ->disarmed-command-failure
+                        ->signal-stop-report
                         controller-error disarm-status
                         merge-error)
 
@@ -98,7 +99,7 @@
 (defn disarm-and-stop (repo settings item target failure)
   (match (disarm repo settings item target)
     ((err disarm-failure) (err disarm-failure))
-    ((ok _) (err failure))))
+    ((ok command) (err (with-disarmed-command failure command)))))
 
 (defn close-item (repo settings item target)
   (let (command (close-command item)
@@ -108,6 +109,14 @@
         (report-event settings merge-event/closed target)
         (ok (do)))
       (err (merge-command-failure item command outcome)))))
+
+(defn with-disarmed-command (failure command)
+  (match failure
+    ((command-failed report)
+     (controller-error/disarmed-command-failed (->disarmed-command-failure
+                                                 :failure (clone report)
+                                                 :command (clone command))))
+    (_ (clone failure))))
 
 (defn poll-iteration (repo item target settings start)
   (match (read-stop-signal)
@@ -208,7 +217,7 @@
         outcome (execute-github repo command
                                 (:retry-delay-seconds settings)))
     (if (or (successful? outcome) (already-disarmed? outcome))
-      (ok (do))
+      (ok (clone (:label command)))
       (err (merge-command-failure item command outcome)))))
 
 (defn already-disarmed? (outcome)

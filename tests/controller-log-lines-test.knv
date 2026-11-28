@@ -1,5 +1,6 @@
 (use controller/failure ->action-failure
-                        ->signal-stop-report
+                        ->disarmed-command-failure
+                        ->signal-stop-report brief-role
                         controller-error disarm-status
                         factory-error merge-error)
 
@@ -52,6 +53,26 @@
   (match (first sub-lines)
     ((some line) (error-text (clone line)))
     (none (str))))
+
+(defn disarmed-value (sub-lines)
+  (match (find-label sub-lines (str "disarmed"))
+    ((some line) (disarmed-text (clone line)))
+    (none (str))))
+
+(type find-label
+  (fn ((iterator (ref sub-line)) string)
+    (option (ref sub-line))))
+
+(defn find-label (sub-lines label)
+  (find sub-lines
+    (fn (line)
+      (= (label-of (clone line))
+         (clone label)))))
+
+(defn disarmed-text (line)
+  (match line
+    ((sub-line/disarmed command) (str command))
+    (_ (str))))
 
 (defn error-text (line)
   (match line
@@ -126,12 +147,69 @@
     (assert (= labels
                (vec (str "error")
                     (str "exit 4")
+                    (str "pr")
                     (str "cleanup")
                     (str "manager")
                     (str "next"))))
     (assert (= (first-error (:sub-lines line))
                (str "cannot start session")))
     (assert (= (last-label labels) (str "next")))))
+
+(deftest review-command-failures-carry-the-pr-sub-line
+  (let (failure (command-failure-of (str "review")
+                                    (str "ringleader new --name review-rm-0001 --repo . --agent a --prompt <filled brief>")
+                                    1
+                                    (str "a session named review-rm-0001 already exists"))
+        line (failure-line-of failure))
+    (assert (= (labels-of (:sub-lines line))
+               (vec (str "error")
+                    (str "exit 1")
+                    (str "pr")
+                    (str "cleanup")
+                    (str "manager")
+                    (str "next"))))))
+
+(deftest a-disarmed-command-failure-carries-the-disarm-command
+  (let (failure (controller-error/disarmed-command-failed
+                  (->disarmed-command-failure :failure (action-failure-of (str "merge")
+                                                                          (str "gh pr view 12 --json state,mergedAt,headRefOid")
+                                                                          9
+                                                                          (str "view refused"))
+                                              :command (str "gh pr merge 12 --disable-auto")))
+        line (failure-line-of failure)
+        labels (labels-of (:sub-lines line)))
+    (assert (= labels
+               (vec (str "error")
+                    (str "exit 9")
+                    (str "pr")
+                    (str "disarmed")
+                    (str "manager")
+                    (str "next"))))
+    (assert (= (disarmed-value (:sub-lines line))
+               (str "gh pr merge 12 --disable-auto")))))
+
+(deftest a-refused-signal-disarm-has-no-disarmed-sub-line
+  (let (report (->signal-stop-report :item (str "rm-0001")
+                                     :pull-request-number (str "12")
+                                     :signal stop-signal/sigint
+                                     :disarm (disarm-status/not-disarmed 9
+                                                                         (str "cannot disarm")))
+        failure (controller-error/signal-stop report)
+        line (failure-line (str "14:00:00") (log-item-of) none failure))
+    (assert (= (labels-of (:sub-lines line))
+               (vec (str "error")
+                    (str "pr")
+                    (str "next"))))))
+
+(deftest a-reviewer-placeholder-shows-the-review-stage
+  (let (failure (controller-error/placeholder-left (str "rm-0001")
+                                                   (str "{{missing}}")
+                                                   brief-role/reviewer)
+        line (failure-line-of failure))
+    (assert (= (:track line)
+               (track/build-track stage-state/done
+                                  stage-state/failed
+                                  stage-state/waiting)))))
 
 (deftest out-of-scope-failures-are-item-lines
   (let (failure (controller-error/out-of-scope (action-failure-of (str "work")
@@ -174,7 +252,8 @@
 
 (deftest placeholder-failures-are-item-lines
   (let (failure (controller-error/placeholder-left (str "rm-0001")
-                                                   (str "{{missing}}"))
+                                                   (str "{{missing}}")
+                                                   brief-role/worker)
         line (failure-line-of failure))
     (assert (= (:status line) log-status/failed))
     (assert (contains? (as-str (first-error (:sub-lines line)))

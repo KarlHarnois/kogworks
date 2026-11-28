@@ -4,10 +4,11 @@
 (use controller/fields field-error field-error->message)
 (use controller/signal stop-signal stop-signal->text)
 
-(export ->action-failure ->failure-report
-        ->signal-stop-report action-failure controller-error
-        disarm-status error->message factory-error
-        factory-error->message failure-report
+(export ->action-failure ->disarmed-command-failure
+        ->failure-report ->signal-stop-report action-failure
+        brief-role controller-error disarm-status
+        disarmed-command-failure error->message
+        factory-error factory-error->message failure-report
         manager-message? merge-error merge-error->message
         signal-stop->log-text signal-stop-report)
 
@@ -20,10 +21,15 @@
   (out-of-scope action-failure)
   (factory-failed factory-error)
   (merge-failed merge-error)
+  (disarmed-command-failed disarmed-command-failure)
   (signal-stop signal-stop-report)
   (unreadable-brief string string)
   (unreadable-repo string string)
-  (placeholder-left string string))
+  (placeholder-left string string brief-role))
+
+(defenum brief-role
+  worker
+  reviewer)
 
 (defstruct signal-stop-report
   :item string
@@ -56,6 +62,10 @@
   :code int
   :detail string)
 
+(defstruct disarmed-command-failure
+  :failure action-failure
+  :command string)
+
 (defn manager-message? (failure)
   (match failure
     ((signal-stop _) false)
@@ -77,13 +87,15 @@
     ((factory-failed cause)
      (str "controller: " (factory-error->message cause)))
     ((merge-failed cause) (merge-error->message cause))
+    ((disarmed-command-failed report)
+     (command-failure->message (:failure report)))
     ((signal-stop report) (signal-stop->message report))
     ((unreadable-brief path reason)
      (str "controller: cannot read the brief " path ": " reason))
     ((unreadable-repo path reason)
      (str "controller: cannot resolve the repository " path
           ": " reason))
-    ((placeholder-left item token)
+    ((placeholder-left item token _)
      (str "controller: " item ": the brief still holds `"
           token "` after filling"))))
 

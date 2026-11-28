@@ -121,14 +121,14 @@
 (defn log-item-of-document (item document)
   (match (json-field document "item")
     (none (fallback-log-item item))
-    ((some record) (log-item-of-record item record))))
+    ((some record) (log-item-of-record item record document))))
 
-(defn log-item-of-record (item record)
+(defn log-item-of-record (item record document)
   (->log-item :id (str item)
               :kind (item-kind-of (optional-text record "kind" "build"))
               :title (optional-text record "title" item)
               :branch (session-branch record)
-              :pull-request (pull-summary record)))
+              :pull-request (pull-summary record document)))
 
 (defn fallback-log-item (item)
   (->log-item :id (str item)
@@ -142,8 +142,8 @@
     (none none)
     ((some session) (optional-text-option session "branch"))))
 
-(defn pull-summary (item)
-  (match (json-field item "pull_request")
+(defn pull-summary (item document)
+  (match (json-field document "pull_request")
     (none none)
     ((some pull) (pull-summary-of item pull))))
 

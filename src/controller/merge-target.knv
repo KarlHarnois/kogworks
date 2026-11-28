@@ -21,7 +21,7 @@
         report-event)
 
 (defenum merge-event
-  armed
+  merging
   closed)
 
 (defstruct merge-report
