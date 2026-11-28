@@ -1,0 +1,137 @@
+(module
+  "Holds the controller log line structs and enums.")
+
+(use controller/log-palette color-mode)
+
+(export ->alive-line ->banner-line ->controller-failure
+        ->item-line ->log-settings ->pr-summary
+        ->running-item ->stage-entry ->stop-line alive-line
+        banner-line controller-failure item-line
+        log-settings log-status output-target pr-summary
+        running-item running-status stage-entry stage-state
+        stop-line sub-line track track-form tree-branch)
+
+(defstruct alive-line
+  :time string
+  :running (vec running-item)
+  :merged int
+  :accepted int)
+
+(defstruct banner-line
+  :time string
+  :roadmap string
+  :manager (option string)
+  :poll-seconds int)
+
+(defstruct controller-failure
+  :time string
+  :status string
+  :sub-lines (vec sub-line))
+
+(defstruct item-line
+  :time string
+  :id string
+  :track track
+  :status log-status
+  :title string
+  :sub-lines (vec sub-line))
+
+(defstruct log-settings
+  :colors color-mode
+  :width (option int)
+  :target output-target)
+
+(defstruct stage-entry
+  :name string
+  :state stage-state)
+
+(defstruct stop-line
+  :time string
+  :merged int
+  :accepted int
+  :failed int
+  :running (vec running-item)
+  :rerun string)
+
+(defstruct running-item
+  :id string
+  :status running-status
+  :minutes int)
+
+(defenum log-status
+  building
+  researching
+  designing
+  working
+  reviewing
+  verifying
+  changes
+  (fixing int)
+  new-head
+  abandoned
+  merging
+  (merged int)
+  reported
+  accepted
+  head-moved
+  timed-out
+  refused
+  failed)
+
+(defenum output-target
+  terminal
+  stream)
+
+(defenum running-status
+  building
+  researching
+  designing
+  working
+  reviewing
+  verifying
+  changes
+  fixing
+  new-head
+  abandoned
+  merging
+  reported)
+
+(defenum sub-line
+  (error string)
+  (exit int string)
+  (pr pr-summary)
+  (disarmed string)
+  (cleanup string)
+  (manager string)
+  (next string)
+  (criterion int string)
+  (criteria string)
+  (reviewer string)
+  (session string)
+  (moved string)
+  (running running-item)
+  (rerun string))
+
+(defstruct pr-summary
+  :number int
+  :branch string
+  :head (option string))
+
+(defenum track
+  (build-track stage-state stage-state stage-state)
+  (write-track stage-state stage-state))
+
+(defenum stage-state
+  active
+  done
+  waiting
+  sent-back
+  failed)
+
+(defenum track-form
+  full
+  glyphs)
+
+(defenum tree-branch
+  middle
+  last)

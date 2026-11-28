@@ -415,7 +415,7 @@
     (if (>= index (len groups))
       lines
       (recur (inc index)
-             (append-lines lines (at groups index))))))
+             (append-lines! lines (at groups index))))))
 
 (defn controller-failure-of ()
   (->controller-failure :time (str "14:02:12")
@@ -596,13 +596,13 @@
                      (sub-line/criterion 5 (str "no verdict on this head"))
                      (sub-line/reviewer (str "review-rm-77c0-5d6e7f8 approved, verify starts")))))
 
-(defn append-lines (left right)
+(defn append-lines! (left right)
   (loop (index 0
          lines left)
     (if (>= index (len right))
       lines
       (recur (inc index)
-             (push-line lines (clone (at right index)))))))
+             (push-line! lines (clone (at right index)))))))
 
 (defn build-stages (build review merge)
   (track/build-track build review merge))
@@ -640,5 +640,5 @@
 (defn write-stages (write accept)
   (track/write-track write accept))
 
-(defn push-line (lines line)
+(defn push-line! (lines line)
   (do (push! lines line) lines))
