@@ -7,10 +7,10 @@
                        required-number required-object
                        required-text)
 
-(use controller/json json-error->message json-field
-                     json-text parse-json)
+(use controller/json json-array json-error->message
+                     json-field json-text parse-json)
 
-(use controller/merge-commands show-command)
+(use controller/merge-commands list-command show-command)
 (use controller/process command-detail execute successful?)
 
 (export ->merge-report ->merge-settings ->merge-target
@@ -18,7 +18,7 @@
         merge-approval merge-command-failure merge-event
         merge-item-status merge-outcome merge-report
         merge-settings merge-target read-item-status
-        read-merge-target report-event)
+        read-merge-target read-merging-items report-event)
 
 (defenum merge-event
   merging
@@ -26,6 +26,8 @@
 
 (defenum merge-outcome
   merged
+  armed
+  waiting
   handed-back)
 
 (defstruct merge-report
@@ -33,14 +35,14 @@
   :item string)
 
 (defstruct merge-settings
-  :poll-seconds int
   :retry-delay-seconds int
   :timeout-seconds int
+  :remote (option string)
   :report (fn (merge-event (ref merge-target) (ref merge-report))
-            unit)
-  :report-data merge-report)
+            unit))
 
 (defstruct merge-target
+  :id string
   :pull-request string
   :head string
   :item-status merge-item-status
@@ -63,6 +65,18 @@
 
 (defn read-item-status (repo item)
   (read-item-document repo item item-status-field))
+
+(defn read-merging-items (repo roadmap)
+  (let (command (list-command roadmap))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (map-err (merging-ids (str (trim (:stdout outcome))))
+          (fn (reason)
+            (invalid-output (str "-")
+                            command
+                            (str "invalid item list JSON")
+                            reason)))
+        (err (merge-command-failure (str "-") command outcome))))))
 
 (defn invalid-item-output (item command reason)
   (invalid-output item command
@@ -87,7 +101,9 @@
 
 (defn report-event (settings event target)
   (let (report (:report settings))
-    (report event target (:report-data settings))))
+    (report event target
+            (->merge-report :remote (clone (:remote settings))
+                            :item (clone (:id target))))))
 
 (defn ignore-report (_event _target _data) (do))
 
@@ -112,6 +128,7 @@
 (defn target-fields (document)
   (let-try (status (item-status-field document)
             record (required-object document "item" "item")
+            id (required-text record "id" "item.id")
             title (required-text record "title" "item.title")
             kind (required-text record "kind" "item.kind")
             pull (required-object document "pull_request" "pull_request")
@@ -119,7 +136,8 @@
             approved (required-bool pull "approved" "pull_request.approved")
             approval (required-object pull "approval" "pull_request.approval")
             head (required-text approval "head" "pull_request.approval.head"))
-    (ok (->merge-target :pull-request pr
+    (ok (->merge-target :id id
+                        :pull-request pr
                         :head head
                         :item-status status
                         :approval (bool->approval approved)
@@ -151,3 +169,44 @@
 (defn bool->approval (approved)
   (if approved
     merge-approval/approved merge-approval/not-approved))
+
+(defn merging-ids (text)
+  (match (parse-json (as-str text))
+    ((ok document) (document-merging-ids document))
+    ((err failure) (err (json-error->message failure)))))
+
+(defn document-merging-ids (document)
+  (match (json-field document "items")
+    (none (err (str "`items` is missing")))
+    ((some value) (merging-items-of value))))
+
+(defn merging-items-of (value)
+  (match (json-array value)
+    (none (err (str "`items` is not an array")))
+    ((some items) (collect-merging-ids items))))
+
+(defn collect-merging-ids (items)
+  (loop (index 0
+         ids (vec))
+    (if (>= index (len items))
+      (ok ids)
+      (match (merging-id (at items index))
+        ((ok none) (recur (inc index) ids))
+        ((ok (some id)) (recur (inc index) (push-id! ids id)))
+        ((err reason) (err reason))))))
+
+(defn push-id! (ids id)
+  (do (push! ids id) ids))
+
+(defn merging-id (item)
+  (map-err (merging-id-fields item) field-error->message))
+
+(defn merging-id-fields (item)
+  (let-try (id (required-text item "id" "items[].id")
+            status (required-text item "status" "items[].status"))
+    (ok (merging-option id status))))
+
+(defn merging-option (id status)
+  (if (= status (str "merging"))
+    (some id)
+    none))

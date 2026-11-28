@@ -10,7 +10,8 @@
         disarmed-command-failure error->message
         factory-error factory-error->message failure-report
         manager-message? merge-error merge-error->message
-        signal-stop->log-text signal-stop-report)
+        signal-stop->log-text signal-stop-report
+        stop-signal->text)
 
 (defstruct failure-report
   :manager (option string)
@@ -23,6 +24,7 @@
   (merge-failed merge-error)
   (disarmed-command-failed disarmed-command-failure)
   (signal-stop signal-stop-report)
+  (signal-stopped stop-signal (vec signal-stop-report))
   (unreadable-brief string string)
   (unreadable-repo string string)
   (placeholder-left string string brief-role))
@@ -69,6 +71,7 @@
 (defn manager-message? (failure)
   (match failure
     ((signal-stop _) false)
+    ((signal-stopped _ _) false)
     (_ true)))
 
 (defn error->message (failure)
@@ -90,6 +93,8 @@
     ((disarmed-command-failed report)
      (command-failure->message (:failure report)))
     ((signal-stop report) (signal-stop->message report))
+    ((signal-stopped signal reports)
+     (signal-stopped->message signal reports))
     ((unreadable-brief path reason)
      (str "controller: cannot read the brief " path ": " reason))
     ((unreadable-repo path reason)
@@ -138,6 +143,15 @@
        "; auto-merge "
        (disarm-status->text (:pull-request-number report)
                             (:disarm report))))
+
+(defn signal-stopped->message (signal reports)
+  (if (empty? reports)
+    (str "controller: stopped on "
+         (stop-signal->text signal)
+         "; no merge was armed")
+    (join (collect (map (iter reports)
+                     (fn (report) (signal-stop->message report))))
+          "; ")))
 
 (defn signal-stop->message (report)
   (str "merge: "

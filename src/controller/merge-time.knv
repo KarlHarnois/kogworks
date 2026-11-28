@@ -1,0 +1,163 @@
+(module
+  "Reads when rmap recorded an item moving to merging and decides the merge timeout.")
+
+(use controller/json json-array json-error->message
+                     json-field json-text parse-json)
+
+(use controller/merge-commands log-command)
+
+(use controller/merge-target invalid-output
+                             merge-command-failure)
+
+(use controller/process execute successful?)
+
+(export merge-start-seconds merge-timed-out?
+        timestamp-seconds)
+
+(def timestamp-seconds
+  (rust "{{
+    let bytes = {0}.as_bytes();
+    if bytes.len() < 19 {{
+      return None;
+    }}
+    let digit = |index: usize| -> Option<i64> {{
+      let byte = *bytes.get(index)?;
+      if byte.is_ascii_digit() {{
+        Some(i64::from(byte - b'0'))
+      }} else {{
+        None
+      }}
+    }};
+    let number = |start: usize, length: usize| -> Option<i64> {{
+      let mut value = 0i64;
+      for offset in 0..length {{
+        value = value * 10 + digit(start + offset)?;
+      }}
+      Some(value)
+    }};
+    let year = number(0, 4)?;
+    let month = number(5, 2)?;
+    let day = number(8, 2)?;
+    let hour = number(11, 2)?;
+    let minute = number(14, 2)?;
+    let second = number(17, 2)?;
+    let shifted_year = if month <= 2 {{ year - 1 }} else {{ year }};
+    let era = if shifted_year >= 0 {{
+      shifted_year
+    }} else {{
+      shifted_year - 399
+    }} / 400;
+    let year_of_era = shifted_year - era * 400;
+    let shifted_month = if month > 2 {{ month - 3 }} else {{ month + 9 }};
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4
+      - year_of_era / 100 + day_of_year;
+    let days = era * 146097 + day_of_era - 719468;
+    Some(days * 86400 + hour * 3600 + minute * 60 + second)
+  }}"
+    (fn ((ref str)) (option int))))
+
+(def now-seconds
+  (rust "std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|duration| i64::try_from(duration.as_secs()).ok())"
+    (fn () (option int))))
+
+(defn merge-timed-out? (repo settings item)
+  (match (merge-start-seconds repo item)
+    ((err failure) (err failure))
+    ((ok start)
+     (ok (>= (- (current-seconds) start)
+             (:timeout-seconds settings))))))
+
+(defn merge-start-seconds (repo item)
+  (let (command (log-command item))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (map-err (start-seconds (text-of-outcome outcome))
+          (fn (reason)
+            (invalid-output item command
+                            (str "invalid event JSON")
+                            reason)))
+        (err (merge-command-failure item command outcome))))))
+
+(defn text-of-outcome (outcome)
+  (str (:stdout outcome)))
+
+(defn start-seconds (text)
+  (match (parse-json (as-str text))
+    ((ok document) (start-seconds-of document))
+    ((err failure) (err (json-error->message failure)))))
+
+(defn start-seconds-of (document)
+  (match (json-field document "events")
+    (none (ok (current-seconds)))
+    ((some value) (events-seconds value))))
+
+(defn events-seconds (value)
+  (match (json-array value)
+    (none (err (str "`events` is not an array")))
+    ((some events) (latest-merge-seconds events 0 none))))
+
+(defn latest-merge-seconds (events index latest)
+  (if (>= index (len events))
+    (ok (or-seconds latest))
+    (latest-merge-seconds events
+                          (inc index)
+                          (later-seconds latest
+                                         (event-seconds (at events index))))))
+
+(defn event-seconds (event)
+  (if (merging-event? event) (event-at-seconds event) none))
+
+(defn merging-event? (event)
+  (and (= (optional-text event "type")
+          (some (str "item-advanced")))
+       (= (advanced-status event)
+          (some (str "merging")))))
+
+(defn advanced-status (event)
+  (match (json-field event "payload")
+    (none none)
+    ((some payload) (status-field payload))))
+
+(defn status-field (payload)
+  (match (json-field payload "changes")
+    (none none)
+    ((some changes) (status-new changes))))
+
+(defn status-new (changes)
+  (match (json-field changes "status")
+    (none none)
+    ((some status) (status-value status))))
+
+(defn status-value (status)
+  (match (json-field status "new")
+    ((some value) (json-text value))
+    (none none)))
+
+(defn event-at-seconds (event)
+  (match (optional-text event "at")
+    ((some at) (timestamp-seconds (as-str at)))
+    (none none)))
+
+(defn optional-text (value key)
+  (match (json-field value key)
+    ((some found) (json-text found))
+    (none none)))
+
+(defn later-seconds (latest candidate)
+  (match candidate
+    (none (clone latest))
+    ((some seconds) (largest-seconds latest seconds))))
+
+(defn largest-seconds (latest seconds)
+  (match latest
+    (none (some seconds))
+    ((some found) (some (if (> found seconds) found seconds)))))
+
+(defn or-seconds (latest)
+  (match latest
+    (none (current-seconds))
+    ((some seconds) seconds)))
+
+(defn current-seconds ()
+  (unwrap-or (now-seconds) 0))

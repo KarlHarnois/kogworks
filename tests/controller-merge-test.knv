@@ -1,141 +1,148 @@
-(use controller/failure merge-error merge-error->message)
-
 (use fixtures/controller-fixture default-settings exit-code
                                  prepare-repo read-text
                                  run-controller stderr-text
-                                 write-fakes)
-
-(def merge-slug (str "fake-owner/fake-repo"))
-
-(def moved-head
-  (str "1234567890abcdef1234567890abcdef12345678"))
+                                 write-fakes write-text)
 
 (def merge-next
   (str "{\"next\":[{\"item\":\"" merge-item
        "\",\"actions\":["
        "{\"action\":\"merge\",\"actor\":\"controller\"}]}]}"))
 
-(def merge-item-json
-  (str "{\"item\":{\"id\":\"" merge-item "\","
-       "\"title\":\"Merge the approved head\","
-       "\"kind\":\"build\"," "\"status\":\"in_review\","
-       "\"session\":{\"name\":\"" merge-worker
-       "\",\"branch\":\"" merge-worker "\"}},"
-       "\"pull_request\":{\"number\":" merge-pr ","
-       "\"head\":\"" approved-head "\","
-       "\"approved\":true," "\"approval\":{\"head\":\""
-       approved-head "\"}}}"))
+(def merging-item-json (item-json (str "merging") true))
 
-(def fixing-item-json
-  (str "{\"item\":{\"id\":\"" merge-item "\","
-       "\"title\":\"Merge the approved head\","
-       "\"kind\":\"build\"," "\"status\":\"fixing\","
-       "\"session\":{\"name\":\"" merge-worker
-       "\",\"branch\":\"" merge-worker "\"}},"
-       "\"pull_request\":{\"number\":" merge-pr ","
-       "\"head\":\"" approved-head "\","
-       "\"approved\":false," "\"approval\":{\"head\":\""
-       approved-head "\"}}}"))
+(def fixing-item-json (item-json (str "fixing") false))
 
-(def unapproved-item-json
-  (str "{\"item\":{\"id\":\"" merge-item "\","
-       "\"title\":\"Merge the approved head\","
-       "\"kind\":\"build\"," "\"status\":\"in_review\","
-       "\"session\":{\"name\":\"" merge-worker
-       "\",\"branch\":\"" merge-worker "\"}},"
-       "\"pull_request\":{\"number\":" merge-pr ","
-       "\"head\":\"" approved-head "\","
-       "\"approved\":false," "\"approval\":{\"head\":\""
-       approved-head "\"}}}"))
+(def unapproved-item-json (item-json (str "merging") false))
 
-(def merging-item-json
-  (str "{\"item\":{\"id\":\"" merge-item "\","
-       "\"title\":\"Merge the approved head\","
-       "\"kind\":\"build\"," "\"status\":\"merging\","
-       "\"session\":{\"name\":\"" merge-worker
-       "\",\"branch\":\"" merge-worker "\"}},"
-       "\"pull_request\":{\"number\":" merge-pr ","
-       "\"head\":\"" approved-head "\","
-       "\"approved\":true," "\"approval\":{\"head\":\""
-       approved-head "\"}}}"))
-
-(def merge-item (str "rm-0009"))
-
-(def merge-pr (str "12"))
-
-(def merge-worker (str "build-rm-0009"))
+(def approved-item-json (item-json (str "in_review") true))
 
 (def merged-view
-  (str "{\"state\":\"MERGED\",\"mergedAt\":\"2026-11-26T00:00:00Z\","
-       "\"headRefOid\":\"" approved-head "\"}"))
+  (str "{\"state\":\"MERGED\",\"headRefOid\":\""
+       approved-head "\"," "\"autoMergeRequest\":null}"))
 
 (def open-view
-  (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
-       "\"headRefOid\":\"" approved-head "\"}"))
+  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" approved-head
+       "\"," "\"autoMergeRequest\":null}"))
 
-(def clean-status-error
-  (str "failed to enable auto-merge: Pull request is in clean status"
-       " (enablePullRequestAutoMerge)"))
-
-(def already-disarmed-error
-  (str "failed to disable auto-merge: Pull request is not in auto merge state"
-       " (disablePullRequestAutoMerge)"))
-
-(def network-error
-  (str "Post \"https://api.github.com/graphql\":"
-       " net/http: TLS handshake timeout"))
-
-(def conflict-error
-  (str "Pull Request has merge conflicts"))
-
-(def approved-head
-  (str "abcdef0123456789abcdef0123456789abcdef01"))
-
-(defn armed-view ()
+(def armed-view
   (str "{\"state\":\"OPEN\",\"headRefOid\":\"" approved-head
        "\","
        "\"autoMergeRequest\":{\"enabledAt\":\"2026-11-26T00:00:00Z\","
        "\"mergeMethod\":\"MERGE\"}}"))
 
-(defn unarmed-view ()
-  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" approved-head
-       "\"," "\"autoMergeRequest\":null}"))
-
-(defn merged-resume-view ()
-  (str "{\"state\":\"MERGED\",\"headRefOid\":\""
-       approved-head "\"," "\"autoMergeRequest\":null}"))
-
-(defn moved-resume-view ()
+(def moved-view
   (str "{\"state\":\"OPEN\",\"headRefOid\":\"" moved-head
        "\"," "\"autoMergeRequest\":null}"))
 
-(defn assert-transient-retry (name error)
-  (let (root (unwrap-ok (setup name
-                               (assoc (merge-settings)
-                                      :merge-network-failures 1
-                                      :network-error (clone error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (merge-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+(def review-next
+  (str "{\"next\":[{\"item\":\"" review-item
+       "\",\"actions\":["
+       "{\"action\":\"review\",\"actor\":\"controller\"}]}]}"))
 
-(defn moved-view ()
-  (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
-       "\"headRefOid\":\"" moved-head "\"}"))
+(def review-item-json
+  (str "{\"item\":{\"id\":\"" review-item "\","
+       "\"title\":\"Start a review\"," "\"kind\":\"build\","
+       "\"criteria\":[\"the controller starts one reviewer\"],"
+       "\"session\":{\"branch\":\"" review-branch
+       "\",\"kind\":\"work\",\"name\":\"" review-branch
+       "\"}," "\"status\":\"in_review\"},"
+       "\"pull_request\":{\"number\":21,\"head\":\""
+       approved-head "\"}}"))
 
-(defn merge-settings ()
-  (assoc (default-settings (clone merge-next) (str "{\"ready\":[]}"))
-         :item-json (clone merge-item-json)
-         :slug (clone merge-slug)
-         :allow-auto-merge (str "true")
-         :required-checks (str "1")
-         :view-json (clone merged-view)))
+(def merge-slug (str "fake-owner/fake-repo"))
+
+(def merge-item (str "rm-0009"))
+
+(def second-item (str "rm-0010"))
+
+(def merge-pr (str "12"))
+
+(def second-pr (str "13"))
+
+(def merge-worker (str "build-rm-0009"))
+
+(def approved-head
+  (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(def moved-head
+  (str "1234567890abcdef1234567890abcdef12345678"))
+
+(def empty-next (str "{\"next\":[]}"))
+
+(def empty-ready (str "{\"ready\":[]}"))
+
+(def clean-status-error
+  (str "failed to enable auto-merge: Pull request is in clean status"
+       " (enablePullRequestAutoMerge)"))
+
+(def conflict-error
+  (str "Pull Request has merge conflicts"))
+
+(def network-error
+  (str "Post \"https://api.github.com/graphql\":"
+       " net/http: TLS handshake timeout"))
+
+(def old-log
+  (str "{\"events\":[{\"at\":\"2020-01-01T00:00:00Z\","
+       "\"type\":\"item-advanced\","
+       "\"payload\":{\"changes\":{\"status\":"
+       "{\"new\":\"merging\",\"old\":\"in_review\"}}}}]}"))
+
+(def build-ready
+  (str "{\"ready\":[{\"id\":\"rm-0001\",\"kind\":\"build\"}]}"))
+
+(def review-item (str "rm-0002"))
+
+(def review-session (str "review-rm-0002-abcdef0"))
+
+(def review-branch (str "build-rm-0002"))
+
+(defn preflight-lines ()
+  (str (show-line merge-item)
+       (repo-view-line)
+       (auto-merge-line)
+       (required-checks-line)
+       (advance-line)
+       (merge-line)))
+
+(defn setup-timeout (name settings)
+  (match (setup-merging name settings merging-item-json)
+    ((err reason) (err reason))
+    ((ok root)
+     (match (write-file root (str "log-" merge-item ".json") old-log)
+       ((err reason) (err reason))
+       ((ok _) (ok root))))))
+
+(defn setup-two (name settings)
+  (match (setup name settings)
+    ((err reason) (err reason))
+    ((ok root)
+     (match (two-item-files root)
+       ((err reason) (err reason))
+       ((ok _) (ok root))))))
+
+(defn setup-merging (name settings text)
+  (match (setup name settings)
+    ((err reason) (err reason))
+    ((ok root)
+     (match (item-file root merge-item text)
+       ((err reason) (err reason))
+       ((ok _) (ok root))))))
+
+(defn two-item-files (root)
+  (let-try (_ (item-file root merge-item merging-item-json)
+            _ (item-file
+                root second-item
+                (item-json-for second-item (str "merging") true second-pr))
+            _ (write-file root (str "view-" merge-pr ".json") armed-view))
+    (write-file root (str "view-" second-pr ".json") armed-view)))
+
+(defn item-file (root id text)
+  (write-file root (str "item-" id ".json") text))
+
+(defn write-file (root name text)
+  (write-text (as-str (str root "/" name))
+              (as-str text)))
 
 (defn setup (name settings)
   (let (root (str "target/knave/controller-tests/" name))
@@ -152,6 +159,13 @@
                  (str "--merge-retry-delay")
                  (str "0"))))
 
+(defn poll (root)
+  (run-with root
+            (vec (str "--poll")
+                 (str "0")
+                 (str "--merge-retry-delay")
+                 (str "0"))))
+
 (defn run-with (root args)
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
@@ -163,50 +177,23 @@
 (defn stderr-has? (output text)
   (contains? (stderr-text output) (as-str text)))
 
-(defn appears-before? (text first second)
-  (let (parts (collect (map (split (as-str text) (as-str first))
-                         (fn (part) (str part)))))
-    (if (< (len parts) 2)
-      false
-      (contains? (join (collect (map (range 1 (len parts))
-                                  (fn (index) (clone (at parts index)))))
-                       (as-str first))
-                 (as-str second)))))
+(defn occurrences (text needle)
+  (dec (len (collect (split (as-str text) (as-str needle))))))
 
-(defn merged-sequence ()
-  (str (poll-preface)
-       (view-line)
-       (close-line)))
+(defn next-line ()
+  (str "rmap next --roadmap fake-roadmap --json\n"))
 
-(defn clean-status-sequence ()
-  (str (merge-preface)
-       (direct-merge-line)
-       (show-line)
-       (view-line)
-       (close-line)))
+(defn ready-line ()
+  (str "rmap ready --roadmap fake-roadmap --json\n"))
 
-(defn poll-preface ()
-  (str (merge-preface) (show-line)))
+(defn show-line (item)
+  (str "rmap item show " item " --json\n"))
 
-(defn view-line ()
-  (str "gh pr view " merge-pr
-       " --json state,mergedAt,headRefOid\n"))
+(defn repo-view-line ()
+  (str "gh repo view --json nameWithOwner -q .nameWithOwner\n"))
 
-(defn resume-view-line ()
-  (str "gh pr view " merge-pr
-       " --json state,headRefOid,autoMergeRequest\n"))
-
-(defn disarm-line ()
-  (str "gh pr merge " merge-pr " --disable-auto\n"))
-
-(defn close-line ()
-  (str "rmap item close " merge-item "\n"))
-
-(defn merge-preface ()
-  (str (preflight-preface)
-       (required-checks-line)
-       (advance-line)
-       (merge-line)))
+(defn auto-merge-line ()
+  (str "gh api repos/" merge-slug " --jq .allow_auto_merge\n"))
 
 (defn required-checks-line ()
   (str "gh api repos/" merge-slug
@@ -215,6 +202,9 @@
 
 (defn advance-line ()
   (str "rmap item advance " merge-item " merging\n"))
+
+(defn fixing-line ()
+  (str "rmap item advance " merge-item " fixing\n"))
 
 (defn merge-line ()
   (str "gh pr merge " merge-pr
@@ -228,8 +218,14 @@
 (defn update-branch-line ()
   (str "gh pr update-branch " merge-pr "\n"))
 
-(defn fixing-line ()
-  (str "rmap item advance " merge-item " fixing\n"))
+(defn disarm-line (pr)
+  (str "gh pr merge " pr " --disable-auto\n"))
+
+(defn resume-view-line (pr)
+  (str "gh pr view " pr
+       " --json state,headRefOid,autoMergeRequest\n"))
+
+(defn close-line (item) (str "rmap item close " item "\n"))
 
 (defn record-head-line (head)
   (str "rmap pr head " merge-item " " head "\n"))
@@ -245,898 +241,391 @@
        " a fixed report with the new head. A fresh review is needed"
        " at the new head."))
 
-(defn preflight-preface ()
-  (str (next-line)
-       (show-line)
-       (repo-view-line)
-       (auto-merge-line)))
+(defn merge-settings ()
+  (assoc (default-settings (clone merge-next) (clone empty-ready))
+         :item-json (clone approved-item-json)
+         :slug (clone merge-slug)
+         :allow-auto-merge (str "true")
+         :required-checks (str "1")
+         :view-json (clone merged-view)))
 
-(defn next-line ()
-  (str "rmap next --roadmap fake-roadmap --json\n"))
+(defn item-json (status approved)
+  (item-json-for merge-item status approved merge-pr))
 
-(defn show-line ()
-  (str "rmap item show " merge-item " --json\n"))
+(defn item-json-for (id status approved pull-request)
+  (str "{\"item\":{\"id\":\"" id "\","
+       "\"title\":\"Merge the approved head\","
+       "\"kind\":\"build\",\"status\":\"" status "\","
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
+       "\"pull_request\":{\"number\":" pull-request ","
+       "\"head\":\"" approved-head "\"," "\"approved\":"
+       (if approved "true" "false")
+       "," "\"approval\":{\"head\":\"" approved-head
+       "\"}}}"))
 
-(defn repo-view-line ()
-  (str "gh repo view --json nameWithOwner -q .nameWithOwner\n"))
+(defn merging-items (ids)
+  (str "{\"items\":["
+       (join (collect (map (iter ids)
+                        (fn (id)
+                          (str "{\"id\":\"" id "\",\"status\":\"merging\"}"))))
+             ",")
+       "]}"))
 
-(defn auto-merge-line ()
-  (str "gh api repos/" merge-slug " --jq .allow_auto_merge\n"))
+(deftest arms-without-waiting
+  (let (root (unwrap-ok (setup "merge-arm" (merge-settings)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line) (preflight-lines))))
+    (assert (not (contains? (sequence-text root) "pr view")))
+    (assert (not (contains? (sequence-text root) "item close")))
+    (assert (= (occurrences (stderr-text output) (str "merging"))
+               1))))
 
-(defn refusal-sequence (lines message)
-  (str lines (send-line message) (show-line)))
+(deftest prints-nothing-while-the-pull-request-is-open
+  (let (root (unwrap-ok (setup-merging "merge-open"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone armed-view))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (show-line merge-item)
+                    (resume-view-line merge-pr)
+                    (next-line)
+                    (ready-line))))
+    (assert (not (stderr-has? output (str "merging"))))
+    (assert (not (stderr-has? output (str "merged #"))))))
 
-(defn send-line (message)
-  (str "ringleader send fake-manager " message "\n"))
+(deftest closes-a-merge-that-finished-while-the-controller-was-down
+  (let (root (unwrap-ok (setup-merging "merge-finished"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone merged-view))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (show-line merge-item)
+                    (resume-view-line merge-pr)
+                    (close-line merge-item)
+                    (next-line)
+                    (ready-line))))
+    (assert (= (occurrences (stderr-text output) (str "merged #12"))
+               1))))
 
-(deftest merges-the-approved-head-and-closes-the-item
-  (let (root (unwrap-ok (setup "merge" (merge-settings))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root) (merged-sequence)))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+(deftest closes-on-a-later-pass
+  (let (root (unwrap-ok (setup-merging "merge-later"
+                                       (assoc
+                                         (merge-settings)
+                                         :items-json (merging-items (vec (clone merge-item)))
+                                         :view-json (clone open-view)
+                                         :later-view-json (clone merged-view)
+                                         :stop-after 3)
+                                       (clone merging-item-json)))
+        output (unwrap-ok (poll root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (close-line merge-item))))
+    (assert (= (occurrences (stderr-text output) (str "merged #12"))
+               1))))
+
+(deftest checks-every-merging-build-each-pass
+  (let (root (unwrap-ok (setup-two "merge-two"
+                                   (assoc (merge-settings)
+                                          :items-json (merging-items (vec
+                                                                       (clone merge-item)
+                                                                       (clone second-item))))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (show-line merge-item)
+                    (resume-view-line merge-pr)
+                    (show-line second-item)
+                    (resume-view-line second-pr)
+                    (next-line)
+                    (ready-line))))))
+
+(deftest dispatches-while-a-pull-request-stays-open
+  (let (root (unwrap-ok (setup-merging "merge-dispatch"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone armed-view)
+                                              :next-json (clone empty-next)
+                                              :ready-json (clone build-ready))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (contains? (sequence-text root)
+                       (as-str (str "rmap item claim rm-0001"))))
+    (assert (not (contains? (sequence-text root) "item close")))))
+
+(deftest starts-a-review-while-a-pull-request-stays-open
+  (let (root (unwrap-ok (setup-merging "merge-review"
+                                       (assoc
+                                         (merge-settings)
+                                         :items-json (merging-items (vec (clone merge-item)))
+                                         :view-json (clone armed-view)
+                                         :next-json (clone review-next)
+                                         :item-json (clone review-item-json))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (contains?
+              (sequence-text root)
+              (as-str (str "rmap review start " review-item
+                           " --session " review-session))))
+    (assert (not (contains? (sequence-text root) "item close")))))
+
+(deftest re-arms-an-open-pull-request-that-is-not-armed
+  (let (root (unwrap-ok (setup-merging "merge-rearm"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone open-view))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (show-line merge-item)
+                    (resume-view-line merge-pr)
+                    (merge-line)
+                    (next-line)
+                    (ready-line))))
+    (assert (not (contains? (sequence-text root) "item close")))))
+
+(deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request
+  (let (root (unwrap-ok (setup "merge-clean"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone clean-status-error))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line)
+                    (preflight-lines)
+                    (direct-merge-line)
+                    (close-line merge-item))))
+    (assert (= (occurrences (stderr-text output) (str "merged #12"))
+               1))))
 
 (deftest records-the-new-head-when-the-update-moves-the-head
-  (let (root (unwrap-ok (setup "merge-conflict-update-moved"
+  (let (root (unwrap-ok (setup "merge-update-moved"
                                (assoc (merge-settings)
                                       :merge-exit 1
                                       :merge-error (clone conflict-error)
-                                      :view-json (moved-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (update-branch-line)
-                      (view-line)
-                      (record-head-line moved-head))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
-      (assert (stderr-has? output (str "merging"))))))
+                                      :view-json (clone moved-view))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line)
+                    (preflight-lines)
+                    (update-branch-line)
+                    (resume-view-line merge-pr)
+                    (record-head-line moved-head))))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
 (deftest retries-the-merge-when-the-update-leaves-the-head
-  (let (root (unwrap-ok (setup "merge-conflict-update-same"
+  (let (root (unwrap-ok (setup "merge-update-same"
                                (assoc (merge-settings)
                                       :merge-exit 1
                                       :merge-error (clone conflict-error)
-                                      :view-json (clone open-view)
-                                      :later-view-json (clone merged-view)))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--once")
-                                           (str "--merge-poll")
-                                           (str "0")))))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (update-branch-line)
-                      (view-line)
-                      (merge-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (not (contains? (sequence-text root) "pr head")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                                      :view-json (clone open-view))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line)
+                    (preflight-lines)
+                    (update-branch-line)
+                    (resume-view-line merge-pr)
+                    (merge-line))))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
 (deftest rebases-a-conflicted-branch-when-the-update-is-refused
-  (let (root (unwrap-ok (setup "merge-conflict-rebase"
+  (let (root (unwrap-ok (setup "merge-rebase"
                                (assoc (merge-settings)
                                       :merge-exit 1
                                       :merge-error (clone conflict-error)
                                       :update-branch-exit 4
-                                      :update-branch-error (str "branch cannot be updated")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (update-branch-line)
-                      (fixing-line)
-                      (show-line)
-                      (worker-send-line (rebase-text)))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
-      (assert (stderr-has? output (str "merging"))))))
-
-(deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request
-  (let (root (unwrap-ok (setup "merge-clean-status"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone
-                                                     clean-status-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root) (clean-status-sequence)))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
-      (assert (appears-before? (stderr-text output)
-                               (str "merging")
-                               (str "merged #12"))))))
-
-(deftest stops-when-the-clean-pull-request-merge-is-refused
-  (let (root (unwrap-ok (setup "merge-clean-status-refused"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone clean-status-error)
-                                      :direct-merge-exit 4
-                                      :direct-merge-error (str "direct merge refused")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (merge-preface) (direct-merge-line))
-                                   (str "merge: " merge-item
-                                        ": `gh pr merge "
-                                        merge-pr
-                                        " --merge --match-head-commit "
-                                        approved-head
-                                        "` exited 4: direct merge refused"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+                                      :update-branch-error (str "branch cannot be updated"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line)
+                    (preflight-lines)
+                    (update-branch-line)
+                    (fixing-line)
+                    (show-line merge-item)
+                    (worker-send-line (rebase-text)))))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
 (deftest stops-before-advancing-when-auto-merge-is-disabled
   (let (root (unwrap-ok (setup "merge-auto-off"
                                (assoc (merge-settings)
-                                      :allow-auto-merge (str "false")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (preflight-preface)
-                   (str "merge: " merge-item
-                        ": `gh api repos/" merge-slug
-                        " --jq .allow_auto_merge` printed `false`,"
-                        " not `true`"))))
-      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
-      (assert (not (contains? (sequence-text root) "item advance"))))))
+                                      :allow-auto-merge (str "false"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (auto-merge-line))))
+    (assert (not (contains? (sequence-text root) "item advance")))))
 
-(deftest stops-before-advancing-without-a-required-check
-  (let (root (unwrap-ok (setup "merge-no-check"
-                               (assoc (merge-settings)
-                                      :required-checks (str "0")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (preflight-preface) (required-checks-line))
-                   (str "merge: " merge-item
-                        ": `gh api repos/" merge-slug
-                        "/branches/main/protection --jq"
-                        " .required_status_checks.contexts | length`"
-                        " reports no required status check"))))
-      (assert (not (contains? (sequence-text root) "item advance"))))))
-
-(deftest stops-before-advancing-when-the-settings-call-is-refused
-  (let (root (unwrap-ok (setup "merge-settings-refused"
-                               (assoc (merge-settings)
-                                      :api-exit 4
-                                      :api-error (str "forbidden")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (preflight-preface)
-                                   (str "merge: " merge-item
-                                        ": `gh api repos/"
-                                        merge-slug
-                                        " --jq .allow_auto_merge` exited 4:"
-                                        " forbidden"))))
-      (assert (not (contains? (sequence-text root) "item advance"))))))
-
-(deftest does-not-count-a-rebased-hand-back-as-merged
-  (let (root (unwrap-ok (setup "merge-conflict-rebase-poll"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone conflict-error)
-                                      :update-branch-exit 4
-                                      :update-branch-error (str "branch cannot be updated")
-                                      :stop-after 2))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--poll")
-                                           (str "0")
-                                           (str "--merge-retry-delay")
-                                           (str "0")))))
-      (assert (= (exit-code output) 1))
-      (assert (contains? (sequence-text root)
-                         "item advance rm-0009 fixing"))
-      (assert (contains? (sequence-text root)
-                         "ringleader send build-rm-0009"))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (stderr-has? output (str "stopped  0 merged"))))))
-
-(deftest does-not-count-a-moved-head-hand-back-as-merged
-  (let (root (unwrap-ok (setup "merge-conflict-update-moved-poll"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone conflict-error)
-                                      :view-json (moved-view)
-                                      :stop-after 2))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--poll")
-                                           (str "0")
-                                           (str "--merge-retry-delay")
-                                           (str "0")))))
-      (assert (= (exit-code output) 1))
-      (assert (contains? (sequence-text root) "rmap pr head rm-0009"))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (stderr-has? output (str "stopped  0 merged"))))))
-
-(deftest counts-a-closed-merge-once
-  (let (root (unwrap-ok (setup "merge-count-poll"
-                               (assoc (merge-settings) :stop-after 2))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--poll")
-                                           (str "0")
-                                           (str "--merge-retry-delay")
-                                           (str "0")))))
-      (assert (= (exit-code output) 1))
-      (assert (contains? (sequence-text root) "item close rm-0009"))
-      (assert (stderr-has? output (str "stopped  1 merged"))))))
+(deftest times-out-from-the-rmap-move-time
+  (let (root (unwrap-ok (setup-timeout "merge-timeout"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone armed-view))))
+        output (unwrap-ok (run-with root
+                                    (vec (str "--once")
+                                         (str "--merge-retry-delay")
+                                         (str "0")
+                                         (str "--merge-timeout")
+                                         (str "1")))))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (not (contains? (sequence-text root) "pr view")))
+    (assert (stderr-has? output
+                         (str "PR 12 did not merge within 1 seconds")))))
 
 (deftest stops-when-the-head-moved
-  (let (root (unwrap-ok (setup "merge-head-moved"
-                               (assoc (merge-settings)
-                                      :view-json (moved-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (poll-preface)
-                        (view-line)
-                        (disarm-line))
-                   (str "merge: " merge-item ": PR "
-                        merge-pr " head is " moved-head
-                        ", not the approved "
-                        approved-head))))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest stops-when-the-disarm-after-a-head-change-is-refused
-  (let (root (unwrap-ok (setup "merge-disarm-refused"
-                               (assoc (merge-settings)
-                                      :view-json (moved-view)
-                                      :disarm-exit 9
-                                      :disarm-error (str "cannot disarm")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface)
-                                        (view-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": `gh pr merge "
-                                        merge-pr
-                                        " --disable-auto` exited 9: cannot disarm"))))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest retries-the-disarm-after-a-transient-network-error
-  (let (root (unwrap-ok (setup "merge-disarm-network-retry"
-                               (assoc (merge-settings)
-                                      :view-json (moved-view)
-                                      :disarm-network-failures 1
-                                      :network-error (clone network-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (poll-preface)
-                        (view-line)
-                        (disarm-line)
-                        (disarm-line))
-                   (str "merge: " merge-item ": PR "
-                        merge-pr " head is " moved-head
-                        ", not the approved "
-                        approved-head))))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest keeps-the-intended-message-when-auto-merge-is-already-off
-  (let (root (unwrap-ok (setup "merge-disarm-already-off"
-                               (assoc (merge-settings)
-                                      :item-later-json (clone fixing-item-json)
-                                      :disarm-exit 1
-                                      :disarm-error (clone already-disarmed-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface) (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": the item is fixing, so auto-merge on PR "
-                                        merge-pr
-                                        " is disarmed"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+  (let (root (unwrap-ok (setup-merging "merge-head-moved"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone moved-view))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "not the approved")))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
 (deftest disarms-when-the-item-returns-to-fixing
-  (let (root (unwrap-ok (setup "merge-fixing"
-                               (assoc (merge-settings)
-                                      :item-later-json (clone
-                                                         fixing-item-json)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface) (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": the item is fixing, so auto-merge on PR "
-                                        merge-pr
-                                        " is disarmed"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+  (let (root (unwrap-ok (setup-merging "merge-fixing"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item))))
+                                       (clone fixing-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output
+                         (str "the item is fixing, so auto-merge on PR 12 is disarmed")))
+    (assert (not (contains? (sequence-text root) "pr view")))))
 
-(deftest disarms-before-arming-when-the-item-is-fixing
-  (let (root (unwrap-ok (setup "merge-fixing-start"
-                               (assoc (merge-settings)
-                                      :item-json (clone fixing-item-json)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
-                                        (show-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": the item is fixing, so auto-merge on PR "
-                                        merge-pr
-                                        " is disarmed"))))
-      (assert (not (contains? (sequence-text root) "allow_auto_merge")))
-      (assert (not (contains? (sequence-text root) "item advance")))
-      (assert (not (contains? (sequence-text root) "--auto"))))))
+(deftest disarms-when-the-approval-is-gone
+  (let (root (unwrap-ok (setup-merging "merge-unapproved"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item))))
+                                       (clone unapproved-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "is not approved at head")))
+    (assert (not (contains? (sequence-text root) "pr view")))))
 
-(deftest stops-before-arming-without-an-approving-review
-  (let (root (unwrap-ok (setup "merge-not-approved"
-                               (assoc (merge-settings)
-                                      :item-json (clone
-                                                   unapproved-item-json)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
-                                        (show-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": PR " merge-pr
-                                        " is not approved at head "
-                                        approved-head))))
-      (assert (not (contains? (sequence-text root) "item advance")))
-      (assert (not (contains? (sequence-text root) "--auto"))))))
+(deftest disarms-when-the-view-is-refused
+  (let (root (unwrap-ok (setup-merging "merge-view-refused"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-exit 9
+                                              :view-error (str "view refused"))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "view refused")))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
-(deftest disarms-when-the-poll-view-is-refused
-  (let (root (unwrap-ok (setup "merge-view-refused"
-                               (assoc (merge-settings)
-                                      :view-exit 9
-                                      :view-error (str "view refused")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface)
-                                        (view-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": `gh pr view "
-                                        merge-pr
-                                        " --json state,mergedAt,headRefOid`"
-                                        " exited 9: view refused"))))
-      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0")))
-      (assert (stderr-has? output
-                           (str "disarmed     gh pr merge 12 --disable-auto")))
-      (assert (stderr-has? output (str "build ✓ review ✓ merge ✗")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest disarms-when-the-poll-view-is-invalid
-  (let (root (unwrap-ok (setup "merge-view-invalid"
-                               (assoc (merge-settings) :view-json (str "{")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface)
-                                        (view-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": `gh pr view "
-                                        merge-pr
-                                        " --json state,mergedAt,headRefOid`"
-                                        " exited 0: invalid poll JSON:"
-                                        " unexpected end at 1"))))
-      (assert (stderr-has? output
-                           (str "disarmed     gh pr merge 12 --disable-auto")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest disarms-when-the-poll-item-show-is-refused
-  (let (root (unwrap-ok (setup "merge-show-refused"
-                               (assoc (merge-settings)
-                                      :later-show-exit 9
-                                      :later-show-error (str "show refused")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface) (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": `rmap item show "
-                                        merge-item
-                                        " --json` exited 9: show refused"))))
-      (assert (stderr-has? output
-                           (str "disarmed     gh pr merge 12 --disable-auto")))
-      (assert (not (contains? (sequence-text root) "pr view"))))))
-
-(deftest disarms-when-the-poll-item-show-is-invalid
-  (let (root (unwrap-ok (setup "merge-show-invalid"
-                               (assoc (merge-settings)
-                                      :item-later-json (str "{")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface) (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": `rmap item show "
-                                        merge-item
-                                        " --json` exited 0:"
-                                        " invalid item JSON:"
-                                        " unexpected end at 1"))))
-      (assert (stderr-has? output
-                           (str "disarmed     gh pr merge 12 --disable-auto")))
-      (assert (not (contains? (sequence-text root) "pr view"))))))
+(deftest stops-when-the-close-is-refused
+  (let (root (unwrap-ok (setup-merging "merge-close-refused"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :view-json (clone merged-view)
+                                              :close-exit 5
+                                              :close-error (str "not-approved"))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (close-line merge-item))))
+    (assert (stderr-has? output (str "not-approved")))))
 
 (deftest stops-when-the-advance-is-refused
   (let (root (unwrap-ok (setup "merge-advance-refused"
                                (assoc (merge-settings)
                                       :advance-exit 2
-                                      :advance-error (str "not-approved")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (preflight-preface)
-                                        (required-checks-line)
-                                        (advance-line))
-                                   (str "merge: " merge-item
-                                        ": `rmap item advance "
-                                        merge-item
-                                        " merging` exited 2: not-approved"))))
-      (assert (not (contains? (sequence-text root) "pr merge")))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (stderr-has? output (str "merge ○  merging")))))))
-
-(deftest stops-when-the-merge-command-fails
-  (let (root (unwrap-ok (setup "merge-refused"
-                               (assoc (merge-settings)
-                                      :merge-exit 3
-                                      :merge-error (str "merge refused")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (merge-preface)
-                                   (str "merge: " merge-item
-                                        ": `gh pr merge "
-                                        merge-pr
-                                        " --auto --merge --match-head-commit "
-                                        approved-head
-                                        "` exited 3: merge refused"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest stops-when-the-close-is-refused
-  (let (root (unwrap-ok (setup "merge-close-refused"
-                               (assoc (merge-settings)
-                                      :close-exit 5
-                                      :close-error (str "not-approved")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (merged-sequence)
-                                   (str "merge: " merge-item
-                                        ": `rmap item close "
-                                        merge-item
-                                        "` exited 5: not-approved"))))
-      (assert (stderr-has? output (str "#12  build-rm-0009 @ abcdef0"))))))
-
-(deftest names-the-timeout-in-the-manager-line
-  (assert (= (merge-error->message
-               (merge-error/timed-out (str "rm-0009") (str "12") 3600))
-             (str "merge: rm-0009: PR 12 did not merge within 3600 seconds"))))
-
-(deftest stops-with-one-manager-line-when-the-merge-times-out
-  (let (root (unwrap-ok (setup "merge-timeout"
-                               (assoc (merge-settings)
-                                      :view-json (clone open-view)))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--once")
-                                           (str "--merge-retry-delay")
-                                           (str "0")
-                                           (str "--merge-timeout")
-                                           (str "0")))))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (poll-preface)
-                                        (view-line)
-                                        (disarm-line))
-                                   (str "merge: " merge-item
-                                        ": PR " merge-pr
-                                        " did not merge within 0 seconds"))))
-      (assert (stderr-has? output (str "@ abcdef0")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest polls-again-when-the-first-view-is-open
-  (let (root (unwrap-ok (setup "merge-second-poll"
-                               (assoc (merge-settings)
-                                      :view-json (clone open-view)
-                                      :later-view-json (clone merged-view)))))
-    (let (output (unwrap-ok (run-with root
-                                      (vec (str "--once")
-                                           (str "--merge-retry-delay")
-                                           (str "0")
-                                           (str "--merge-poll")
-                                           (str "0")))))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
-
-(deftest stops-when-the-required-check-call-is-refused
-  (let (root (unwrap-ok (setup "merge-check-refused"
-                               (assoc (merge-settings)
-                                      :required-checks-exit 6
-                                      :required-checks-error (str
-                                                               "forbidden")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (preflight-preface) (required-checks-line))
-                   (str "merge: " merge-item
-                        ": `gh api repos/" merge-slug
-                        "/branches/main/protection --jq"
-                        " .required_status_checks.contexts | length`"
-                        " exited 6: forbidden"))))
-      (assert (not (contains? (sequence-text root) "item advance"))))))
-
-(deftest stops-when-the-repo-view-is-refused
-  (let (root (unwrap-ok (setup "merge-repo-view-refused"
-                               (assoc (merge-settings)
-                                      :repo-view-exit 8
-                                      :repo-view-error (str "no repository")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
-                                        (show-line)
-                                        (repo-view-line))
-                                   (str "merge: " merge-item
-                                        ": `gh repo view --json nameWithOwner"
-                                        " -q .nameWithOwner` exited 8: no repository"))))
-      (assert (not (contains? (sequence-text root) "allow_auto_merge")))
-      (assert (not (contains? (sequence-text root) "item advance"))))))
+                                      :advance-error (str "not-approved"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (next-line))))
+    (assert (contains? (sequence-text root)
+                       (as-str (advance-line))))
+    (assert (not (contains? (sequence-text root) "pr merge")))))
 
 (deftest retries-the-merge-after-a-transient-network-error
-  (assert-transient-retry "merge-network-retry" network-error))
-
-(deftest retries-the-merge-after-a-bad-gateway
-  (assert-transient-retry "merge-network-502"
-                          (str "HTTP 502: Bad Gateway")))
-
-(deftest retries-the-merge-after-a-service-unavailable
-  (assert-transient-retry "merge-network-503"
-                          (str "HTTP 503: Service Unavailable")))
-
-(deftest retries-the-merge-after-a-gateway-timeout
-  (assert-transient-retry "merge-network-504"
-                          (str "HTTP 504: Gateway Timeout")))
-
-(deftest stops-with-one-manager-line-when-the-network-error-persists
-  (let (root (unwrap-ok (setup "merge-network-persistent"
+  (let (root (unwrap-ok (setup "merge-network-retry"
                                (assoc (merge-settings)
-                                      :merge-network-failures 3
-                                      :network-error (clone network-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (merge-preface)
-                        (merge-line)
-                        (merge-line))
-                   (str "merge: " merge-item
-                        ": `gh pr merge " merge-pr
-                        " --auto --merge --match-head-commit "
-                        approved-head "` exited 1: "
-                        network-error))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+                                      :merge-network-failures 1
+                                      :network-error (clone network-error))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (= (sequence-text root)
+               (str (next-line)
+                    (preflight-lines)
+                    (merge-line))))
+    (assert (contains? (stderr-text output)
+                       (as-str (str "● kogworks"))))))
 
-(deftest does-not-retry-a-merge-refusal
-  (let (root (unwrap-ok (setup "merge-refusal-not-retried"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (str "Pull request is not mergeable:"
-                                                        " the merge commit cannot be"
-                                                        " cleanly created")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence (merge-preface)
-                                   (str "merge: " merge-item
-                                        ": `gh pr merge "
-                                        merge-pr
-                                        " --auto --merge --match-head-commit "
-                                        approved-head
-                                        "` exited 1: Pull request is"
-                                        " not mergeable: the merge commit cannot be"
-                                        " cleanly created"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
+(deftest disarms-every-merging-build-on-a-signal
+  (let (root (unwrap-ok (setup-two "merge-signal"
+                                   (assoc (merge-settings)
+                                          :items-json (merging-items (vec
+                                                                       (clone merge-item)
+                                                                       (clone second-item)))
+                                          :next-json (clone empty-next)
+                                          :next-signal (str "INT"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line second-pr))))
+    (assert (stderr-has? output (str "SIGINT")))
+    (assert (not (contains? (sequence-text root) "item close")))))
 
-(deftest retries-the-direct-merge-after-a-transient-network-error
-  (let (root (unwrap-ok (setup "merge-direct-network-retry"
+(deftest exits-on-a-signal-with-no-merging-build
+  (let (root (unwrap-ok (setup "merge-signal-none"
                                (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone clean-status-error)
-                                      :direct-merge-network-failures 1
-                                      :network-error (clone network-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (direct-merge-line)
-                      (direct-merge-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
-
-(deftest retries-each-github-call-site
-  (let (root (unwrap-ok (setup "merge-network-call-sites"
-                               (assoc (merge-settings)
-                                      :network-error (clone network-error)
-                                      :repo-view-network-failures 1
-                                      :allow-auto-merge-network-failures 1
-                                      :required-checks-network-failures 1
-                                      :view-network-failures 1))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (next-line)
-                      (show-line)
-                      (repo-view-line)
-                      (repo-view-line)
-                      (auto-merge-line)
-                      (auto-merge-line)
-                      (required-checks-line)
-                      (required-checks-line)
-                      (advance-line)
-                      (merge-line)
-                      (show-line)
-                      (view-line)
-                      (view-line)
-                      (close-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
-
-(deftest resumes-a-merge-whose-auto-merge-is-armed
-  (let (root (unwrap-ok (setup "merge-resume-armed"
-                               (assoc (merge-settings)
-                                      :item-json (clone merging-item-json)
-                                      :view-json (armed-view)
-                                      :later-view-json (clone merged-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (next-line)
-                      (show-line)
-                      (resume-view-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (not (contains? (sequence-text root) "item advance")))
-      (assert (not (contains? (sequence-text root) "pr merge")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
-
-(deftest resumes-a-merge-whose-auto-merge-is-not-armed
-  (let (root (unwrap-ok (setup "merge-resume-unarmed"
-                               (assoc (merge-settings)
-                                      :item-json (clone merging-item-json)
-                                      :view-json (unarmed-view)
-                                      :later-view-json (clone merged-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (next-line)
-                      (show-line)
-                      (resume-view-line)
-                      (merge-line)
-                      (show-line)
-                      (view-line)
-                      (close-line))))
-      (assert (not (contains? (sequence-text root) "item advance")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
-      (assert (stderr-has? output (str "merging"))))))
-
-(deftest closes-a-merge-that-finished-while-the-controller-was-down
-  (let (root (unwrap-ok (setup "merge-resume-merged"
-                               (assoc (merge-settings)
-                                      :item-json (clone merging-item-json)
-                                      :view-json (merged-resume-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 0))
-      (assert (= (sequence-text root)
-                 (str (next-line)
-                      (show-line)
-                      (resume-view-line)
-                      (close-line))))
-      (assert (not (contains? (sequence-text root) "pr merge")))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
-
-(deftest disarms-a-resumed-merge-when-the-head-moved
-  (let (root (unwrap-ok (setup "merge-resume-head-moved"
-                               (assoc (merge-settings)
-                                      :item-json (clone merging-item-json)
-                                      :view-json (moved-resume-view)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (refusal-sequence
-                   (str (next-line)
-                        (show-line)
-                        (resume-view-line)
-                        (disarm-line))
-                   (str "merge: " merge-item ": PR "
-                        merge-pr " head is " moved-head
-                        ", not the approved "
-                        approved-head))))
-      (assert (not (contains? (sequence-text root) "item advance")))
-      (assert (not (contains? (sequence-text root) "item close"))))))
-
-(deftest disarms-on-sigint-during-the-merge-wait
-  (let (root (unwrap-ok (setup "merge-signal-int"
-                               (assoc (merge-settings)
-                                      :view-signal (str "INT")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest disarms-on-sigterm-during-the-merge-wait
-  (let (root (unwrap-ok (setup "merge-signal-term"
-                               (assoc (merge-settings)
-                                      :view-signal (str "TERM")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGTERM"))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest keeps-the-disarmed-status-when-a-signal-finds-auto-merge-off
-  (let (root (unwrap-ok (setup "merge-signal-already-disarmed"
-                               (assoc (merge-settings)
-                                      :view-signal (str "INT")
-                                      :disarm-exit 1
-                                      :disarm-error (clone already-disarmed-error)))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest reports-a-refused-signal-disarm-and-still-exits
-  (let (root (unwrap-ok (setup "merge-signal-disarm-refused"
-                               (assoc (merge-settings)
-                                      :view-signal (str "INT")
-                                      :disarm-exit 9
-                                      :disarm-error (str "cannot disarm")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "cannot disarm"))))
-      (assert (not (stderr-has? output (str "disarmed     gh pr merge"))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest exits-on-a-signal-outside-the-merge-wait
-  (let (root (unwrap-ok (setup "merge-signal-outside"
-                               (assoc (merge-settings)
-                                      :next-signal (str "INT")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) -1))
-      (assert (contains? (sequence-text root)
-                         (as-str (next-line))))
-      (assert (not (contains? (sequence-text root) "pr merge")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest reports-the-signal-when-the-view-also-fails
-  (let (root (unwrap-ok (setup "merge-signal-view-failure"
-                               (assoc (merge-settings)
-                                      :view-signal (str "INT")
-                                      :view-exit 9
-                                      :view-error (str "interrupted")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (poll-preface)
-                      (view-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest disarms-on-sigint-during-arming
-  (let (root (unwrap-ok (setup "merge-signal-arming"
-                               (assoc (merge-settings)
-                                      :merge-signal (str "INT")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (not (contains? (sequence-text root) "pr view")))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest disarms-on-sigterm-while-re-arming-after-a-conflict
-  (let (root (unwrap-ok (setup "merge-signal-re-arming"
-                               (assoc (merge-settings)
-                                      :merge-exit 1
-                                      :merge-error (clone conflict-error)
-                                      :view-json (clone open-view)
-                                      :later-merge-signal (str "TERM")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (update-branch-line)
-                      (view-line)
-                      (merge-line)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGTERM"))))
-      (assert (not (contains? (sequence-text root) "item close")))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
-
-(deftest reports-the-signal-when-the-arming-also-fails
-  (let (root (unwrap-ok (setup "merge-signal-arming-failure"
-                               (assoc (merge-settings)
-                                      :merge-signal (str "INT")
-                                      :merge-exit 3
-                                      :merge-error (str "merge refused")))))
-    (let (output (unwrap-ok (run root)))
-      (assert (= (exit-code output) 1))
-      (assert (= (sequence-text root)
-                 (str (merge-preface)
-                      (disarm-line)
-                      (show-line))))
-      (assert (contains? (stderr-text output)
-                         (as-str (str "SIGINT"))))
-      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+                                      :next-signal (str "INT"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (stderr-has? output (str "SIGINT")))
+    (assert (stderr-has? output (str "no merge was armed")))
+    (assert (not (contains? (sequence-text root) "pr merge")))))

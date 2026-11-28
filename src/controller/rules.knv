@@ -5,10 +5,11 @@
 (use controller/json json json-array json-field json-text)
 
 (export action-kind action-kind->text actor
-        first-controller-action first-dispatch item-action
-        item-kind item-kind-of next-action next-line
-        parse-next-response parse-ready-response ready-item
-        subject)
+        first-controller-action
+        first-controller-action-skipping first-dispatch
+        item-action item-kind item-kind-of next-action
+        next-line parse-next-response parse-ready-response
+        ready-item subject)
 
 (defstruct next-line
   :subject subject
@@ -93,6 +94,9 @@
   (let-try (items (required-array document "next"))
     (parse-next-lines items)))
 
+(defn first-controller-action-skipping (lines skipped)
+  (first-controller-action (without-lines lines skipped)))
+
 (defn first-controller-action (lines)
   (loop (index 0)
     (match (line-step-at lines index)
@@ -115,6 +119,12 @@
     ((= text (str "research")) item-kind/research)
     ((= text (str "design")) item-kind/design)
     (else (item-kind/other text))))
+
+(defn without-lines (lines skipped)
+  (collect (map (filter (iter lines)
+                  (fn (line)
+                    (not (line-skipped? line skipped))))
+                (fn (line) (clone line)))))
 
 (defn parse-next-lines (items)
   (loop (index 0
@@ -319,3 +329,8 @@
   (match (json-text found)
     ((some text) (ok text))
     (none (err (str "`" (str key) "` is not text")))))
+
+(defn line-skipped? (line skipped)
+  (match (:subject line)
+    ((item id) (contains? skipped (clone id)))
+    ((decision _) false)))

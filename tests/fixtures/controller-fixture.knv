@@ -70,9 +70,14 @@
   (str
     "#!/bin/sh\n"
     "root=$(cd \"$(dirname \"$0\")/..\" && pwd)\n"
-    "printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\"\n"
-    "case \"$1\" in\n" "  next)\n"
-    "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
+    "case \"$1 $2\" in\n"
+    "  \"item list\"|\"log --item\") ;;\n"
+    "  *) printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\" ;;\n"
+    "esac\n" "case \"$1\" in\n" "  log)\n"
+    "    if [ -f \"$root/log-$3.json\" ]; then\n"
+    "      cat \"$root/log-$3.json\"\n" "    else\n"
+    "      cat \"$root/log.json\"\n" "    fi\n" "    ;;\n"
+    "  next)\n" "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
     "      kill -s [NEXT_SIGNAL] \"$PPID\"\n" "    fi\n"
     "    count=0\n"
     "    if [ -f \"$root/counter\" ]; then count=$(cat \"$root/counter\"); fi\n"
@@ -82,8 +87,14 @@
     "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
-    "    case \"$2\" in\n" "      show)\n"
-    "        shows=0\n"
+    "    case \"$2\" in\n" "      list)\n"
+    "        if [ -f \"$root/closed\" ]; then\n"
+    "          printf '{\"items\":[]}'\n" "        else\n"
+    "          cat \"$root/items.json\"\n" "        fi\n"
+    "        ;;\n" "      show)\n"
+    "        if [ -f \"$root/item-$3.json\" ]; then\n"
+    "          cat \"$root/item-$3.json\"\n"
+    "          exit 0\n" "        fi\n" "        shows=0\n"
     "        if [ -f \"$root/show-count\" ]; then\n"
     "          shows=$(cat \"$root/show-count\")\n"
     "        fi\n" "        shows=$((shows + 1))\n"
@@ -102,7 +113,8 @@
     "        if [ [CLOSE_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[CLOSE_ERROR]' >&2\n"
     "          exit [CLOSE_EXIT]\n" "        fi\n"
-    "        ;;\n" "      claim)\n"
+    "        : > \"$root/closed\"\n" "        ;;\n"
+    "      claim)\n"
     "        if [ [CLAIM_EXIT] -ne 0 ]; then\n"
     "          printf '%s\\n' '[CLAIM_ERROR]' >&2\n"
     "          exit [CLAIM_EXIT]\n" "        fi\n"
@@ -228,7 +240,9 @@
     "          exit [DIRECT_MERGE_EXIT]\n" "        fi\n"
     "        ;;\n" "    esac\n" "    ;;\n"
     "  \"pr view\")\n"
-    "    if [ -n \"[VIEW_SIGNAL]\" ]; then\n"
+    "    if [ -f \"$root/view-$3.json\" ]; then\n"
+    "      cat \"$root/view-$3.json\"\n" "      exit 0\n"
+    "    fi\n" "    if [ -n \"[VIEW_SIGNAL]\" ]; then\n"
     "      kill -s [VIEW_SIGNAL] \"$PPID\"\n" "    fi\n"
     "    if [ [VIEW_EXIT] -ne 0 ]; then\n"
     "      printf '%s\\n' '[VIEW_ERROR]' >&2\n"
@@ -306,6 +320,8 @@
   :next-json string
   :next-signal string
   :ready-json string
+  :items-json string
+  :log-json string
   :item-json string
   :item-later-json string
   :stop-after int
@@ -363,6 +379,8 @@
   (->fake-settings :next-json next-json
                    :next-signal (str)
                    :ready-json ready-json
+                   :items-json (str "{\"items\":[]}")
+                   :log-json (str "{\"events\":[]}")
                    :item-json (clone dispatch-item-json)
                    :item-later-json (str)
                    :stop-after 0
@@ -546,6 +564,10 @@
                           (as-str (:next-json settings)))
             _ (write-text (as-str (str root "/ready.json"))
                           (as-str (:ready-json settings)))
+            _ (write-text (as-str (str root "/items.json"))
+                          (as-str (:items-json settings)))
+            _ (write-text (as-str (str root "/log.json"))
+                          (as-str (:log-json settings)))
             _ (write-text (as-str (str root "/item.json"))
                           (as-str (:item-json settings)))
             _ (write-text (as-str (str root "/view.json"))

@@ -3,7 +3,8 @@
 
 (use controller/failure brief-role controller-error
                         disarm-status factory-error->message
-                        merge-error signal-stop->log-text)
+                        merge-error signal-stop->log-text
+                        stop-signal->text)
 
 (use controller/log ->banner-line ->controller-failure
                     ->item-line ->pr-summary ->stop-line
@@ -403,12 +404,23 @@
     ((factory-failed cause) (factory-error->message cause))
     ((merge-failed cause) (merge-error-log-text cause))
     ((signal-stop report) (signal-stop->log-text report))
+    ((signal-stopped signal reports)
+     (signal-stopped-log-text signal reports))
     ((unreadable-brief path reason)
      (str "cannot read the brief " path ": " reason))
     ((unreadable-repo path reason)
      (str "cannot resolve the repository " path ": " reason))
     ((placeholder-left _ token _)
      (str "the brief still holds `" token "` after filling"))))
+
+(defn signal-stopped-log-text (signal reports)
+  (if (empty? reports)
+    (str "stopped on "
+         (stop-signal->text signal)
+         "; no merge was armed")
+    (join (collect (map (iter reports)
+                     (fn (report) (signal-stop->log-text report))))
+          "; ")))
 
 (defn command-error-text (report)
   (if (empty? (:detail report))

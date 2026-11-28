@@ -1,7 +1,9 @@
 (module
-  "Merges an approved pull request through GitHub auto-merge and closes its item.")
+  "Merges approved pull requests across controller passes, arming auto-merge without waiting.")
 
-(use controller/failure controller-error merge-error)
+(use controller/failure ->signal-stop-report
+                        controller-error disarm-status
+                        merge-error)
 
 (use controller/json json-error->message json-field
                      json-text parse-json)
@@ -17,11 +19,11 @@
                                update-branch-command)
 
 (use controller/merge-poll auto-merge-state close-item
-                           disarm-and-stop head-change-error
+                           disarm-and-stop disarm-once
+                           head-change-error
                            item-fixing-error merge-state
-                           poll-armed-merge poll-merge
-                           read-poll-state read-resume-state
-                           stop-on-signal)
+                           read-resume-state
+                           timed-out-error)
 
 (use controller/merge-retry execute-github)
 
@@ -32,35 +34,183 @@
                              merge-event merge-item-status
                              merge-outcome merge-settings
                              merge-target read-merge-target
+                             read-merging-items
                              report-event)
+
+(use controller/merge-time merge-timed-out?)
 
 (use controller/process command command-detail execute
                         successful?)
 
-(use controller/signal install-stop-handlers
-                       read-stop-signal
-                       restore-stop-handlers)
-
-(export ->merge-settings merge-settings start-merge)
+(export ->merge-settings check-merges merge-pass
+        merge-settings start-merge stop-merges)
 
 (def clean-status-message
   (str "Pull request is in clean status"))
 
-(defenum resume-verdict
-  merged
-  moved
-  polling
-  arming)
-
 (defenum arming-failure
   recover
   report)
+
+(defenum state-verdict
+  merged
+  moved
+  waiting
+  rearm)
+
+(defstruct merge-pass
+  :ids (vec string)
+  :checked int
+  :merged int
+  :acted bool
+  :failure (option controller-error))
 
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
     ((err failure) (err failure))
     ((ok target)
      (guard-merge-target repo config settings item target))))
+
+(defn check-merges (repo config settings roadmap)
+  (match (read-merging-items repo roadmap)
+    ((err failure) (err failure))
+    ((ok ids)
+     (check-item-ids repo config settings ids
+                     (->merge-pass :ids (clone ids)
+                                   :checked 0
+                                   :merged 0
+                                   :acted false
+                                   :failure none)))))
+
+(defn stop-merges (repo roadmap signal)
+  (match (read-merging-items repo roadmap)
+    ((err failure) (err failure))
+    ((ok ids) (ok (disarm-reports repo ids signal)))))
+
+(defn check-item-ids (repo config settings ids summary)
+  (if (>= (:checked summary) (len ids))
+    (finish-check summary)
+    (check-next-id repo config settings ids summary)))
+
+(defn check-next-id (repo config settings ids summary)
+  (match (check-merging-item repo config settings
+                             (at ids (:checked summary)))
+    ((ok outcome)
+     (check-item-ids repo config settings ids
+                     (record-outcome summary outcome)))
+    ((err failure)
+     (check-item-ids repo config settings ids
+                     (record-failure summary failure)))))
+
+(defn finish-check (summary)
+  (let (ids (clone (:ids summary)))
+    (match (:failure summary)
+      ((some failure) (err (clone failure)))
+      (none (ok (->merge-pass :ids ids
+                              :checked (:checked summary)
+                              :merged (:merged summary)
+                              :acted (:acted summary)
+                              :failure none))))))
+
+(defn record-outcome (summary outcome)
+  (match outcome
+    (merge-outcome/merged (record-merged summary))
+    (merge-outcome/waiting (record-checked summary))
+    (_ (record-acted summary))))
+
+(defn record-checked (summary)
+  (->merge-pass :ids (clone (:ids summary))
+                :checked (inc (:checked summary))
+                :merged (:merged summary)
+                :acted (:acted summary)
+                :failure (clone (:failure summary))))
+
+(defn record-merged (summary)
+  (->merge-pass :ids (clone (:ids summary))
+                :checked (inc (:checked summary))
+                :merged (inc (:merged summary))
+                :acted true
+                :failure (clone (:failure summary))))
+
+(defn record-acted (summary)
+  (->merge-pass :ids (clone (:ids summary))
+                :checked (inc (:checked summary))
+                :merged (:merged summary)
+                :acted true
+                :failure (clone (:failure summary))))
+
+(defn record-failure (summary failure)
+  (->merge-pass :ids (clone (:ids summary))
+                :checked (inc (:checked summary))
+                :merged (:merged summary)
+                :acted (:acted summary)
+                :failure (recorded-failure (:failure summary) failure)))
+
+(defn recorded-failure (recorded failure)
+  (match recorded
+    (none (some failure))
+    ((some _) (clone recorded))))
+
+(defn check-merging-item (repo config settings item)
+  (match (read-merge-target repo item)
+    ((err failure) (err failure))
+    ((ok target)
+     (check-target-status repo config settings item target))))
+
+(defn check-target-status (repo config settings item target)
+  (match (:item-status target)
+    (fixing (disarm-and-stop repo settings item target
+                             (item-fixing-error item target)))
+    (_ (check-target-approval repo config settings item target))))
+
+(defn check-target-approval (repo config settings item target)
+  (match (:approval target)
+    (not-approved (disarm-and-stop repo settings item target
+                                   (not-approved-error item target)))
+    (approved (check-target-timeout repo config settings item target))))
+
+(defn check-target-timeout (repo config settings item target)
+  (match (merge-timed-out? repo settings item)
+    ((err failure) (err failure))
+    ((ok true)
+     (disarm-and-stop repo settings item target
+                      (timed-out-error item target settings)))
+    ((ok false)
+     (check-target-state repo config settings item target))))
+
+(defn check-target-state (repo config settings item target)
+  (match (read-resume-state repo settings item target)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok state)
+     (check-state-verdict repo config settings item target state))))
+
+(defn check-state-verdict (repo config settings item target state)
+  (match (state-verdict-of target state)
+    (merged (close-item repo settings item target))
+    (moved (disarm-and-stop repo settings item target
+                            (head-change-error item target state)))
+    (waiting (ok merge-outcome/waiting))
+    (rearm (enable-auto-merge repo config settings item target))))
+
+(type state-verdict-of
+  (fn ((ref merge-target) (ref merge-state))
+    state-verdict))
+
+(defn state-verdict-of (target state)
+  (if (= (:head state) (:head target))
+    (state-of-merge (:state state) (:auto-merge state))
+    state-verdict/moved))
+
+(defn state-of-merge (state auto-merge)
+  (if (= (as-str state) (str "MERGED"))
+    state-verdict/merged
+    (auto-merge-verdict auto-merge)))
+
+(defn auto-merge-verdict (auto-merge)
+  (match auto-merge
+    (armed state-verdict/waiting)
+    (not-armed state-verdict/rearm)))
 
 (defn guard-merge-target (repo config settings item target)
   (match (:item-status target)
@@ -76,7 +226,7 @@
 
 (defn prepare-merge (repo config settings item target)
   (match (:item-status target)
-    (merging (resume-merge repo config settings item target))
+    (merging (ok merge-outcome/waiting))
     (_ (first-merge repo config settings item target))))
 
 (defn first-merge (repo config settings item target)
@@ -84,42 +234,6 @@
     ((err failure) (err failure))
     ((ok _)
      (advance-and-enable repo config settings item target))))
-
-(defn resume-merge (repo config settings item target)
-  (match (read-resume-state repo settings item target)
-    ((err failure)
-     (disarm-and-stop repo settings item target failure))
-    ((ok state)
-     (resume-from-state repo config settings item target state))))
-
-(defn resume-from-state (repo config settings item target state)
-  (match (resume-verdict-of target state)
-    (merged (close-item repo settings item target))
-    (moved (disarm-and-stop repo settings item target
-                            (head-change-error item target state)))
-    (polling (poll-merge repo item target settings))
-    (arming (do
-              (report-event settings merge-event/merging target)
-              (enable-auto-merge repo config settings item target)))))
-
-(type resume-verdict-of
-  (fn ((ref merge-target) (ref merge-state))
-    resume-verdict))
-
-(defn resume-verdict-of (target state)
-  (if (= (:head state) (:head target))
-    (resume-state-verdict (:state state) (:auto-merge state))
-    resume-verdict/moved))
-
-(defn resume-state-verdict (state auto-merge)
-  (if (= (as-str state) (str "MERGED"))
-    resume-verdict/merged
-    (auto-merge-verdict auto-merge)))
-
-(defn auto-merge-verdict (state)
-  (match state
-    (armed resume-verdict/polling)
-    (not-armed resume-verdict/arming)))
 
 (defn preflight (repo settings item)
   (match (repo-slug repo settings item)
@@ -214,25 +328,18 @@
                   arming-failure/recover))
 
 (defn arm-auto-merge (repo config settings item target command recovery)
-  (install-stop-handlers)
   (let (outcome (execute-github repo command
                                 (:retry-delay-seconds settings)))
-    (match (read-stop-signal)
-      ((some signal)
-       (let (result (stop-on-signal repo item target signal))
-         (restore-stop-handlers)
-         result))
-      (none (armed-result repo config settings item target
-                          command outcome recovery)))))
+    (armed-result repo config settings item target command
+                  outcome recovery)))
 
 (defn armed-result (repo config settings item target command outcome recovery)
   (if (successful? outcome)
-    (poll-armed-merge repo item target settings)
+    (ok merge-outcome/armed)
     (failed-arming repo config settings item target command
                    outcome recovery)))
 
 (defn failed-arming (repo config settings item target command outcome recovery)
-  (restore-stop-handlers)
   (match recovery
     (recover (handle-merge-failure repo config settings item
                                    target command outcome))
@@ -267,7 +374,7 @@
       (rebase-fallback repo item target outcome))))
 
 (defn resume-after-update (repo config settings item target)
-  (match (read-poll-state repo settings item target)
+  (match (read-resume-state repo settings item target)
     ((err failure) (err failure))
     ((ok state)
      (resume-at-head repo config settings item target
@@ -373,7 +480,7 @@
     (let (outcome (execute-github repo command
                                   (:retry-delay-seconds settings)))
       (if (successful? outcome)
-        (poll-merge repo item target settings)
+        (close-item repo settings item target)
         (err (merge-command-failure item command outcome))))))
 
 (defn clean-status-refusal? (outcome)
@@ -387,3 +494,31 @@
                                    (clone item)
                                    (clone (:pull-request target))
                                    (clone (:head target)))))
+
+(defn disarm-reports (repo ids signal)
+  (loop (index 0
+         reports (vec))
+    (if (>= index (len ids))
+      reports
+      (recur (inc index)
+             (push-report! reports
+                           (disarm-report repo (at ids index) signal))))))
+
+(defn push-report! (reports report)
+  (do (push! reports report) reports))
+
+(defn disarm-report (repo item signal)
+  (match (read-merge-target repo item)
+    ((err _) (unreadable-report item signal))
+    ((ok target)
+     (->signal-stop-report :item (clone item)
+                           :pull-request-number (clone (:pull-request target))
+                           :signal signal
+                           :disarm (disarm-once repo (:pull-request target))))))
+
+(defn unreadable-report (item signal)
+  (->signal-stop-report :item (clone item)
+                        :pull-request-number (str "-")
+                        :signal signal
+                        :disarm (disarm-status/not-disarmed 0
+                                                            (str "the item could not be read"))))
