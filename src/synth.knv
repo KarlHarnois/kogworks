@@ -12,6 +12,10 @@
   (rust "std::path::Path::new({0}).join({1}).to_string_lossy().into_owned()"
     (fn ((ref str) (ref str)) string)))
 
+(def parent-path
+  (rust "std::path::Path::new({0}).parent().map(|path| path.to_string_lossy().into_owned()).unwrap_or_default()"
+    (fn ((ref str)) string)))
+
 (def holds-file?
   (rust "std::path::Path::new({0}).is_file()"
     (fn ((ref str)) bool)))
@@ -29,7 +33,8 @@
   (rust "{{
     use std::io::Write;
     std::process::Command::new(\"knave\")
-      .args([\"eval\", \"--stdin\", {0}, \"(do (print (factory-json)) (exit 0))\"])
+      .args([\"eval\", \"--stdin\", \"factory.knv\", \"(do (print (factory-json)) (exit 0))\"])
+      .current_dir({0})
       .stdin(std::process::Stdio::piped())
       .stdout(std::process::Stdio::piped())
       .stderr(std::process::Stdio::piped())
@@ -101,7 +106,8 @@
       (err (synth-error/missing-factory (str factory-file))))))
 
 (defn eval-factory-json (factory-file module-text)
-  (match (run-knave-eval factory-file module-text)
+  (match (run-knave-eval (as-str (parent-path factory-file))
+                         module-text)
     ((ok output) (checked-factory-json factory-file output))
     ((err reason)
      (err (synth-error/factory-eval-failed (str factory-file) reason)))))
