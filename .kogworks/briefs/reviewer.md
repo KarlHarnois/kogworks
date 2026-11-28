@@ -56,6 +56,13 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 **Anything that makes the code or the brief under review not work as intended is blocking.** A blocking finding stands even when no acceptance criterion names it. NEVER notice a defect and approve anyway.
 
+**Record in rmap every finding that forces the verdict `changes`, before you record the review verdict.** The manager reads these findings only from rmap.
+
+- If the finding makes an acceptance criterion fail, record that criterion as `--failed`. State the finding in the `--note` of that criterion.
+- Otherwise, state the finding in the `--note` of the last acceptance criterion, in a sentence that starts with `BLOCKING:`. Keep the verdict that the evidence for that criterion gives.
+
+**If the criterion already has a verdict, run `rmap item verify` for that criterion again with the whole note.** The latest verdict on a criterion counts.
+
 ## Review verdict
 
 **Record the review LAST, after every criterion verdict.** `rmap pr review` ends the live review session. Run:
