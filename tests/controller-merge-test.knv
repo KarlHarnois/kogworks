@@ -227,6 +227,9 @@
 
 (defn close-line (item) (str "rmap item close " item "\n"))
 
+(defn pr-show-line (item)
+  (str "rmap pr show " item " --json\n"))
+
 (defn record-head-line (head)
   (str "rmap pr head " merge-item " " head "\n"))
 
@@ -629,3 +632,68 @@
     (assert (stderr-has? output (str "SIGINT")))
     (assert (stderr-has? output (str "no merge was armed")))
     (assert (not (contains? (sequence-text root) "pr merge")))))
+
+(deftest disarms-when-the-pass-item-show-is-refused
+  (let (root (unwrap-ok (setup "merge-pass-show-refused"
+                               (assoc (merge-settings)
+                                      :later-show-exit 9
+                                      :later-show-error (str "show refused"))))
+        _first (unwrap-ok (run root))
+        _items (unwrap-ok (write-file root "items.json"
+                                      (merging-items (vec (clone merge-item)))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (pr-show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "show refused")))
+    (assert (stderr-has? output (str "disarmed")))))
+
+(deftest disarms-when-the-pass-item-show-is-invalid
+  (let (root (unwrap-ok (setup "merge-pass-show-invalid"
+                               (assoc (merge-settings)
+                                      :item-later-json (str "{"))))
+        _first (unwrap-ok (run root))
+        _items (unwrap-ok (write-file root "items.json"
+                                      (merging-items (vec (clone merge-item)))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (pr-show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output
+                         (str "invalid item JSON: unexpected end at 1")))
+    (assert (stderr-has? output (str "disarmed")))))
+
+(deftest disarms-when-the-timeout-log-fails
+  (let (root (unwrap-ok (setup-merging "merge-timeout-log-fails"
+                                       (assoc (merge-settings)
+                                              :items-json (merging-items (vec (clone
+                                                                                merge-item)))
+                                              :log-exit 7
+                                              :log-error (str "log refused"))
+                                       (clone merging-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "log refused")))
+    (assert (stderr-has? output (str "disarmed")))))
+
+(deftest stops-without-disarming-when-the-pr-show-also-fails
+  (let (root (unwrap-ok (setup "merge-pass-pr-show-fails"
+                               (assoc (merge-settings)
+                                      :later-show-exit 9
+                                      :later-show-error (str "show refused")
+                                      :pr-show-exit 8
+                                      :pr-show-error (str "pr show refused"))))
+        _first (unwrap-ok (run root))
+        _items (unwrap-ok (write-file root "items.json"
+                                      (merging-items (vec (clone merge-item)))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (not (contains? (sequence-text root) "--disable-auto")))
+    (assert (not (stderr-has? output (str "disarmed"))))
+    (assert (stderr-has? output (str "show refused")))))

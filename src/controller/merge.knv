@@ -5,13 +5,16 @@
                         controller-error disarm-status
                         merge-error)
 
+(use controller/fields field-error->message required-number
+                       required-object)
+
 (use controller/json json-error->message json-field
                      json-text parse-json)
 
 (use controller/merge-commands advance-command
                                auto-merge-command
                                fixing-command merge-command
-                               merge-mode
+                               merge-mode pr-show-command
                                record-head-command
                                repo-view-command
                                required-checks-command
@@ -27,7 +30,7 @@
 
 (use controller/merge-retry execute-github)
 
-(use controller/merge-target ->merge-settings
+(use controller/merge-target ->merge-settings ->merge-target
                              invalid-item-output
                              merge-approval
                              merge-command-failure
@@ -153,9 +156,52 @@
 
 (defn check-merging-item (repo config settings item)
   (match (read-merge-target repo item)
-    ((err failure) (err failure))
+    ((err failure)
+     (disarm-unreadable-item repo settings item failure))
     ((ok target)
      (check-target-status repo config settings item target))))
+
+(defn disarm-unreadable-item (repo settings item failure)
+  (match (read-item-pull-request repo settings item)
+    ((ok pull-request)
+     (disarm-and-stop repo settings item
+                      (target-with-pull-request item pull-request)
+                      (clone failure)))
+    ((err _) (err (clone failure)))))
+
+(defn read-item-pull-request (repo settings item)
+  (let (command (pr-show-command item))
+    (let (outcome (execute-github repo command
+                                  (:retry-delay-seconds settings)))
+      (if (successful? outcome)
+        (parse-pull-request-number item command (:stdout outcome))
+        (err (merge-command-failure item command outcome))))))
+
+(defn target-with-pull-request (item pull-request)
+  (->merge-target :id (clone item)
+                  :pull-request pull-request
+                  :head (str)
+                  :item-status merge-item-status/other
+                  :approval merge-approval/not-approved
+                  :title (str)
+                  :kind (str)
+                  :branch none))
+
+(defn parse-pull-request-number (item command text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (map-err (required-pull-request-number document)
+       (fn (failure)
+         (invalid-item-output item command
+                              (field-error->message failure)))))
+    ((err failure)
+     (err (invalid-item-output item command
+                               (json-error->message failure))))))
+
+(defn required-pull-request-number (document)
+  (let-try (pull (required-object document "pull_request" "pull_request")
+            number (required-number pull "number" "pull_request.number"))
+    (ok number)))
 
 (defn check-target-status (repo config settings item target)
   (match (:item-status target)
@@ -171,7 +217,8 @@
 
 (defn check-target-timeout (repo config settings item target)
   (match (merge-timed-out? repo settings item)
-    ((err failure) (err failure))
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
     ((ok true)
      (disarm-and-stop repo settings item target
                       (timed-out-error item target settings)))

@@ -74,10 +74,18 @@
     "  \"item list\"|\"log --item\") ;;\n"
     "  *) printf 'rmap %s\\n' \"$*\" >> \"$root/sequence\" ;;\n"
     "esac\n" "case \"$1\" in\n" "  log)\n"
+    "    if [ [LOG_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[LOG_ERROR]' >&2\n"
+    "      exit [LOG_EXIT]\n" "    fi\n"
     "    if [ -f \"$root/log-$3.json\" ]; then\n"
     "      cat \"$root/log-$3.json\"\n" "    else\n"
     "      cat \"$root/log.json\"\n" "    fi\n" "    ;;\n"
-    "  next)\n" "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
+    "  pr)\n" "    if [ [PR_SHOW_EXIT] -ne 0 ]; then\n"
+    "      printf '%s\\n' '[PR_SHOW_ERROR]' >&2\n"
+    "      exit [PR_SHOW_EXIT]\n" "    fi\n"
+    "    printf '{\"pull_request\":{\"number\":%s}}\\n' '[PR_SHOW_NUMBER]'\n"
+    "    ;;\n" "  next)\n"
+    "    if [ -n \"[NEXT_SIGNAL]\" ]; then\n"
     "      kill -s [NEXT_SIGNAL] \"$PPID\"\n" "    fi\n"
     "    count=0\n"
     "    if [ -f \"$root/counter\" ]; then count=$(cat \"$root/counter\"); fi\n"
@@ -346,6 +354,11 @@
   :disarm-error string
   :later-show-exit int
   :later-show-error string
+  :log-exit int
+  :log-error string
+  :pr-show-exit int
+  :pr-show-error string
+  :pr-show-number string
   :network-error string
   :merge-network-failures int
   :repo-view-network-failures int
@@ -405,6 +418,11 @@
                    :disarm-error (str)
                    :later-show-exit 0
                    :later-show-error (str)
+                   :log-exit 0
+                   :log-error (str)
+                   :pr-show-exit 0
+                   :pr-show-error (str)
+                   :pr-show-number (str "12")
                    :network-error (str)
                    :merge-network-failures 0
                    :repo-view-network-failures 0
@@ -501,6 +519,16 @@
                      (str (:later-show-exit settings)))
       (replace-token (str "[LATER_SHOW_ERROR]")
                      (clone (:later-show-error settings)))
+      (replace-token (str "[LOG_EXIT]")
+                     (str (:log-exit settings)))
+      (replace-token (str "[LOG_ERROR]")
+                     (clone (:log-error settings)))
+      (replace-token (str "[PR_SHOW_EXIT]")
+                     (str (:pr-show-exit settings)))
+      (replace-token (str "[PR_SHOW_ERROR]")
+                     (clone (:pr-show-error settings)))
+      (replace-token (str "[PR_SHOW_NUMBER]")
+                     (clone (:pr-show-number settings)))
       (replace-token (str "[NETWORK_ERROR]")
                      (clone (:network-error settings)))
       (replace-token (str "[MERGE_NETWORK_FAILURES]")

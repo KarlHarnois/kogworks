@@ -6,7 +6,7 @@
 
 (export advance-command auto-merge-command close-command
         disarm-command fixing-command list-command
-        log-command merge-command merge-mode
+        log-command merge-command merge-mode pr-show-command
         record-head-command repo-view-command
         required-checks-command resume-view-command
         send-command show-command update-branch-command
@@ -71,6 +71,14 @@
                         (clone item)
                         (str "--json"))
              :label (str "rmap log --item " item " --json")))
+
+(defn pr-show-command (item)
+  (->command :program (str "rmap")
+             :args (vec (str "pr")
+                        (str "show")
+                        (clone item)
+                        (str "--json"))
+             :label (str "rmap pr show " item " --json")))
 
 (defn disarm-command (pull-request)
   (->command :program (str "gh")
