@@ -1,11 +1,11 @@
 (module
   "Renders the controller log lines from the line model.")
 
-(use controller/log-model ->stage-entry banner-line
-                          log-settings log-status
-                          output-target pr-summary
-                          running-item running-status
-                          stage-entry stage-state stop-line
+(use controller/log-model ->stage-entry log-settings
+                          log-status output-target
+                          pr-summary running-item
+                          running-status stage-entry
+                          stage-state start-line stop-line
                           sub-line track track-form
                           tree-branch)
 
@@ -16,8 +16,8 @@
                           fitted-title push-line! spaces
                           strip-prefix wrap-value)
 
-(export render-alive render-banner render-controller-failure
-        render-item render-stop render-sub-lines)
+(export render-alive render-controller-failure render-item
+        render-start render-stop render-sub-lines)
 
 (def status-column-width 11)
 
@@ -52,8 +52,8 @@
       (vec (styled settings text-style/secondary
                    (as-str (counts-alive-text alive)))))))
 
-(defn render-banner (settings banner)
-  (vec (banner-text settings banner)))
+(defn render-start (settings start)
+  (vec (start-text settings start)))
 
 (defn render-controller-failure (settings failure)
   (let (line (str (styled settings text-style/secondary
@@ -106,26 +106,28 @@
     (none true)
     ((some width) (<= (display-width (as-str text)) width))))
 
-(type banner-text
-  (fn (log-settings (ref banner-line)) string))
+(type start-text
+  (fn ((ref log-settings) (ref start-line))
+    string))
 
-(defn banner-text (settings banner)
+(defn start-text (settings start)
   (str (styled settings text-style/secondary
-               (as-str (:time banner)))
-       "  ● "
-       (styled settings text-style/bold "kogworks")
+               (as-str (:time start)))
        "  "
-       (styled settings text-style/secondary "roadmap")
+       (styled settings text-style/success "●")
        " "
-       (:roadmap banner)
-       " "
-       (styled settings text-style/secondary "·")
-       " "
-       (manager-text settings (:manager banner))
+       (styled settings text-style/bold "controller started")
+       "  "
+       (:roadmap start)
        " "
        (styled settings text-style/secondary "·")
        " "
-       (poll-text settings (:poll-seconds banner))))
+       (manager-text settings (:manager start))
+       " "
+       (styled settings text-style/secondary "·")
+       " "
+       (:running start)
+       " running"))
 
 (defn counts-alive-text (alive)
   (str (:time alive)
@@ -225,10 +227,6 @@
     ((some session)
      (str (styled settings text-style/secondary "manager")
           " " session))))
-
-(defn poll-text (settings poll-seconds)
-  (styled settings text-style/secondary
-          (as-str (str "poll " poll-seconds "s"))))
 
 (defn render-sub-line (settings owner branch line)
   (let (gutter (sub-line-base settings owner))

@@ -7,10 +7,10 @@
 (use controller/log ->pr-summary log-status stage-state
                     sub-line track)
 
-(use controller/log-lines ->log-item action-line banner-of
+(use controller/log-lines ->log-item action-line
                           controller-failure-of
                           failure-item-id failure-line
-                          log-action stop-of)
+                          log-action start-of stop-of)
 
 (use controller/rules item-kind)
 (use controller/signal stop-signal)
@@ -122,15 +122,15 @@
                                   stage-state/done
                                   stage-state/done)))))
 
-(deftest banner-and-stop-lines-hold-their-values
-  (let (banner (banner-of (str "14:00:00")
-                          (str "roadmap")
-                          (some (str "mgr"))
-                          30)
+(deftest start-and-stop-lines-hold-their-values
+  (let (start (start-of (str "14:00:00")
+                        (str "roadmap")
+                        (some (str "mgr"))
+                        3)
         stop (stop-of (str "14:01:00") 2 1 (str "kogworks controller")))
-    (assert (= (:roadmap banner) (str "roadmap")))
-    (assert (= (:manager banner) (some (str "mgr"))))
-    (assert (= (:poll-seconds banner) 30))
+    (assert (= (:roadmap start) (str "roadmap")))
+    (assert (= (:manager start) (some (str "mgr"))))
+    (assert (= (:running start) 3))
     (assert (= (:merged stop) 2))
     (assert (= (:accepted stop) 0))
     (assert (= (:failed stop) 1))

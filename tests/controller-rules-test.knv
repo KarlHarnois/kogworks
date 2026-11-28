@@ -3,7 +3,8 @@
 (use controller/rules action-kind action-kind->text actor
                       first-controller-action first-dispatch
                       parse-next-response
-                      parse-ready-response subject)
+                      parse-ready-response running-count
+                      subject)
 
 (defn controller-next (action item)
   (str "{\"next\":[{\"item\":\"" item "\",\"actions\":["
@@ -80,6 +81,11 @@
   (match found
     (none (assert true))
     (_ (assert false))))
+
+(defn running-count-from (text)
+  (match (parse-json (as-str text))
+    ((ok document) (running-count document))
+    ((err _) -1)))
 
 (deftest parse-next-response-reads-a-line
   (match (next-lines-from (controller-next (str "review") (str "rm-1")))
@@ -187,3 +193,15 @@
   (assert (= (action-kind->text action-kind/wait) (str "wait")))
   (assert (= (action-kind->text (action-kind/other (str "custom")))
              (str "custom"))))
+
+(deftest running-count-counts-the-active-statuses
+  (assert (= (running-count-from (str "{\"items\":["
+                                      "{\"status\":\"open\"},"
+                                      "{\"status\":\"dispatched\"},"
+                                      "{\"status\":\"reported\"},"
+                                      "{\"status\":\"in_review\"},"
+                                      "{\"status\":\"fixing\"},"
+                                      "{\"status\":\"merging\"},"
+                                      "{\"status\":\"merged\"}]}"))
+             5))
+  (assert (= (running-count-from (str "{\"items\":[]}")) 0)))

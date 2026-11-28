@@ -4,15 +4,14 @@
 (use controller/json json json-field json-text parse-json)
 
 (use controller/log ->log-settings ->pr-summary
-                    output-target render-banner
-                    render-controller-failure render-item
-                    render-stop)
+                    output-target render-controller-failure
+                    render-item render-start render-stop)
 
-(use controller/log-lines ->log-item action-line banner-of
+(use controller/log-lines ->log-item action-line
                           controller-failure-of
                           failure-item-id failure-line
                           merge-event-action short-head
-                          stop-of)
+                          start-of stop-of)
 
 (use controller/log-lines log-item)
 
@@ -26,14 +25,14 @@
                              read-color-mode
                              stderr-terminal? stderr-width)
 
-(export print-action print-banner print-failure
-        print-merge-line print-stop read-log-item
+(export print-action print-failure print-merge-line
+        print-start print-stop read-log-item
         review-log-item)
 
-(defn print-banner (remote roadmap manager poll-seconds)
+(defn print-start (remote roadmap manager running)
   (let (settings (settings-for remote)
-        line (banner-of (time-text) roadmap manager poll-seconds))
-    (print-lines (render-banner settings line))))
+        line (start-of (time-text) roadmap manager running))
+    (print-lines (render-start settings line))))
 
 (type print-merge-line
   (fn (merge-event (ref merge-target) (ref merge-report))

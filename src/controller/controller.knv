@@ -15,8 +15,8 @@
 (use controller/json json-error->message parse-json)
 (use controller/log-lines log-action)
 
-(use controller/log-report print-action print-banner
-                           print-failure print-merge-line
+(use controller/log-report print-action print-failure
+                           print-merge-line print-start
                            print-stop read-log-item
                            review-log-item)
 
@@ -45,7 +45,7 @@
                       first-controller-action first-dispatch
                       item-action next-line
                       parse-next-response
-                      parse-ready-response)
+                      parse-ready-response running-count)
 
 (export controller-and-exit)
 
@@ -145,7 +145,7 @@
     ((ok config)
      (match (set-start-cap repo config)
        ((err report) (err (->failed-run :report report :merged 0)))
-       ((ok _) (begin-run repo config settings mode))))))
+       ((ok _) (start-controller repo config settings mode))))))
 
 (type set-start-cap
   (fn ((ref str) (ref factory-config))
@@ -174,21 +174,27 @@
                                      :code (:code outcome)
                                      :detail (command-detail outcome))))
 
-(type begin-run
+(type start-controller
   (fn ((ref str)
        (ref factory-config)
        (ref controller-settings)
        run-mode)
     (result unit failed-run)))
 
-(defn begin-run (repo config settings mode)
-  (do
-    (print-banner (:remote settings)
-                  (:roadmap config)
-                  (some (clone (:manager config)))
-                  (:poll-seconds settings))
-    (run-controller-loop repo config settings mode
-                         (->run-state :notices (vec) :merged 0))))
+(defn start-controller (repo config settings mode)
+  (let (remote (clone (:remote settings)))
+    (match (poll-item-list repo config)
+      ((ok running)
+       (do
+         (print-start remote
+                      (:roadmap config)
+                      (configured-manager config)
+                      running)
+         (run-controller-loop repo config settings mode
+                              (->run-state :notices (vec) :merged 0))))
+      ((err failure)
+       (err (->failed-run :report (start-failure config failure)
+                          :merged 0))))))
 
 (type run-controller-loop
   (fn ((ref str)
@@ -263,7 +269,7 @@
 (defn run-pass-with (repo config settings notices)
   (match (poll-next repo config)
     ((err failure)
-     (err (->failure-report :manager (some (clone (:manager config)))
+     (err (->failure-report :manager (configured-manager config)
                             :error failure)))
     ((ok lines)
      (run-pass-from repo config settings notices lines))))
@@ -280,7 +286,7 @@
   (let (waiting (waiting-actions lines)
         sent (send-notices (notice-route-of repo config settings)
                            notices waiting)
-        manager (some (clone (:manager config))))
+        manager (configured-manager config))
     (with-notices (continue-from-next repo config manager
                                       settings
                                       (first-controller-action lines))
@@ -446,6 +452,28 @@
     ((err reason)
      (err (output-failed (str "ready") command reason)))))
 
+(defn poll-item-list (repo config)
+  (let (command (item-list-command (:roadmap config)))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (check-item-list-output command (:stdout outcome))
+        (err (command-failed (str "item list") (str "-") command outcome))))))
+
+(defn check-item-list-output (command text)
+  (let (document (parse-document (str "item list") command text))
+    (match document
+      ((err failure) (err failure))
+      ((ok value) (ok (running-count value))))))
+
+(defn item-list-command (roadmap)
+  (->command :program (str "rmap")
+             :args (vec (str "item")
+                        (str "list")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--json"))
+             :label (str "rmap item list --roadmap " roadmap " --json")))
+
 (defn parse-document (action command text)
   (match (parse-json (as-str text))
     ((ok document) (ok document))
@@ -508,6 +536,13 @@
                    (:error report))
     (print-stop (:remote settings) merged 1 rerun)
     (exit 1)))
+
+(defn start-failure (config failure)
+  (->failure-report :manager (configured-manager config)
+                    :error failure))
+
+(defn configured-manager (config)
+  (some (clone (:manager config))))
 
 (defn messaged-manager (report)
   (if (manager-message? (:error report))

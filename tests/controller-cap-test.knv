@@ -73,7 +73,8 @@
                  (some (str "1"))))
       (assert (= (max-active-call-count (as-str root)) 1))
       (assert (starts-with? (sequence-text (as-str root))
-                            "rmap next --roadmap fake-roadmap --json")))))
+                            (as-str (str "rmap item list --roadmap fake-roadmap --json\n"
+                                         "rmap next --roadmap fake-roadmap --json")))))))
 
 (deftest rejects-a-fractional-max-active
   (let (root (unwrap-ok (setup "cap-fractional"

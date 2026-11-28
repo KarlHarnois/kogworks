@@ -1,5 +1,5 @@
 (module
-  "Reads rmap's next and ready JSON into the controller's decisions.")
+  "Reads rmap's next, ready and item list JSON into the controller's decisions and counts.")
 
 (use controller/fields field-error->message required-field)
 (use controller/json json json-array json-field json-text)
@@ -8,7 +8,7 @@
         first-controller-action first-dispatch item-action
         item-kind item-kind-of next-action next-line
         parse-next-response parse-ready-response ready-item
-        subject)
+        running-count subject)
 
 (defstruct next-line
   :subject subject
@@ -103,6 +103,11 @@
 (defn parse-ready-response (document)
   (let-try (items (required-array document "ready"))
     (parse-ready-items items)))
+
+(defn running-count (document)
+  (match (json-field document "items")
+    (none 0)
+    ((some found) (count-running found))))
 
 (defn first-dispatch (items)
   (match (first items)
@@ -319,3 +324,26 @@
   (match (json-text found)
     ((some text) (ok text))
     (none (err (str "`" (str key) "` is not text")))))
+
+(defn count-running (found)
+  (match (json-array found)
+    (none 0)
+    ((some items) (sum (map items running-number)))))
+
+(defn running-number (item)
+  (if (running-item? item) 1 0))
+
+(defn running-item? (item)
+  (match (json-field item "status")
+    (none false)
+    ((some found)
+     (running-status? (unwrap-or (json-text found) (str))))))
+
+(defn running-status? (text)
+  (cond
+    ((= text (str "dispatched")) true)
+    ((= text (str "reported")) true)
+    ((= text (str "in_review")) true)
+    ((= text (str "fixing")) true)
+    ((= text (str "merging")) true)
+    (else false)))

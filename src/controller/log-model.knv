@@ -3,13 +3,13 @@
 
 (use controller/log-palette color-mode)
 
-(export ->alive-line ->banner-line ->controller-failure
-        ->item-line ->log-settings ->pr-summary
-        ->running-item ->stage-entry ->stop-line alive-line
-        banner-line controller-failure item-line
-        log-settings log-status output-target pr-summary
-        running-item running-status stage-entry stage-state
-        stop-line sub-line track track-form tree-branch)
+(export ->alive-line ->controller-failure ->item-line
+        ->log-settings ->pr-summary ->running-item
+        ->stage-entry ->start-line ->stop-line alive-line
+        controller-failure item-line log-settings log-status
+        output-target pr-summary running-item running-status
+        stage-entry stage-state start-line stop-line
+        sub-line track track-form tree-branch)
 
 (defstruct alive-line
   :time string
@@ -17,11 +17,11 @@
   :merged int
   :accepted int)
 
-(defstruct banner-line
+(defstruct start-line
   :time string
   :roadmap string
   :manager (option string)
-  :poll-seconds int)
+  :running int)
 
 (defstruct controller-failure
   :time string

@@ -123,7 +123,7 @@
                       (view-line)
                       (close-line))))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (defn moved-view ()
   (str "{\"state\":\"OPEN\",\"mergedAt\":null,"
@@ -246,10 +246,16 @@
        " at the new head."))
 
 (defn preflight-preface ()
-  (str (next-line)
+  (str (start-line)
        (show-line)
        (repo-view-line)
        (auto-merge-line)))
+
+(defn start-line ()
+  (str (list-line) (next-line)))
+
+(defn list-line ()
+  (str "rmap item list --roadmap fake-roadmap --json\n"))
 
 (defn next-line ()
   (str "rmap next --roadmap fake-roadmap --json\n"))
@@ -275,7 +281,7 @@
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (merged-sequence)))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest records-the-new-head-when-the-update-moves-the-head
   (let (root (unwrap-ok (setup "merge-conflict-update-moved"
@@ -293,7 +299,7 @@
       (assert (not (contains? (sequence-text root) "item close")))
       (assert (not (contains? (sequence-text root) "ringleader send")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
+                         (as-str (str "● controller started"))))
       (assert (stderr-has? output (str "merging"))))))
 
 (deftest retries-the-merge-when-the-update-leaves-the-head
@@ -318,7 +324,7 @@
                       (close-line))))
       (assert (not (contains? (sequence-text root) "pr head")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest rebases-a-conflicted-branch-when-the-update-is-refused
   (let (root (unwrap-ok (setup "merge-conflict-rebase"
@@ -338,7 +344,7 @@
       (assert (not (contains? (sequence-text root) "pr view")))
       (assert (not (contains? (sequence-text root) "item close")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
+                         (as-str (str "● controller started"))))
       (assert (stderr-has? output (str "merging"))))))
 
 (deftest merges-directly-when-auto-merge-is-refused-for-a-clean-pull-request
@@ -351,7 +357,7 @@
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root) (clean-status-sequence)))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
+                         (as-str (str "● controller started"))))
       (assert (appears-before? (stderr-text output)
                                (str "merging")
                                (str "merged #12"))))))
@@ -569,7 +575,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
+                 (refusal-sequence (str (start-line)
                                         (show-line)
                                         (disarm-line))
                                    (str "merge: " merge-item
@@ -588,7 +594,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
+                 (refusal-sequence (str (start-line)
                                         (show-line)
                                         (disarm-line))
                                    (str "merge: " merge-item
@@ -771,7 +777,7 @@
                       (view-line)
                       (close-line))))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest stops-when-the-required-check-call-is-refused
   (let (root (unwrap-ok (setup "merge-check-refused"
@@ -799,7 +805,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
-                 (refusal-sequence (str (next-line)
+                 (refusal-sequence (str (start-line)
                                         (show-line)
                                         (repo-view-line))
                                    (str "merge: " merge-item
@@ -882,7 +888,7 @@
                       (view-line)
                       (close-line))))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest retries-each-github-call-site
   (let (root (unwrap-ok (setup "merge-network-call-sites"
@@ -895,7 +901,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root)
-                 (str (next-line)
+                 (str (start-line)
                       (show-line)
                       (repo-view-line)
                       (repo-view-line)
@@ -910,7 +916,7 @@
                       (view-line)
                       (close-line))))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest resumes-a-merge-whose-auto-merge-is-armed
   (let (root (unwrap-ok (setup "merge-resume-armed"
@@ -921,7 +927,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root)
-                 (str (next-line)
+                 (str (start-line)
                       (show-line)
                       (resume-view-line)
                       (show-line)
@@ -930,7 +936,7 @@
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (not (contains? (sequence-text root) "pr merge")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest resumes-a-merge-whose-auto-merge-is-not-armed
   (let (root (unwrap-ok (setup "merge-resume-unarmed"
@@ -941,7 +947,7 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root)
-                 (str (next-line)
+                 (str (start-line)
                       (show-line)
                       (resume-view-line)
                       (merge-line)
@@ -950,7 +956,7 @@
                       (close-line))))
       (assert (not (contains? (sequence-text root) "item advance")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks"))))
+                         (as-str (str "● controller started"))))
       (assert (stderr-has? output (str "merging"))))))
 
 (deftest closes-a-merge-that-finished-while-the-controller-was-down
@@ -961,13 +967,13 @@
     (let (output (unwrap-ok (run root)))
       (assert (= (exit-code output) 0))
       (assert (= (sequence-text root)
-                 (str (next-line)
+                 (str (start-line)
                       (show-line)
                       (resume-view-line)
                       (close-line))))
       (assert (not (contains? (sequence-text root) "pr merge")))
       (assert (contains? (stderr-text output)
-                         (as-str (str "● kogworks")))))))
+                         (as-str (str "● controller started")))))))
 
 (deftest disarms-a-resumed-merge-when-the-head-moved
   (let (root (unwrap-ok (setup "merge-resume-head-moved"
@@ -978,7 +984,7 @@
       (assert (= (exit-code output) 1))
       (assert (= (sequence-text root)
                  (refusal-sequence
-                   (str (next-line)
+                   (str (start-line)
                         (show-line)
                         (resume-view-line)
                         (disarm-line))
