@@ -18,7 +18,7 @@
         merge-approval merge-command-failure merge-event
         merge-item-status merge-outcome merge-report
         merge-settings merge-target read-item-status
-        read-merge-target read-merging-items
+        read-merge-target read-merging-items read-skip-items
         read-watched-items report-event)
 
 (defenum merge-event
@@ -76,6 +76,10 @@
                  (vec (str "merging")
                       (str "fixing")
                       (str "in_review"))))
+
+(defn read-skip-items (repo roadmap)
+  (read-item-ids repo roadmap
+                 (vec (str "merging") (str "fixing"))))
 
 (defn invalid-item-output (item command reason)
   (invalid-output item command

@@ -38,13 +38,17 @@
                              merge-outcome merge-settings
                              merge-target read-merge-target
                              read-merging-items
+                             read-skip-items
                              read-watched-items
                              report-event)
 
 (use controller/merge-time merge-timed-out?)
 
-(use controller/process command command-detail execute
-                        successful?)
+(use controller/process ->command command command-detail
+                        execute successful?)
+
+(use controller/rules parse-next-response subject)
+(use controller/signal read-stop-signal)
 
 (export ->merge-settings check-merges merge-pass
         merge-settings start-merge stop-merges)
@@ -64,6 +68,7 @@
 
 (defstruct merge-pass
   :ids (vec string)
+  :skip-ids (vec string)
   :checked int
   :merged int
   :acted bool
@@ -77,19 +82,27 @@
 
 (defn check-merges (repo config settings roadmap)
   (match (read-watched-items repo roadmap)
-    ((err failure) (err failure))
+    ((err failure)
+     (fail-watched-list repo settings roadmap failure))
     ((ok ids)
-     (check-item-ids repo config settings ids
-                     (->merge-pass :ids (clone ids)
-                                   :checked 0
-                                   :merged 0
-                                   :acted false
-                                   :failure none)))))
+     (let (merging (pass-skip-ids repo roadmap ids))
+       (check-item-ids repo config settings ids
+                       (->merge-pass :ids (clone ids)
+                                     :skip-ids merging
+                                     :checked 0
+                                     :merged 0
+                                     :acted false
+                                     :failure none))))))
 
 (defn stop-merges (repo roadmap signal)
   (match (read-merging-items repo roadmap)
     ((err failure) (err failure))
     ((ok ids) (ok (disarm-reports repo ids signal)))))
+
+(defn pass-skip-ids (repo roadmap fallback)
+  (match (read-skip-items repo roadmap)
+    ((ok ids) ids)
+    ((err _) (clone fallback))))
 
 (defn check-item-ids (repo config settings ids summary)
   (if (>= (:checked summary) (len ids))
@@ -111,6 +124,7 @@
     (match (:failure summary)
       ((some failure) (err (clone failure)))
       (none (ok (->merge-pass :ids ids
+                              :skip-ids (clone (:skip-ids summary))
                               :checked (:checked summary)
                               :merged (:merged summary)
                               :acted (:acted summary)
@@ -124,6 +138,7 @@
 
 (defn record-checked (summary)
   (->merge-pass :ids (clone (:ids summary))
+                :skip-ids (clone (:skip-ids summary))
                 :checked (inc (:checked summary))
                 :merged (:merged summary)
                 :acted (:acted summary)
@@ -131,6 +146,7 @@
 
 (defn record-merged (summary)
   (->merge-pass :ids (clone (:ids summary))
+                :skip-ids (clone (:skip-ids summary))
                 :checked (inc (:checked summary))
                 :merged (inc (:merged summary))
                 :acted true
@@ -138,6 +154,7 @@
 
 (defn record-acted (summary)
   (->merge-pass :ids (clone (:ids summary))
+                :skip-ids (clone (:skip-ids summary))
                 :checked (inc (:checked summary))
                 :merged (:merged summary)
                 :acted true
@@ -145,6 +162,7 @@
 
 (defn record-failure (summary failure)
   (->merge-pass :ids (clone (:ids summary))
+                :skip-ids (clone (:skip-ids summary))
                 :checked (inc (:checked summary))
                 :merged (:merged summary)
                 :acted (:acted summary)
@@ -234,10 +252,16 @@
 (defn check-in-review-armed (repo settings item target state)
   (match (:auto-merge state)
     (auto-merge-state/armed
-      (check-in-review-moved repo settings item target state))
+      (check-in-review-approval repo settings item target state))
     (auto-merge-state/not-armed (ok merge-outcome/waiting))))
 
-(type check-in-review-moved
+(defn check-in-review-approval (repo settings item target state)
+  (match (:approval target)
+    (not-approved (disarm-and-stop repo settings item target
+                                   (not-approved-error item target)))
+    (approved (check-in-review-head repo settings item target state))))
+
+(type check-in-review-head
   (fn ((ref str)
        (ref merge-settings)
        (ref string)
@@ -245,11 +269,16 @@
        (ref merge-state))
     (result merge-outcome controller-error)))
 
-(defn check-in-review-moved (repo settings item target state)
+(defn check-in-review-head (repo settings item target state)
   (if (= (:head state) (:head target))
-    (ok merge-outcome/waiting)
+    (disarm-quietly repo target)
     (disarm-and-stop repo settings item target
                      (head-change-error item target state))))
+
+(defn disarm-quietly (repo target)
+  (do
+    (disarm-once repo (:pull-request target))
+    (ok merge-outcome/waiting)))
 
 (defn check-target-approval (repo config settings item target)
   (match (:approval target)
@@ -435,9 +464,19 @@
 
 (defn armed-result (repo config settings item target command outcome recovery)
   (if (successful? outcome)
-    (ok merge-outcome/armed)
+    (match (read-stop-signal)
+      ((some signal) (stop-armed-merge repo item target signal))
+      (none (ok merge-outcome/armed)))
     (failed-arming repo config settings item target command
                    outcome recovery)))
+
+(defn stop-armed-merge (repo item target signal)
+  (err (controller-error/signal-stop
+         (->signal-stop-report
+           :item (clone item)
+           :pull-request-number (clone (:pull-request target))
+           :signal signal
+           :disarm (disarm-once repo (:pull-request target))))))
 
 (defn failed-arming (repo config settings item target command outcome recovery)
   (match recovery
@@ -622,3 +661,99 @@
                         :signal signal
                         :disarm (disarm-status/not-disarmed 0
                                                             (str "the item could not be read"))))
+
+(defn fail-watched-list (repo settings roadmap failure)
+  (match (read-next-item-ids repo roadmap)
+    ((err _) (err (clone failure)))
+    ((ok ids)
+     (do
+       (disarm-discovered repo settings ids)
+       (err (clone failure))))))
+
+(defn read-next-item-ids (repo roadmap)
+  (let (command (next-command roadmap))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (next-item-ids (:stdout outcome))
+        (err (command-detail outcome))))))
+
+(defn next-item-ids (text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (match (parse-next-response document)
+       ((ok lines) (item-ids-of-lines lines))
+       ((err reason) (err reason))))
+    ((err failure) (err (json-error->message failure)))))
+
+(defn item-ids-of-lines (lines)
+  (item-ids-from lines 0 (vec)))
+
+(defn item-ids-from (lines index ids)
+  (if (>= index (len lines))
+    (ok ids)
+    (item-ids-after lines index
+                    (item-id-of-line (at lines index))
+                    ids)))
+
+(defn item-ids-after (lines index found ids)
+  (match found
+    (none (item-ids-from lines (inc index) ids))
+    ((some id)
+     (item-ids-from lines (inc index) (push-unique-id! ids id)))))
+
+(defn item-id-of-line (line)
+  (match (:subject line)
+    ((item id) (some (clone id)))
+    ((decision _) none)))
+
+(defn push-unique-id! (ids id)
+  (if (contains? ids id)
+    (clone ids)
+    (do (push! ids id) ids)))
+
+(defn next-command (roadmap)
+  (->command :program (str "rmap")
+             :args (vec (str "next")
+                        (str "--roadmap")
+                        (clone roadmap)
+                        (str "--json"))
+             :label (str "rmap next --roadmap " roadmap " --json")))
+
+(defn disarm-discovered (repo settings ids)
+  (loop (index 0)
+    (if (>= index (len ids))
+      (do)
+      (do
+        (disarm-discovered-item repo settings (at ids index))
+        (recur (inc index))))))
+
+(defn disarm-discovered-item (repo settings item)
+  (match (read-merge-target repo item)
+    ((err _) (do))
+    ((ok target) (disarm-watched-target repo settings target))))
+
+(defn disarm-watched-target (repo settings target)
+  (if (watched-status? (:item-status target))
+    (disarm-watched-state repo settings target)
+    (do)))
+
+(defn disarm-watched-state (repo settings target)
+  (match (read-resume-state repo settings
+                            (clone (:id target))
+                            target)
+    ((err _) (do))
+    ((ok state) (disarm-watched-armed repo target state))))
+
+(defn disarm-watched-armed (repo target state)
+  (match (:auto-merge state)
+    (auto-merge-state/armed (do
+                              (disarm-once repo (:pull-request target))
+                              (do)))
+    (_ (do))))
+
+(defn watched-status? (status)
+  (match status
+    (fixing true)
+    (in-review true)
+    (merging true)
+    (_ false)))

@@ -16,6 +16,21 @@
 
 (def approved-item-json (item-json (str "in_review") true))
 
+(def in-review-moved-item-json
+  (str "{\"item\":{\"id\":\"" merge-item "\","
+       "\"title\":\"Merge the approved head\","
+       "\"kind\":\"build\",\"status\":\"in_review\","
+       "\"session\":{\"name\":\"" merge-worker
+       "\",\"branch\":\"" merge-worker "\"}},"
+       "\"pull_request\":{\"number\":" merge-pr ","
+       "\"head\":\"" moved-head "\",\"approved\":false,"
+       "\"approval\":{\"head\":\"" moved-head "\"}}}"))
+
+(def review-and-merge-items
+  (str "{\"items\":[{" "\"id\":\"" merge-item
+       "\",\"status\":\"merging\"}," "{\"id\":\""
+       review-item "\",\"status\":\"in_review\"}]}"))
+
 (def merged-view
   (str "{\"state\":\"MERGED\",\"headRefOid\":\""
        approved-head "\"," "\"autoMergeRequest\":null}"))
@@ -53,7 +68,8 @@
        "\",\"kind\":\"work\",\"name\":\"" review-branch
        "\"}," "\"status\":\"in_review\"},"
        "\"pull_request\":{\"number\":21,\"head\":\""
-       approved-head "\"}}"))
+       approved-head "\",\"approved\":false,"
+       "\"approval\":{\"head\":\"" approved-head "\"}}}"))
 
 (def merge-slug (str "fake-owner/fake-repo"))
 
@@ -385,13 +401,14 @@
 
 (deftest starts-a-review-while-a-pull-request-stays-open
   (let (root (unwrap-ok (setup-merging "merge-review"
-                                       (assoc
-                                         (merge-settings)
-                                         :items-json (merging-items (vec (clone merge-item)))
-                                         :view-json (clone armed-view)
-                                         :next-json (clone review-next)
-                                         :item-json (clone review-item-json))
+                                       (assoc (merge-settings)
+                                              :items-json (clone review-and-merge-items)
+                                              :view-json (clone armed-view)
+                                              :next-json (clone review-next)
+                                              :item-json (clone
+                                                           review-item-json))
                                        (clone merging-item-json)))
+        _view (unwrap-ok (write-file root "view-21.json" (clone open-view)))
         output (unwrap-ok (run root)))
     (assert (= (exit-code output) 0))
     (assert (contains?
@@ -739,6 +756,24 @@
     (assert (not (stderr-has? output (str "disarmed"))))
     (assert (stderr-has? output (str "show refused")))))
 
+(deftest disarms-an-in-review-build-without-approval
+  (let (root (unwrap-ok (setup-merging "merge-in-review-unapproved"
+                                       (assoc
+                                         (merge-settings)
+                                         :items-json (status-items (vec (clone merge-item))
+                                                                   (str "in_review"))
+                                         :view-json (clone moved-armed-view))
+                                       (clone in-review-moved-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "is not approved at head")))))
+
 (deftest disarms-an-in-review-build-with-a-moved-head
   (let (root (unwrap-ok (setup-merging "merge-in-review-moved"
                                        (assoc
@@ -769,3 +804,31 @@
     (assert (= (exit-code output) 0))
     (assert (not (contains? (sequence-text root) "--disable-auto")))
     (assert (not (stderr-has? output (str "is fixing"))))))
+
+(deftest disarms-when-the-item-list-fails
+  (let (root (unwrap-ok (setup "merge-list-fails"
+                               (assoc (merge-settings)
+                                      :list-exit 9
+                                      :list-error (str "list refused")
+                                      :item-json (clone merging-item-json)
+                                      :view-json (clone armed-view)
+                                      :next-json (clone merge-next))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "list refused")))
+    (assert (not (contains? (sequence-text root) "item close")))))
+
+(deftest disarms-on-sigint-while-arming
+  (let (root (unwrap-ok (setup "merge-signal-arm"
+                               (assoc (merge-settings)
+                                      :merge-signal (str "INT"))))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (merge-line))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "SIGINT")))
+    (assert (not (contains? (sequence-text root) "item close")))))

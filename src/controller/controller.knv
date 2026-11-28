@@ -262,12 +262,12 @@
         manager (some (clone (:manager config))))
     (match (read-stop-signal)
       ((some signal) (signal-failure repo config signal))
-      (none (with-notices (continue-from-next
-                            repo config manager settings
-                            (first-controller-action-skipping lines
-                                                              (:ids merged)))
-                          sent
-                          (:merged merged))))))
+      (none (with-notices
+              (continue-from-next
+                repo config manager settings
+                (first-controller-action-skipping lines (:skip-ids merged)))
+              sent
+              (:merged merged))))))
 
 (defn signal-failure (repo config signal)
   (match (stop-merges repo (:roadmap config) signal)

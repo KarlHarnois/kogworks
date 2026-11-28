@@ -96,6 +96,9 @@
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
     "    case \"$2\" in\n" "      list)\n"
+    "        if [ [LIST_EXIT] -ne 0 ]; then\n"
+    "          printf '%s\\n' '[LIST_ERROR]' >&2\n"
+    "          exit [LIST_EXIT]\n" "        fi\n"
     "        if [ -f \"$root/closed\" ]; then\n"
     "          printf '{\"items\":[]}'\n" "        else\n"
     "          cat \"$root/items.json\"\n" "        fi\n"
@@ -354,6 +357,8 @@
   :disarm-error string
   :later-show-exit int
   :later-show-error string
+  :list-exit int
+  :list-error string
   :log-exit int
   :log-error string
   :pr-show-exit int
@@ -418,6 +423,8 @@
                    :disarm-error (str)
                    :later-show-exit 0
                    :later-show-error (str)
+                   :list-exit 0
+                   :list-error (str)
                    :log-exit 0
                    :log-error (str)
                    :pr-show-exit 0
@@ -519,6 +526,10 @@
                      (str (:later-show-exit settings)))
       (replace-token (str "[LATER_SHOW_ERROR]")
                      (clone (:later-show-error settings)))
+      (replace-token (str "[LIST_EXIT]")
+                     (str (:list-exit settings)))
+      (replace-token (str "[LIST_ERROR]")
+                     (clone (:list-error settings)))
       (replace-token (str "[LOG_EXIT]")
                      (str (:log-exit settings)))
       (replace-token (str "[LOG_ERROR]")
