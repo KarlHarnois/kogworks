@@ -63,6 +63,35 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 
 **If the criterion already has a verdict, run `rmap item verify` for that criterion again with the whole note.** The latest verdict on a criterion counts.
 
+## Rulings
+
+**Read the item's rulings before you review the pull request.** Run:
+
+```sh
+rmap ruling list --item {{item}}
+```
+
+**A ruling covers a choice that shows outside the pull request in one of these ways.**
+
+- What a flag or a setting means.
+- A file format.
+- A message or an exit code that someone may depend on.
+- A departure from the item's text.
+
+**A ruling covers no choice of a name, of the structure of the code or of style.**
+
+**A choice is the owner's to settle when any of these holds.**
+
+- The choice is hard to undo.
+- The choice changes a stated rule, the spec or an accepted decision.
+- The choice changes what another item will build.
+
+**Give the verdict `changes` when a ruling settles a choice that is the owner's to settle.**
+
+**Give the verdict `changes` when the pull request makes a choice that a ruling covers with no ruling.**
+
+**A finding from the two rules above is a real problem.**
+
 ## Review verdict
 
 **Record the review LAST, after every criterion verdict.** `rmap pr review` ends the live review session. Run:

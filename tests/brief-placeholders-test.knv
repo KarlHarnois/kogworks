@@ -147,3 +147,71 @@
                        "A blocking finding stands even when no acceptance criterion names it."))
     (assert (contains? brief
                        "NEVER notice a defect and approve anyway."))))
+
+(deftest worker-brief-records-a-ruling-for-an-outside-choice
+  (let (brief (unwrap-ok (slurp worker-brief-path)))
+    (assert (contains? brief
+                       (as-str (str "Record a ruling when you make a choice that the item does not "
+                                    "settle and that shows outside the pull request."))))
+    (assert (contains? brief "What a flag or a setting means."))
+    (assert (contains? brief "A file format."))
+    (assert (contains? brief
+                       "A message or an exit code that someone may depend on."))
+    (assert (contains? brief "A departure from the item's text."))
+    (assert (contains? brief "rmap ruling list --item {{item}}"))
+    (assert (contains? brief "rmap settled --roadmap {{roadmap}}"))
+    (assert (contains? brief "rmap ruling add --item {{item}}"))
+    (assert (contains? brief
+                       (as-str (str "one sentence for the question, one for the choice and "
+                                    "one for the reason"))))))
+
+(deftest worker-brief-leaves-name-and-style-out-of-a-ruling
+  (let (brief (unwrap-ok (slurp worker-brief-path)))
+    (assert (contains? brief
+                       (as-str (str "NEVER record a ruling for a name, for the structure of "
+                                    "the code or for style."))))))
+
+(deftest worker-brief-sends-an-owner-choice-to-the-controller
+  (let (brief (unwrap-ok (slurp worker-brief-path)))
+    (assert (contains? brief
+                       "Record a choice in this list as a question report, not a ruling."))
+    (assert (contains? brief "A choice that is hard to undo."))
+    (assert (contains? brief
+                       "A choice that changes a stated rule, the spec or an accepted decision."))
+    (assert (contains? brief
+                       "A choice that changes what another item will build."))
+    (assert (contains? brief
+                       "Record the question report as the Limits section says, then stop."))))
+
+(deftest reviewer-brief-reads-the-item-rulings
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains?
+              brief
+              "Read the item's rulings before you review the pull request."))
+    (assert (contains? brief "rmap ruling list --item {{item}}"))))
+
+(deftest reviewer-brief-records-changes-for-an-owner-ruling
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief
+                       (as-str (str "Give the verdict `changes` when a ruling settles a "
+                                    "choice that is the owner's to settle."))))
+    (assert (contains?
+              brief
+              "A choice is the owner's to settle when any of these holds."))
+    (assert (contains? brief "The choice is hard to undo."))
+    (assert (contains? brief
+                       "The choice changes a stated rule, the spec or an accepted decision."))
+    (assert (contains? brief
+                       "The choice changes what another item will build."))))
+
+(deftest reviewer-brief-records-changes-for-an-unrecorded-choice
+  (let (brief (unwrap-ok (slurp reviewer-brief-path)))
+    (assert (contains? brief
+                       (as-str (str "Give the verdict `changes` when the pull request makes "
+                                    "a choice that a ruling covers with no ruling."))))
+    (assert (contains? brief
+                       (as-str (str "A ruling covers a choice that shows outside the pull "
+                                    "request in one of these ways."))))
+    (assert (contains?
+              brief
+              "A finding from the two rules above is a real problem."))))
