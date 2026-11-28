@@ -9,6 +9,7 @@
                     stage-state track)
 
 (use controller/log-lines log-item)
+(use controller/merge-target merge-approval)
 (use controller/rules item-kind)
 
 (export ->item-review ->log-progress advance-progress
@@ -216,8 +217,9 @@
     (_ (track/write-track stage-state/active stage-state/waiting))))
 
 (defn review-status (log-item)
-  (if (:approved log-item)
-    log-status/verifying log-status/reviewing))
+  (match (:approval log-item)
+    (merge-approval/approved log-status/verifying)
+    (merge-approval/not-approved log-status/reviewing)))
 
 (defn review-track ()
   (track/build-track stage-state/done stage-state/active

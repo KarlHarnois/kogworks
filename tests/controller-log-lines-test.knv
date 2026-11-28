@@ -7,6 +7,8 @@
 (use controller/log ->pr-summary log-status stage-state
                     sub-line track)
 
+(use controller/merge-target merge-approval)
+
 (use controller/log-lines ->log-item action-line
                           controller-failure-of
                           failure-item-id failure-line
@@ -26,7 +28,7 @@
               :kind item-kind/build
               :title (str "Build the thing")
               :branch (some (str "build-rm-0001"))
-              :approved false
+              :approval merge-approval/not-approved
               :pull-request (some (->pr-summary :number 12
                                                 :branch (str "build-rm-0001")
                                                 :head (some (str "abcdef0"))))))

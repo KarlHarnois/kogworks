@@ -10,6 +10,7 @@
                     item-line log-status pr-summary
                     stage-state sub-line track)
 
+(use controller/merge-target merge-approval)
 (use controller/rules item-kind)
 
 (export ->log-item action-line controller-failure-of
@@ -21,7 +22,7 @@
   :kind item-kind
   :title string
   :branch (option string)
-  :approved bool
+  :approval merge-approval
   :pull-request (option pr-summary))
 
 (defenum log-action

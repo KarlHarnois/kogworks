@@ -8,14 +8,15 @@
                     running-status stage-state track)
 
 (use controller/log-lines ->log-item)
+(use controller/merge-target merge-approval)
 (use controller/rules item-kind)
 
-(defn build-item (approved)
+(defn build-item (approval)
   (->log-item :id (str "rm-0001")
               :kind item-kind/build
               :title (str "Build the thing")
               :branch none
-              :approved approved
+              :approval approval
               :pull-request (some (->pr-summary :number 12
                                                 :branch (str "build-rm-0001")
                                                 :head (some (str "abcdef0"))))))
@@ -38,14 +39,14 @@
 
 (deftest a-review-start-shows-reviewing-or-verifying
   (assert (= (line-status (lifecycle-change/review-started (str "rm-0001"))
-                          (build-item false))
+                          (build-item merge-approval/not-approved))
              log-status/reviewing))
   (assert (= (line-status (lifecycle-change/review-started (str "rm-0001"))
-                          (build-item true))
+                          (build-item merge-approval/approved))
              log-status/verifying)))
 
 (deftest a-recorded-head-shows-the-new-head
-  (let (item (build-item false)
+  (let (item (build-item merge-approval/not-approved)
         change (lifecycle-change/head-recorded (str "rm-0001")))
     (assert (= (line-status change item) log-status/new-head))
     (match (event-line (str "14:00:00")
@@ -60,7 +61,7 @@
 (deftest an-abandoned-review-shows-abandoned
   (assert (= (line-status (lifecycle-change/abandoned (str "rm-0001")
                                                       (str "review-rm-0001"))
-                          (build-item false))
+                          (build-item merge-approval/not-approved))
              log-status/abandoned)))
 
 (deftest the-fixing-round-counts-the-earlier-moves

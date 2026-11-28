@@ -87,12 +87,12 @@
                         (clone command))
         (err (log-failure command outcome))))))
 
-(defn review-log-item (id title kind branch pull-request head approved)
+(defn review-log-item (id title kind branch pull-request head approval)
   (->log-item :id (str id)
               :kind (item-kind-of kind)
               :title (str title)
               :branch (some (str branch))
-              :approved approved
+              :approval approval
               :pull-request (review-pr (str pull-request)
                                        (str branch)
                                        (str head))))
@@ -113,7 +113,7 @@
               :kind (item-kind-of (clone (:kind target)))
               :title (str (:title target))
               :branch (clone (:branch target))
-              :approved (= (:approval target) merge-approval/approved)
+              :approval (clone (:approval target))
               :pull-request (target-pr target)))
 
 (type log-command
@@ -291,7 +291,7 @@
               :kind (item-kind-of (optional-text record "kind" "build"))
               :title (optional-text record "title" item)
               :branch (session-branch record)
-              :approved (pull-approved document)
+              :approval (pull-approval document)
               :pull-request (pull-summary record document)))
 
 (defn fallback-log-item (item)
@@ -299,23 +299,27 @@
               :kind item-kind/build
               :title (str item)
               :branch none
-              :approved false
+              :approval merge-approval/not-approved
               :pull-request none))
 
-(defn pull-approved (document)
+(defn pull-approval (document)
   (match (json-field document "pull_request")
-    (none false)
-    ((some pull) (optional-approved pull))))
+    (none merge-approval/not-approved)
+    ((some pull) (optional-approval pull))))
 
-(defn optional-approved (pull)
+(defn optional-approval (pull)
   (match (json-field pull "approved")
-    (none false)
-    ((some found) (approved-value found))))
+    (none merge-approval/not-approved)
+    ((some found) (approval-value found))))
 
-(defn approved-value (found)
+(defn approval-value (found)
   (match found
-    ((boolean flag) flag)
-    (_ false)))
+    ((boolean flag) (flag-approval flag))
+    (_ merge-approval/not-approved)))
+
+(defn flag-approval (flag)
+  (if flag
+    merge-approval/approved merge-approval/not-approved))
 
 (defn session-branch (item)
   (match (json-field item "session")

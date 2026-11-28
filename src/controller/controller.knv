@@ -27,6 +27,7 @@
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
+(use controller/merge-target merge-approval)
 (use controller/merge-commands send-command)
 
 (use controller/merge-target ->merge-report ignore-report
@@ -438,10 +439,13 @@
                                        (clone (:branch (:detail result)))
                                        (clone (:pr (:detail result)))
                                        (clone (:head (:detail result)))
-                                       (verify-mode? mode))))))
+                                       (review-approval mode))))))
 
-(defn verify-mode? (mode)
-  (match mode (review-mode/verify true) (_ false)))
+(defn review-approval (mode)
+  (match mode
+    (review-mode/verify merge-approval/approved)
+    (review-mode/design merge-approval/not-approved)
+    (review-mode/review merge-approval/not-approved)))
 
 (defn out-of-scope-report (config manager action)
   (err (->failure-report :manager manager
