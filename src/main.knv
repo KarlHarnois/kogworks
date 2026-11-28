@@ -14,6 +14,7 @@
     ((kogworks-command/controller options)
      (controller-and-exit (as-str (:repo options))
                           (:poll options)
+                          (:stall options)
                           (:merge-poll options)
                           (:merge-timeout options)
                           (:merge-retry-delay options)

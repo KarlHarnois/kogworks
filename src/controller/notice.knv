@@ -1,25 +1,35 @@
 (module
-  "Plans one notice for each action that waits on the manager or the user.")
+  "Plans the notices for the actions that wait on the manager or the user.")
 
 (use controller/rules action-kind action-kind->text actor
                       next-line subject)
 
-(export ->notice ->waiting-action delivery notice
-        notice-message notice-step owner plan-notices
-        waiting-action waiting-actions)
+(export ->notice ->notice-clock ->waiting-action delivery
+        notice notice-clock notice-message notice-step owner
+        plan-notices stall-message waiting-action
+        waiting-actions)
+
+(def seconds-per-minute 60)
+
+(defenum notice-step
+  (announce waiting-action)
+  (repeat notice)
+  (resend notice)
+  (keep notice))
 
 (defstruct notice
   :action waiting-action
-  :delivery delivery)
+  :delivery delivery
+  :seen-at int
+  :told-at int)
 
 (defenum delivery
   delivered
   undelivered)
 
-(defenum notice-step
-  (announce waiting-action)
-  (resend waiting-action)
-  (keep waiting-action))
+(defstruct notice-clock
+  :now int
+  :stall int)
 
 (defstruct waiting-action
   :subject subject
@@ -39,25 +49,32 @@
 
 (type plan-notices
   (fn ((ref (vec notice))
-       (ref (vec waiting-action)))
+       (ref (vec waiting-action))
+       (ref notice-clock))
     (vec notice-step)))
 
-(defn plan-notices (previous waiting)
+(defn plan-notices (previous waiting clock)
   (collect (map waiting
-             (fn (action) (step-for previous action)))))
-
-(type notice-message
-  (fn ((ref waiting-action)) string))
+             (fn (action) (step-for previous action clock)))))
 
 (defn notice-message (action)
-  (str (action-kind->text (:kind action))
-       ": "
-       (subject-id (:subject action))
-       ": waiting for "
+  (str (subject-prefix action)
+       "waiting for "
        (owner->text (:owner action))
-       ". Read `"
-       (show-text (:subject action))
-       "`."))
+       (read-hint action)))
+
+(type stall-message
+  (fn ((ref notice) (ref notice-clock))
+    string))
+
+(defn stall-message (sent clock)
+  (str (subject-prefix (:action sent))
+       "still waiting for "
+       (owner->text (:owner (:action sent)))
+       " after "
+       (waited-minutes sent clock)
+       " minutes"
+       (read-hint (:action sent))))
 
 (defn with-line-actions (waiting line)
   (reduce (:actions line) waiting
@@ -84,22 +101,44 @@
 
 (type step-for
   (fn ((ref (vec notice))
-       (ref waiting-action))
+       (ref waiting-action)
+       (ref notice-clock))
     notice-step))
 
-(defn step-for (previous action)
+(defn step-for (previous action clock)
   (match (find previous
            (fn (sent) (notice-of? sent action)))
-    ((some sent) (known-step sent))
+    ((some sent) (known-step sent clock))
     (none (notice-step/announce (clone action)))))
 
 (defn notice-of? (sent action)
   (= (:action sent) action))
 
-(defn known-step (sent)
-  (match (:delivery sent)
-    (delivered (notice-step/keep (clone (:action sent))))
-    (undelivered (notice-step/resend (clone (:action sent))))))
+(defn known-step (sent clock)
+  (cond
+    ((stalled? sent clock) (notice-step/repeat (clone sent)))
+    ((undelivered? sent) (notice-step/resend (clone sent)))
+    (else (notice-step/keep (clone sent)))))
+
+(defn stalled? (sent clock)
+  (>= (- (:now clock) (:told-at sent))
+      (:stall clock)))
+
+(defn undelivered? (sent)
+  (= (:delivery sent) delivery/undelivered))
+
+(defn waited-minutes (sent clock)
+  (/ (- (:now clock) (:seen-at sent))
+     seconds-per-minute))
+
+(defn subject-prefix (action)
+  (str (action-kind->text (:kind action))
+       ": "
+       (subject-id (:subject action))
+       ": "))
+
+(defn read-hint (action)
+  (str ". Read `" (show-text (:subject action)) "`."))
 
 (defn subject-id (subject)
   (match subject
