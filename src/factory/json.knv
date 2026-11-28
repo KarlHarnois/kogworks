@@ -91,7 +91,8 @@
 (defn role-name->text (name)
   (match name
     (worker (str "worker"))
-    (reviewer (str "reviewer"))))
+    (reviewer (str "reviewer"))
+    (design-reviewer (str "design_reviewer"))))
 
 (defn text->json (text)
   (str "\""

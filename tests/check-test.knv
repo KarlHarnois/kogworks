@@ -13,6 +13,21 @@
        "                   :skill \"reviewing-prs\"\n"
        "                   :brief \".kogworks/briefs/reviewer.md\")))\n"))
 
+(def design-factory
+  (str "(deffactory checked-design\n"
+       "  :manager \"checked-manager\"\n"
+       "  :roadmap \"checked-roadmap\"\n"
+       "  :max-active 2\n" "  :merge gh-auto\n"
+       "  (roles (worker :agent \"opencode\"\n"
+       "                 :skill \"writing-knave\"\n"
+       "                 :brief \".kogworks/briefs/worker.md\")\n"
+       "         (reviewer :agent \"opencode\"\n"
+       "                   :skill \"reviewing-prs\"\n"
+       "                   :brief \".kogworks/briefs/reviewer.md\")\n"
+       "         (design-reviewer :agent \"opencode\"\n"
+       "                          :skill \"reviewing-prs\"\n"
+       "                          :brief \".kogworks/briefs/design-reviewer.md\")))\n"))
+
 (def lint-failure-factory
   (str "(deffactory lint-failure\n"
        "  :manager \"lint-manager\"\n"
@@ -148,6 +163,19 @@
                  names-before))
       (assert (= (unwrap-ok (slurp (as-str (str root "/" dir "/factory.json"))))
                  json-before)))))
+
+(deftest check-passes-with-a-design-reviewer-role
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/design/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "design"))))
+    (unwrap-ok (prepare-factory dir design-factory))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (let (output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 0))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
 
 (deftest check-reports-a-lint-failure
   (let (root (unwrap-ok (current-directory))

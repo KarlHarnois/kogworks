@@ -20,4 +20,5 @@
 
 (defenum role-name
   worker
-  reviewer)
+  reviewer
+  design-reviewer)

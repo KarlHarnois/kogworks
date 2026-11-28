@@ -6,11 +6,12 @@
 (use fixtures/fake-factory fake-factory)
 
 (export ->fake-settings absolute-path default-settings
-        exit-code fake-settings make-dir
-        max-active-call-count max-active-command
-        prepare-repo read-text reset-dir run-controller
-        run-controller-colored stderr-text stdout-text
-        stored-max-active write-fakes write-text)
+        design-controller-factory exit-code fake-settings
+        make-dir max-active-call-count max-active-command
+        prepare-design-repo prepare-repo read-text reset-dir
+        run-controller run-controller-colored stderr-text
+        stdout-text stored-max-active write-fakes
+        write-text)
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -23,12 +24,33 @@
                              :skill (str "fake-reviewer-skill")
                              :brief (str ".kogworks/briefs/reviewer.md")))))
 
+(def design-controller-factory
+  (assoc (clone fake-factory)
+         :roles (vec (->role :name role-name/worker
+                             :agent (str "fake-agent")
+                             :skill (str "fake-skill")
+                             :brief (str ".kogworks/briefs/worker.md"))
+                     (->role :name role-name/reviewer
+                             :agent (str "fake-reviewer-agent")
+                             :skill (str "fake-reviewer-skill")
+                             :brief (str ".kogworks/briefs/reviewer.md"))
+                     (->role :name role-name/design-reviewer
+                             :agent (str "fake-design-agent")
+                             :skill (str "fake-design-skill")
+                             :brief (str
+                                      ".kogworks/briefs/design-reviewer.md")))))
+
 (def worker-brief
   (str "item={{item}} roadmap={{roadmap}} session={{session}} "
        "branch={{branch}} base={{base}} skill={{skill}}\n"))
 
 (def reviewer-brief
   (str "item={{item}} roadmap={{roadmap}} session={{session}} "
+       "pr={{pr}} head={{head}} criteria={{criteria}} base={{base}} "
+       "skill={{skill}} manager={{manager}}\n"))
+
+(def design-brief
+  (str "design item={{item}} roadmap={{roadmap}} session={{session}} "
        "pr={{pr}} head={{head}} criteria={{criteria}} base={{base}} "
        "skill={{skill}} manager={{manager}}\n"))
 
@@ -435,6 +457,19 @@
                           (as-str worker-brief)))
     (write-text (as-str (str root "/repo/.kogworks/briefs/reviewer.md"))
                 (as-str reviewer-brief))))
+
+(defn prepare-design-repo (root)
+  (let-try (_ (reset-dir root)
+            _ (make-dir (as-str (str root "/repo/.kogworks/briefs")))
+            _ (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                          (as-str (factory->json design-controller-factory)))
+            _ (write-text (as-str (str root "/repo/.kogworks/briefs/worker.md"))
+                          (as-str worker-brief))
+            _ (write-text (as-str (str root
+                                       "/repo/.kogworks/briefs/reviewer.md"))
+                          (as-str reviewer-brief)))
+    (write-text (as-str (str root "/repo/.kogworks/briefs/design-reviewer.md"))
+                (as-str design-brief))))
 
 (defn write-fakes (root settings)
   (let-try (_ (make-dir (as-str (str root "/bin")))
