@@ -1,7 +1,5 @@
 (use fixtures/factory-fixture prepare-factory)
 
-(deftype process-output (rust "std::process::Output"))
-
 (def create-directory
   (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
     (fn ((ref str)) (result unit string))))
@@ -30,8 +28,7 @@
   (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
     (fn ((ref process-output)) int)))
 
-(type prepare-governed-repo
-  (fn ((ref str)) (result unit string)))
+(deftype process-output (rust "std::process::Output"))
 
 (defn prepare-governed-repo (root)
   (match (create-directory (as-str (str root "/.kogworks")))
