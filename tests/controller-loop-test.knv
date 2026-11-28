@@ -40,6 +40,14 @@
   (str "accept-report: rm-0004: waiting for the manager. "
        "Read `rmap item show rm-0004`."))
 
+(def send-fixes-stall
+  (str "send-fixes: rm-0002: still waiting for the manager after "
+       "0 minutes. Read `rmap item show rm-0002`."))
+
+(def accept-report-stall
+  (str "accept-report: rm-0004: still waiting for the manager after "
+       "0 minutes. Read `rmap item show rm-0004`."))
+
 (def decision-notice
   (str "await-decision: rm-d1: waiting for the user. "
        "Read `rmap decision show rm-d1`."))
@@ -232,6 +240,18 @@
        (next-line (str "fake-roadmap"))
        (poll-limit-line)))
 
+(defn notice-repeat-sequence ()
+  (str (next-line (str "fake-roadmap"))
+       (send-line (clone send-fixes-notice))
+       (send-line (clone accept-report-notice))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (send-line (clone send-fixes-stall))
+       (send-line (clone accept-report-stall))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (poll-limit-line)))
+
 (defn notice-retry-sequence ()
   (str (next-line (str "fake-roadmap"))
        (send-line (clone send-fixes-notice))
@@ -420,6 +440,20 @@
       (assert (contains? (stderr-text output) (as-str send-fixes-notice)))
       (assert (contains? (stderr-text output)
                          (as-str accept-report-notice))))))
+
+(deftest sends-a-notice-again-when-the-stall-time-has-passed
+  (let (root (unwrap-ok (setup "notice-repeat"
+                               (assoc (default-settings (clone waiting-next)
+                                                        (clone research-ready))
+                                      :stop-after 3))))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll")
+                                      (str "0")
+                                      (str "--stall")
+                                      (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (notice-repeat-sequence)))
+      (assert (contains? (stderr-text output) (as-str send-fixes-stall))))))
 
 (deftest sends-a-notice-again-on-the-pass-after-a-failed-send
   (let (root (unwrap-ok (setup "notice-retry"

@@ -1,57 +1,81 @@
 (module
-  "Prints each new notice and sends the notices to the manager session.")
+  "Prints each new notice and each stall line, and sends them to the manager session.")
 
 (use controller/merge-commands send-command)
 
-(use controller/notice ->notice delivery notice
+(use controller/notice ->notice delivery notice notice-clock
                        notice-message notice-step
-                       plan-notices waiting-action)
+                       plan-notices stall-message
+                       waiting-action)
 
 (use controller/process execute successful?)
 
-(export send-notices)
+(export ->notice-route notice-route send-notices)
+
+(defstruct notice-route
+  :repo string
+  :manager string
+  :clock notice-clock)
 
 (type send-notices
-  (fn ((ref str)
-       (ref string)
+  (fn ((ref notice-route)
        (ref (vec notice))
        (ref (vec waiting-action)))
     (vec notice)))
 
-(defn send-notices (repo manager previous waiting)
-  (let (steps (plan-notices previous waiting))
+(defn send-notices (route previous waiting)
+  (let (steps (plan-notices previous waiting (:clock route)))
     (loop (index 0
            sent (vec))
       (if (>= index (len steps))
         sent
         (recur (inc index)
-               (with-step! repo manager sent (at steps index)))))))
+               (with-step! route sent (at steps index)))))))
 
-(defn with-step! (repo manager sent step)
-  (let (taken (take-step repo manager sent step))
+(defn with-step! (route sent step)
+  (let (taken (take-step route sent step))
     (push! sent taken)
     sent))
 
-(defn take-step (repo manager sent step)
+(defn take-step (route sent step)
   (match step
-    ((keep action)
-     (->notice :action (clone action)
-               :delivery delivery/delivered))
-    ((resend action) (deliver repo manager sent action))
-    ((announce action) (announce repo manager sent action))))
+    ((keep known) (clone known))
+    ((resend known) (resent route sent known))
+    ((repeat known) (repeated route sent known))
+    ((announce action) (announced route sent action))))
 
-(defn announce (repo manager sent action)
-  (eprintln (notice-message action))
-  (deliver repo manager sent action))
+(defn announced (route sent action)
+  (let (message (notice-message action))
+    (eprintln message)
+    (->notice :action (clone action)
+              :delivery (delivery-of route sent message)
+              :seen-at (:now (:clock route))
+              :told-at (:now (:clock route)))))
 
-(defn deliver (repo manager sent action)
-  (->notice :action (clone action)
-            :delivery (delivery-of repo manager sent action)))
+(defn repeated (route sent known)
+  (let (message (stall-message known (:clock route)))
+    (eprintln message)
+    (->notice :action (clone (:action known))
+              :delivery (delivery-of route sent message)
+              :seen-at (:seen-at known)
+              :told-at (:now (:clock route)))))
 
-(defn delivery-of (repo manager sent action)
+(defn resent (route sent known)
+  (let (message (latest-message known (:clock route)))
+    (->notice :action (clone (:action known))
+              :delivery (delivery-of route sent message)
+              :seen-at (:seen-at known)
+              :told-at (:told-at known))))
+
+(defn latest-message (known clock)
+  (if (= (:told-at known) (:seen-at known))
+    (notice-message (:action known))
+    (stall-message known clock)))
+
+(defn delivery-of (route sent message)
   (if (earlier-send-failed? sent)
     delivery/undelivered
-    (send-notice repo manager action)))
+    (send-message route message)))
 
 (type earlier-send-failed?
   (fn ((ref (vec notice))) bool))
@@ -61,7 +85,8 @@
     (fn (notice)
       (= (:delivery notice) delivery/undelivered))))
 
-(defn send-notice (repo manager action)
-  (let (command (send-command manager (notice-message action)))
-    (if (successful? (execute repo command))
+(defn send-message (route message)
+  (let (command (send-command (:manager route) message)
+        outcome (execute (as-str (:repo route)) command))
+    (if (successful? outcome)
       delivery/delivered delivery/undelivered)))

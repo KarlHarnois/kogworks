@@ -17,8 +17,11 @@
                       start-merge)
 
 (use controller/merge-commands send-command)
-(use controller/notice notice waiting-actions)
-(use controller/notice-delivery send-notices)
+
+(use controller/notice ->notice-clock notice
+                       waiting-actions)
+
+(use controller/notice-delivery ->notice-route send-notices)
 
 (use controller/process ->command canonical-path command
                         command-detail execute successful?)
@@ -32,6 +35,10 @@
                       parse-ready-response)
 
 (export controller-and-exit)
+
+(def whole-seconds
+  (rust "i64::try_from({0}.as_secs()).unwrap_or(i64::MAX)"
+    (fn (duration) int)))
 
 (defenum run-mode
   one-pass
@@ -48,25 +55,33 @@
 
 (defstruct controller-settings
   :poll-seconds int
+  :stall-seconds int
+  :started instant
   :merge-wait merge-settings)
 
-(defn controller-and-exit (repo poll merge-poll merge-timeout retry-delay once)
+(defn controller-and-exit (repo poll stall merge-poll
+                                merge-timeout retry-delay
+                                once)
   (match (canonical-repo repo)
     ((ok absolute)
      (run-controller-and-exit (as-str absolute)
                               (build-controller-settings
-                                poll merge-poll
+                                poll stall merge-poll
                                 merge-timeout retry-delay)
                               once))
     ((err failure) (eprintln (error->message failure)) (exit 1))))
 
-(defn build-controller-settings (poll merge-poll merge-timeout retry-delay)
+(defn build-controller-settings (poll stall merge-poll
+                                      merge-timeout
+                                      retry-delay)
   (let (pass-seconds (poll-seconds poll)
         merge-wait (->merge-settings
                      :poll-seconds (poll-seconds merge-poll)
                      :timeout-seconds (poll-seconds merge-timeout)
                      :retry-delay-seconds (poll-seconds retry-delay)))
     (->controller-settings :poll-seconds pass-seconds
+                           :stall-seconds (poll-seconds stall)
+                           :started (now)
                            :merge-wait merge-wait)))
 
 (defn canonical-repo (repo)
@@ -147,12 +162,19 @@
 
 (defn run-pass-from (repo config settings notices lines)
   (let (waiting (waiting-actions lines)
-        sent (send-notices repo (:manager config) notices waiting)
+        sent (send-notices (notice-route-of repo config settings)
+                           notices waiting)
         manager (some (clone (:manager config))))
     (with-notices (continue-from-next repo config manager
                                       settings
                                       (first-controller-action lines))
                   sent)))
+
+(defn notice-route-of (repo config settings)
+  (->notice-route :repo (str repo)
+                  :manager (clone (:manager config))
+                  :clock (->notice-clock :now (whole-seconds (elapsed (:started settings)))
+                                         :stall (:stall-seconds settings))))
 
 (defn with-notices (outcome notices)
   (match outcome
