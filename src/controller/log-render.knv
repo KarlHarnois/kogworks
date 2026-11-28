@@ -277,17 +277,16 @@
            (spans-text settings spans)))))
 
 (defn running-line-spans (item value first? in-suffix)
-  (cond
-    (in-suffix (vec (secondary-span value)))
-    ((starts-with? value "· ") (vec (secondary-span value)))
-    (else (running-prefix-line-spans item value first?))))
+  (if in-suffix
+    (vec (secondary-span value))
+    (running-prefix-line-spans item value first?)))
 
 (defn running-prefix-line-spans (item value first?)
   (match (running-suffix-split value)
     (none (running-prefix-spans item value first?))
     ((some halves)
      (append-spans! (running-prefix-spans item (as-str (:before halves)) first?)
-                    (vec (secondary-span (str " · " (:after halves))))))))
+                    (vec (secondary-span (str "·" (:after halves))))))))
 
 (defn running-prefix-spans (item value first?)
   (if first?
@@ -297,11 +296,10 @@
                       :text (strip-prefix value (as-str (:id item)))))
     (vec (->text-span :style text-style/plain :text (str value)))))
 
-(defn running-suffix-line? (value)
-  (or (starts-with? value "· ") (contains? value " · ")))
+(defn running-suffix-line? (value) (contains? value "·"))
 
 (defn running-suffix-split (value)
-  (let (halves (collect (map (split value " · ")
+  (let (halves (collect (map (split value "·")
                           (fn (part) (str part)))))
     (if (= (len halves) 2)
       (some (->running-split :before (clone (at halves 0))

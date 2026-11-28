@@ -409,8 +409,8 @@
                   "·" reset " 1 running")
              (str "          " secondary "├─ " reset
                   secondary "running" reset "      " bold
-                  "rm-9a01" reset " building 4m" secondary
-                  " · its session keeps running" reset)
+                  "rm-9a01" reset " building 4m " secondary
+                  "· its session keeps running" reset)
              (str "          " secondary "╰─ " reset
                   secondary "rerun" reset "        " bold
                   "kogworks controller --repo . --poll 30"
@@ -429,3 +429,29 @@
     (assert (contains? line
                        (as-str (str "\u{1b}[38;2;122;127;135mrm-35cb\u{1b}[0m  "))))
     (assert (balanced-spans? line))))
+
+(deftest colors-a-wrapped-running-sub-line
+  (let (reset "\u{1b}[0m"
+        secondary "\u{1b}[38;2;122;127;135m"
+        bold "\u{1b}[1m"
+        settings (->log-settings :colors color-mode/truecolor
+                                 :width (some 47)
+                                 :target output-target/terminal
+                                 :remote none)
+        item (->running-item :id (str "rm-9a01")
+                             :status running-status/building
+                             :minutes 4)
+        lines (render-sub-lines settings "rm-9a01"
+                                (vec (sub-line/running item)))
+        indent "                "
+        wrapped (str indent secondary "its session keeps" reset)
+        last (str indent secondary "running" reset))
+    (assert (same-lines?
+              lines
+              (vec (str "          " secondary "╰─ " reset
+                        secondary "running" reset "      "
+                        bold "rm-9a01" reset " building 4m "
+                        secondary "·" reset)
+                   (str "          " wrapped)
+                   (str "          " last))))
+    (assert (balanced-spans? (join lines "\n")))))
