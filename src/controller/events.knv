@@ -1,0 +1,338 @@
+(module
+  "Parses the rmap event log into the controller's lifecycle events.")
+
+(use controller/json json json-array json-error
+                     json-error->message json-field
+                     json-object? json-text parse-json)
+
+(export ->event-log ->item-count event-entry event-error
+        event-error->message event-log fixing-baselines
+        fixing-count-of item-count latest-id
+        lifecycle-change parse-event-log roadmap-id-of
+        roadmap-link)
+
+(defenum event-error
+  (json json-error)
+  (missing-events)
+  (non-array-events)
+  (missing-field int string)
+  (non-text-field int string)
+  (non-number-field int string)
+  (non-object-field int string))
+
+(defstruct event-log
+  :entries (vec event-entry)
+  :roadmaps (vec roadmap-link)
+  :latest-id int)
+
+(defstruct event-entry
+  :id int
+  :roadmap-id string
+  :change lifecycle-change)
+
+(defenum lifecycle-change
+  (claimed string)
+  (reported string string)
+  (review-started string)
+  (reviewed string string)
+  (advanced string string)
+  (head-recorded string)
+  (abandoned string string)
+  (closed string string))
+
+(defstruct item-count
+  :item string
+  :count int)
+
+(defstruct roadmap-link
+  :id string
+  :name string)
+
+(defstruct parsed-event
+  :id int
+  :entry (option event-entry)
+  :roadmap (option roadmap-link))
+
+(defn event-error->message (failure)
+  (match failure
+    ((json cause) (json-error->message cause))
+    (missing-events (str "`events` is missing"))
+    (non-array-events (str "`events` is not an array"))
+    ((missing-field index path)
+     (str "event " index ": `" path "` is missing"))
+    ((non-text-field index path)
+     (str "event " index ": `" path "` is not text"))
+    ((non-number-field index path)
+     (str "event " index ": `" path "` is not a number"))
+    ((non-object-field index path)
+     (str "event " index ": `" path "` is not an object"))))
+
+(defn parse-event-log (text)
+  (match (parse-json (as-str text))
+    ((ok document) (parse-log-document document))
+    ((err failure) (err (event-error/json failure)))))
+
+(defn latest-id (log) (:latest-id log))
+
+(defn roadmap-id-of (log name)
+  (let (links (:roadmaps log))
+    (find-roadmap links 0 name)))
+
+(defn fixing-baselines (log)
+  (let (entries (:entries log))
+    (count-fixing entries 0 (vec))))
+
+(defn fixing-count-of (counts item)
+  (match (count-index counts item)
+    ((some index) (:count (at counts index)))
+    (none 0)))
+
+(defn parse-log-document (document)
+  (let-try (items (events-array document))
+    (parse-log-items
+      items 0
+      (->event-log :entries (vec) :roadmaps (vec) :latest-id 0))))
+
+(defn events-array (document)
+  (match (json-field document "events")
+    (none (err event-error/missing-events))
+    ((some found) (array-items found))))
+
+(defn array-items (found)
+  (match (json-array found)
+    ((some items) (ok items))
+    (none (err event-error/non-array-events))))
+
+(defn parse-log-items (items index log)
+  (if (>= index (len items))
+    (ok log)
+    (let-try (parsed (parse-event-item (at items index) index))
+      (parse-log-items items (inc index) (add-parsed log parsed)))))
+
+(type add-parsed
+  (fn (event-log (ref parsed-event)) event-log))
+
+(defn add-parsed (log parsed)
+  (->event-log :entries (add-entry (clone (:entries log))
+                                   (clone (:entry parsed)))
+               :roadmaps (add-roadmap (clone (:roadmaps log))
+                                      (clone (:roadmap parsed)))
+               :latest-id (max (:latest-id log) (:id parsed))))
+
+(defn add-entry (entries entry)
+  (match entry
+    (none (clone entries))
+    ((some found) (push-entry entries found))))
+
+(defn push-entry (entries entry)
+  (do (push! entries (clone entry)) entries))
+
+(defn add-roadmap (roadmaps roadmap)
+  (match roadmap
+    (none (clone roadmaps))
+    ((some found) (push-roadmap roadmaps found))))
+
+(defn push-roadmap (roadmaps roadmap)
+  (do (push! roadmaps (clone roadmap)) roadmaps))
+
+(defn parse-event-item (value index)
+  (let-try (record (object-value (clone value) index (str "event"))
+            id (int-field record "id" index)
+            type (text-field record "type" index)
+            roadmap (text-field record "roadmap_id" index))
+    (let-try (payload (object-field record "payload" index)
+              changes (object-field payload "changes" index))
+      (parse-change id type roadmap record changes index))))
+
+(type parse-change
+  (fn (int string string (ref json) (ref json) int)
+    (result parsed-event event-error)))
+
+(defn parse-change (id type roadmap record changes index)
+  (cond
+    ((= (as-str type) (str "item-claimed"))
+     (claimed-change id roadmap record changes index))
+    ((= (as-str type) (str "item-reported"))
+     (reported-change id roadmap record changes index))
+    ((= (as-str type) (str "review-started"))
+     (review-started-change id roadmap record changes index))
+    ((= (as-str type) (str "item-reviewed"))
+     (reviewed-change id roadmap record changes index))
+    ((= (as-str type) (str "item-advanced"))
+     (advanced-change id roadmap record changes index))
+    ((= (as-str type) (str "head-recorded"))
+     (head-recorded-change id roadmap record changes index))
+    ((= (as-str type) (str "session-ended"))
+     (session-ended-change id roadmap record changes index))
+    ((= (as-str type) (str "item-closed"))
+     (closed-change id roadmap record changes index))
+    ((= (as-str type) (str "roadmap-created"))
+     (roadmap-created-change id roadmap changes index))
+    (else (ok (unchanged-event id)))))
+
+(defn claimed-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            _status (change-new changes "status" index))
+    (ok (changed-event id roadmap (lifecycle-change/claimed item)))))
+
+(defn reported-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            status (change-new changes "status" index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/reported item status)))))
+
+(defn review-started-change (id roadmap record _changes index)
+  (let-try (item (item-field record index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/review-started item)))))
+
+(defn reviewed-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            verdict (change-new changes "verdict" index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/reviewed item verdict)))))
+
+(defn advanced-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            status (change-new changes "status" index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/advanced item status)))))
+
+(defn head-recorded-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            _head (change-new changes "head_sha" index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/head-recorded item)))))
+
+(defn session-ended-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            reason (change-new changes "end_reason" index)
+            payload (object-field record "payload" index)
+            kind (text-field payload "session_kind" index))
+    (ended-review-session id roadmap item reason kind
+                          payload index)))
+
+(defn ended-review-session (id roadmap item reason kind payload index)
+  (if (and (= (as-str kind) (str "review"))
+           (= (as-str reason) (str "abandoned")))
+    (let-try (session (text-field payload "session" index))
+      (ok (changed-event id roadmap
+                         (lifecycle-change/abandoned item session))))
+    (ok (unchanged-event id))))
+
+(defn closed-change (id roadmap record changes index)
+  (let-try (item (item-field record index)
+            status (change-new changes "status" index))
+    (ok (changed-event id roadmap
+                       (lifecycle-change/closed item status)))))
+
+(defn roadmap-created-change (id roadmap changes index)
+  (let-try (name (change-new changes "name" index))
+    (ok (->parsed-event :id id
+                        :entry none
+                        :roadmap (some (->roadmap-link :id (str roadmap)
+                                                       :name name))))))
+
+(defn changed-event (id roadmap change)
+  (->parsed-event :id id
+                  :entry (some (->event-entry :id id
+                                              :roadmap-id (str roadmap)
+                                              :change change))
+                  :roadmap none))
+
+(defn unchanged-event (id)
+  (->parsed-event :id id :entry none :roadmap none))
+
+(defn find-roadmap (links index name)
+  (cond
+    ((>= index (len links)) none)
+    ((= (:name (at links index))
+        (as-str name))
+     (some (clone (:id (at links index)))))
+    (else (recur links (inc index) name))))
+
+(defn count-fixing (entries index counts)
+  (if (>= index (len entries))
+    counts
+    (recur entries
+           (inc index)
+           (count-fixing-entry counts (at entries index)))))
+
+(defn count-fixing-entry (counts entry)
+  (match (:change entry)
+    ((advanced item status)
+     (count-fixing-status counts item status))
+    (_ counts)))
+
+(defn count-fixing-status (counts item status)
+  (if (= (as-str status) (str "fixing"))
+    (bump-count counts item)
+    counts))
+
+(defn bump-count (counts item)
+  (match (count-index counts item)
+    ((some index) (replace-count counts index item))
+    (none (push-count counts item))))
+
+(defn count-index (counts item)
+  (count-index-from counts 0 item))
+
+(defn count-index-from (counts index item)
+  (cond
+    ((>= index (len counts)) none)
+    ((= (:item (at counts index)) (as-str item)) (some index))
+    (else (recur counts (inc index) item))))
+
+(defn replace-count (counts index item)
+  (let (count (inc (:count (at counts index))))
+    (assoc counts index
+           (->item-count :item (str item) :count count))))
+
+(defn push-count (counts item)
+  (let (entries (clone counts))
+    (do
+      (push! entries (->item-count :item (str item) :count 1))
+      entries)))
+
+(defn item-field (record index)
+  (let-try (found (field-of record "item_id" index))
+    (match (json-text found)
+      ((some item) (ok item))
+      (none (err (event-error/non-text-field index (str "item_id")))))))
+
+(defn change-new (changes key index)
+  (let-try (change (object-field changes key index))
+    (text-field change "new" index)))
+
+(defn object-value (value index path)
+  (if (json-object? value)
+    (ok value)
+    (err (event-error/non-object-field index (str path)))))
+
+(defn object-field (record key index)
+  (let-try (found (field-of record key index))
+    (object-value found index key)))
+
+(defn text-field (record key index)
+  (let-try (found (field-of record key index))
+    (match (json-text found)
+      ((some text) (ok text))
+      (none (err (event-error/non-text-field index (str key)))))))
+
+(defn int-field (record key index)
+  (let-try (found (field-of record key index))
+    (match found
+      ((number text) (int-text text index))
+      (_ (err (event-error/non-number-field index (str key)))))))
+
+(defn int-text (text index)
+  (match (the (result int parse-int-error)
+              (parse (as-str text)))
+    ((ok value) (ok value))
+    ((err _)
+     (err (event-error/non-number-field index (str "id"))))))
+
+(defn field-of (record key index)
+  (match (json-field record key)
+    (none (err (event-error/missing-field index (str key))))
+    ((some found) (ok found))))

@@ -197,6 +197,7 @@
       (assert (= (sequence-text root) (design-sequence root)))
       (assert (not (contains? (sequence-text root) "gh pr merge")))
       (assert (contains? (stderr-text output) "reviewing"))
+      (assert (not (contains? (stderr-text output) "verifying")))
       (assert (contains? (prompt-text root)
                          (as-str (str "design item=" design-item))))
       (assert (contains? (prompt-text root)

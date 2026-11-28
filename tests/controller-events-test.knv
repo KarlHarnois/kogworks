@@ -1,0 +1,217 @@
+(use controller/events lifecycle-change parse-event-log)
+
+(use fixtures/controller-fixture default-settings exit-code
+                                 prepare-repo run-controller
+                                 stderr-text write-fakes
+                                 write-text)
+
+(use fixtures/events-fixture build-events build-expected
+                             build-item-json
+                             head-abandon-events
+                             head-abandon-expected
+                             research-events
+                             research-expected
+                             research-item-json
+                             running-events)
+
+(def wait-next
+  (str "{\"next\":[{\"item\":\"rm-9999\",\"actions\":["
+       "{\"action\":\"wait\",\"actor\":\"controller\"}]}]}"))
+
+(def empty-ready (str "{\"ready\":[]}"))
+
+(def session-ended-403
+  (str "{\"events\":[{\"id\":403,\"type\":\"session-ended\","
+       "\"at\":\"2026-11-26T09:22:56.586Z\",\"decision_id\":null,"
+       "\"item_id\":\"rm-de62\",\"payload\":{\"changes\":{"
+       "\"end_reason\":{\"old\":null,\"new\":\"abandoned\"},"
+       "\"ended_at\":{\"old\":null,"
+       "\"new\":\"2026-11-26T09:22:56.586Z\"}},"
+       "\"session\":\"review-deffactory-1b6bde4\","
+       "\"session_kind\":\"review\"},"
+       "\"roadmap_id\":\"rm-2e0b\"}]}"))
+
+(def root-session-ended
+  (str "{\"events\":[{\"id\":403,\"type\":\"session-ended\","
+       "\"item_id\":\"rm-de62\",\"payload\":{\"changes\":{"
+       "\"end_reason\":{\"old\":null,\"new\":\"abandoned\"}}},"
+       "\"session\":\"review-deffactory-1b6bde4\","
+       "\"session_kind\":\"review\","
+       "\"roadmap_id\":\"rm-2e0b\"}]}"))
+
+(defstruct abandoned-pair
+  :item string
+  :session string)
+
+(defn abandoned-change-of (log index)
+  (match (:change (at (:entries log) index))
+    ((abandoned item session)
+     (some (->abandoned-pair (clone item) (clone session))))
+    (_ none)))
+
+(defn setup (name settings)
+  (let (root (str "target/knave/controller-tests/" name))
+    (match (prepare-repo (as-str root))
+      ((err reason) (err reason))
+      ((ok _)
+       (match (write-fakes (as-str root) settings)
+         ((err reason) (err reason))
+         ((ok _) (ok root)))))))
+
+(defn run (root args)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str (str root "/repo"))
+                  args))
+
+(defn write-events (root events)
+  (let-try (_ (write-text (as-str (str root "/events.log"))
+                          (as-str events))
+            _ (write-text (as-str (str root "/event-id")) "10"))
+    (ok (do))))
+
+(type item-lines
+  (fn ((ref string) (ref string))
+    (vec string)))
+
+(defn item-lines (text id)
+  (collect (map (filter (lines text)
+                  (fn (line)
+                    (contains? line (as-str (str "  " id "  ")))))
+                strip-time)))
+
+(defn strip-time (line)
+  (let (characters (collect (chars line)))
+    (join (collect (map (range 10 (len characters))
+                     (fn (index)
+                       (str (deref (at characters index))))))
+          "")))
+
+(defn log-document (events)
+  (let (lines (collect (filter (split (as-str events) "\n")
+                         (fn (line) (not (empty? (trim line)))))))
+    (str "{\"events\":[" (join lines ",") "]}")))
+
+(deftest replays-a-build-with-one-fix-round
+  (let (root (unwrap-ok (setup "events-build"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0001"))
+                 build-expected)))))
+
+(deftest replays-a-research-item
+  (let (root (unwrap-ok (setup "events-research"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone research-item-json)))))
+    (unwrap-ok (write-events root (clone research-events)))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0002"))
+                 research-expected)))))
+
+(deftest prints-no-history-from-before-the-controller-started
+  (let (root (unwrap-ok (setup "events-no-history"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (unwrap-ok (write-text (as-str (str root "/log-history")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (empty? (item-lines (stderr-text output) (str "rm-0001")))))))
+
+(deftest stops-when-the-event-log-is-malformed
+  (let (root (unwrap-ok (setup "events-malformed"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-broken")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "invalid JSON")))))
+
+(deftest stops-when-the-event-log-is-structurally-invalid
+  (let (root (unwrap-ok (setup "events-structural"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-structural")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "`changes` is missing"))
+      (assert (not (contains? (stderr-text output) "invalid JSON"))))))
+
+(deftest stops-when-the-event-log-command-fails
+  (let (root (unwrap-ok (setup "events-failed"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/log-fail")) ""))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "controller  log failed"))
+      (assert (contains? (stderr-text output) "log refused")))))
+
+(deftest stop-line-counts-the-running-items-of-the-run
+  (let (root (unwrap-ok (setup "events-running"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)
+                                      :stop-after 2))))
+    (unwrap-ok (write-events root (clone running-events)))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         (as-str (str "0 merged · 0 accepted · 1 failed · 1 running"))))
+      (assert (contains? (stderr-text output)
+                         (as-str (str "running      rm-0001 reviewing")))))))
+
+(deftest does-not-print-a-change-twice-when-a-pass-has-no-events
+  (let (root (unwrap-ok (setup "events-empty-pass"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)
+                                      :stop-after 4))))
+    (unwrap-ok (write-events root (clone build-events)))
+    (unwrap-ok (write-text (as-str (str root "/log-empty-third")) ""))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (item-lines (stderr-text output) (str "rm-0001"))
+                 build-expected)))))
+
+(deftest reads-the-real-session-ended-event
+  (let (log (unwrap-ok (parse-event-log (clone session-ended-403))))
+    (assert (= (:latest-id log) 403))
+    (match (abandoned-change-of log 0)
+      ((some pair)
+       (assert (= (:item pair) (str "rm-de62")))
+       (assert (= (:session pair) (str "review-deffactory-1b6bde4"))))
+      (none (assert false)))))
+
+(deftest rejects-session-fields-at-the-event-root
+  (match (parse-event-log (clone root-session-ended))
+    ((err _) (assert true))
+    ((ok _) (assert false))))
+
+(deftest replays-a-recorded-head-and-an-abandoned-review
+  (let (root (unwrap-ok (setup "events-head-abandon"
+                               (assoc (default-settings (clone wait-next)
+                                                        (clone empty-ready))
+                                      :item-json (clone build-item-json)))))
+    (unwrap-ok (write-events root (clone head-abandon-events)))
+    (let (log (unwrap-ok (parse-event-log (log-document head-abandon-events))))
+      (assert (= (:latest-id log) 5))
+      (match (abandoned-change-of log 4)
+        ((some pair)
+         (assert (= (:item pair) (str "rm-0003")))
+         (assert (= (:session pair) (str "review-rm-0003-2"))))
+        (none (assert false))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (item-lines (stderr-text output) (str "rm-0003"))
+                 head-abandon-expected)))))

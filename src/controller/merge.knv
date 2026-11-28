@@ -41,10 +41,15 @@
                        read-stop-signal
                        restore-stop-handlers)
 
-(export ->merge-settings merge-settings start-merge)
+(export ->merge-settings ->started-merge merge-settings
+        start-merge started-merge)
 
 (def clean-status-message
   (str "Pull request is in clean status"))
+
+(defstruct started-merge
+  :outcome merge-outcome
+  :target merge-target)
 
 (defenum resume-verdict
   merged
@@ -60,7 +65,9 @@
   (match (read-merge-target repo item)
     ((err failure) (err failure))
     ((ok target)
-     (guard-merge-target repo config settings item target))))
+     (map-ok (guard-merge-target repo config settings item target)
+       (fn (outcome)
+         (->started-merge :outcome outcome :target (clone target)))))))
 
 (defn guard-merge-target (repo config settings item target)
   (match (:item-status target)

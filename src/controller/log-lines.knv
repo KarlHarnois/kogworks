@@ -10,26 +10,25 @@
                     item-line log-status pr-summary
                     stage-state sub-line track)
 
-(use controller/merge-target merge-event)
+(use controller/merge-target merge-approval)
 (use controller/rules item-kind)
 
-(export ->log-item action-line controller-failure-of
-        failure-item-id failure-line log-action log-item
-        merge-event-action short-head start-of stop-of)
+(export ->log-item controller-failure-of failure-item-id
+        failure-line log-item short-head start-of stop-of)
 
 (defstruct log-item
   :id string
   :kind item-kind
   :title string
   :branch (option string)
+  :approval merge-approval
   :pull-request (option pr-summary))
 
-(defenum log-action
+(defenum failed-stage
   dispatch
   review
   verify
-  merge
-  merged)
+  merge)
 
 (defn start-of (time roadmap manager running)
   (->start-line :time (str time)
@@ -37,26 +36,13 @@
                 :manager manager
                 :running running))
 
-(defn stop-of (time merged failed rerun)
+(defn stop-of (time merged accepted failed running rerun)
   (->stop-line :time (str time)
                :merged merged
-               :accepted 0
+               :accepted accepted
                :failed failed
-               :running (vec)
+               :running (clone running)
                :rerun (str rerun)))
-
-(type action-line
-  (fn (string (ref log-item) log-action) item-line))
-
-(defn action-line (time log-item action)
-  (->item-line :time (str time)
-               :id (clone (:id log-item))
-               :track (action-track (:kind log-item) action)
-               :status (action-status (:kind log-item)
-                                      action
-                                      (:pull-request log-item))
-               :title (clone (:title log-item))
-               :sub-lines (vec)))
 
 (type failure-line
   (fn (string (ref log-item)
@@ -78,11 +64,6 @@
                         :sub-lines (controller-failure-sub-lines manager
                                                                  failure)))
 
-(defn merge-event-action (event)
-  (match event
-    (merging log-action/merge)
-    (closed log-action/merged)))
-
 (defn short-head (head)
   (join (collect (map (take (chars (as-str head)) 7)
                    (fn (character) (str character))))
@@ -99,54 +80,6 @@
     ((placeholder-left item _ _) (some (clone item)))
     (_ none)))
 
-(defn action-track (kind action)
-  (match kind
-    (build (build-action-track action))
-    (_ (write-action-track action))))
-
-(defn action-status (kind action pull-request)
-  (match action
-    (dispatch (claim-status kind))
-    (review log-status/reviewing)
-    (verify log-status/verifying)
-    (merge log-status/merging)
-    (merged (merged-status pull-request))))
-
-(defn claim-status (kind)
-  (match kind
-    (build log-status/building)
-    (research log-status/researching)
-    (design log-status/designing)
-    (_ log-status/working)))
-
-(defn merged-status (pull-request)
-  (match pull-request
-    ((some summary) (log-status/merged (:number summary)))
-    (none log-status/failed)))
-
-(defn build-action-track (action)
-  (match action
-    (dispatch (track/build-track stage-state/active
-                                 stage-state/waiting
-                                 stage-state/waiting))
-    (review (track/build-track stage-state/done
-                               stage-state/active
-                               stage-state/waiting))
-    (verify (track/build-track stage-state/done
-                               stage-state/active
-                               stage-state/waiting))
-    (merge (track/build-track stage-state/done
-                              stage-state/done
-                              stage-state/active))
-    (merged (track/build-track stage-state/done
-                               stage-state/done
-                               stage-state/done))))
-
-(defn write-action-track (action)
-  (match action
-    (dispatch (track/write-track stage-state/active stage-state/waiting))
-    (_ (track/write-track stage-state/done stage-state/active))))
-
 (defn failure-status (failure)
   (match failure
     ((merge-failed cause) (merge-error-status cause))
@@ -162,8 +95,8 @@
 
 (defn failure-track (kind failure)
   (match failure
-    ((merge-failed _) (build-failed-track log-action/merge))
-    ((signal-stop _) (build-failed-track log-action/merge))
+    ((merge-failed _) (build-failed-track failed-stage/merge))
+    ((signal-stop _) (build-failed-track failed-stage/merge))
     ((command-failed report)
      (failure-action-track kind (:action report)))
     ((out-of-scope report)
@@ -184,39 +117,37 @@
 
 (defn failure-action-track (kind action)
   (match kind
-    (build (build-failed-track (action-of-text action)))
-    (_ (write-failed-track (action-of-text action)))))
+    (build (build-failed-track (failed-stage-of-text action)))
+    (_ (write-failed-track (failed-stage-of-text action)))))
 
 (defn build-failed-track (action)
   (match action
-    (dispatch (track/build-track stage-state/failed
-                                 stage-state/waiting
-                                 stage-state/waiting))
-    (review (track/build-track stage-state/done
-                               stage-state/failed
-                               stage-state/waiting))
-    (verify (track/build-track stage-state/done
-                               stage-state/failed
-                               stage-state/waiting))
-    (merge (track/build-track stage-state/done
-                              stage-state/done
-                              stage-state/failed))
-    (merged (track/build-track stage-state/done
-                               stage-state/done
-                               stage-state/failed))))
+    (failed-stage/dispatch (track/build-track stage-state/failed
+                                              stage-state/waiting
+                                              stage-state/waiting))
+    (failed-stage/review (track/build-track stage-state/done
+                                            stage-state/failed
+                                            stage-state/waiting))
+    (failed-stage/verify (track/build-track stage-state/done
+                                            stage-state/failed
+                                            stage-state/waiting))
+    (failed-stage/merge (track/build-track stage-state/done
+                                           stage-state/done
+                                           stage-state/failed))))
 
 (defn write-failed-track (action)
   (match action
-    (dispatch (track/write-track stage-state/failed stage-state/waiting))
+    (failed-stage/dispatch (track/write-track stage-state/failed
+                                              stage-state/waiting))
     (_ (track/write-track stage-state/done stage-state/failed))))
 
-(defn action-of-text (text)
+(defn failed-stage-of-text (text)
   (cond
-    ((= (as-str text) (str "dispatch")) log-action/dispatch)
-    ((= (as-str text) (str "review")) log-action/review)
-    ((= (as-str text) (str "verify")) log-action/verify)
-    ((= (as-str text) (str "merge")) log-action/merge)
-    (else log-action/dispatch)))
+    ((= (as-str text) (str "dispatch")) failed-stage/dispatch)
+    ((= (as-str text) (str "review")) failed-stage/review)
+    ((= (as-str text) (str "verify")) failed-stage/verify)
+    ((= (as-str text) (str "merge")) failed-stage/merge)
+    (else failed-stage/dispatch)))
 
 (type failure-sub-lines
   (fn ((ref log-item)

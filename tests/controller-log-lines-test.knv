@@ -7,10 +7,11 @@
 (use controller/log ->pr-summary log-status stage-state
                     sub-line track)
 
-(use controller/log-lines ->log-item action-line
-                          controller-failure-of
+(use controller/merge-target merge-approval)
+
+(use controller/log-lines ->log-item controller-failure-of
                           failure-item-id failure-line
-                          log-action start-of stop-of)
+                          start-of stop-of)
 
 (use controller/rules item-kind)
 (use controller/signal stop-signal)
@@ -26,6 +27,7 @@
               :kind item-kind/build
               :title (str "Build the thing")
               :branch (some (str "build-rm-0001"))
+              :approval merge-approval/not-approved
               :pull-request (some (->pr-summary :number 12
                                                 :branch (str "build-rm-0001")
                                                 :head (some (str "abcdef0"))))))
@@ -101,33 +103,15 @@
     ((some label) (str label))
     (none (str))))
 
-(deftest action-lines-show-each-lifecycle-status
-  (let (item (log-item-of))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/dispatch))
-               log-status/building))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/review))
-               log-status/reviewing))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/verify))
-               log-status/verifying))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/merge))
-               log-status/merging))
-    (assert (= (:status (action-line (str "14:00:00") item log-action/merged))
-               (log-status/merged 12)))))
-
-(deftest action-lines-show-the-build-track
-  (let (item (log-item-of)
-        line (action-line (str "14:00:00") item log-action/merged))
-    (assert (= (:track line)
-               (track/build-track stage-state/done
-                                  stage-state/done
-                                  stage-state/done)))))
-
 (deftest start-and-stop-lines-hold-their-values
   (let (start (start-of (str "14:00:00")
                         (str "roadmap")
                         (some (str "mgr"))
                         3)
-        stop (stop-of (str "14:01:00") 2 1 (str "kogworks controller")))
+        stop (stop-of (str "14:01:00")
+                      2 0 1
+                      (vec)
+                      (str "kogworks controller")))
     (assert (= (:roadmap start) (str "roadmap")))
     (assert (= (:manager start) (some (str "mgr"))))
     (assert (= (:running start) 3))
