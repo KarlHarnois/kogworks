@@ -1,8 +1,109 @@
 (module
-  "Names the pull request and the approved head that a merge acts on.")
+  "Names and reads the pull request, approved head, item state and settings that a merge acts on.")
 
-(export ->merge-target merge-target)
+(use controller/failure ->action-failure controller-error)
+
+(use controller/fields field-error->message required-bool
+                       required-number required-object
+                       required-text)
+
+(use controller/json json-error->message parse-json)
+(use controller/merge-commands show-command)
+(use controller/process command-detail execute successful?)
+
+(export ->merge-settings ->merge-target invalid-item-output
+        invalid-output merge-approval merge-command-failure
+        merge-item-status merge-settings merge-target
+        read-item-status read-merge-target)
+
+(defstruct merge-settings
+  :poll-seconds int
+  :retry-delay-seconds int
+  :timeout-seconds int)
 
 (defstruct merge-target
   :pull-request string
-  :head string)
+  :head string
+  :item-status merge-item-status
+  :approval merge-approval)
+
+(defenum merge-approval
+  approved
+  not-approved)
+
+(defenum merge-item-status
+  fixing
+  merging
+  other)
+
+(defn read-merge-target (repo item)
+  (read-item-document repo item target-fields))
+
+(defn read-item-status (repo item)
+  (read-item-document repo item item-status-field))
+
+(defn invalid-item-output (item command reason)
+  (invalid-output item command
+                  (str "invalid item JSON")
+                  reason))
+
+(defn invalid-output (item command description reason)
+  (controller-error/command-failed (->action-failure
+                                     :action (str "merge")
+                                     :item (clone item)
+                                     :command (clone (:label command))
+                                     :code 0
+                                     :detail (str description ": " reason))))
+
+(defn merge-command-failure (item command outcome)
+  (controller-error/command-failed (->action-failure
+                                     :action (str "merge")
+                                     :item (clone item)
+                                     :command (clone (:label command))
+                                     :code (:code outcome)
+                                     :detail (command-detail outcome))))
+
+(defn read-item-document (repo item parse)
+  (let (command (show-command item)
+        outcome (execute repo command))
+    (if (successful? outcome)
+      (parse-item-document item command (:stdout outcome) parse)
+      (err (merge-command-failure item command outcome)))))
+
+(defn parse-item-document (item command text parse)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (map-err (parse document)
+       (fn (failure)
+         (invalid-item-output item command
+                              (field-error->message failure)))))
+    ((err failure)
+     (err (invalid-item-output item command
+                               (json-error->message failure))))))
+
+(defn target-fields (document)
+  (let-try (status (item-status-field document)
+            pull (required-object document "pull_request" "pull_request")
+            pr (required-number pull "number" "pull_request.number")
+            approved (required-bool pull "approved" "pull_request.approved")
+            approval (required-object pull "approval" "pull_request.approval")
+            head (required-text approval "head" "pull_request.approval.head"))
+    (ok (->merge-target :pull-request pr
+                        :head head
+                        :item-status status
+                        :approval (bool->approval approved)))))
+
+(defn item-status-field (document)
+  (let-try (record (required-object document "item" "item")
+            status (required-text record "status" "item.status"))
+    (ok (text->item-status status))))
+
+(defn text->item-status (text)
+  (cond
+    ((= text (str "fixing")) merge-item-status/fixing)
+    ((= text (str "merging")) merge-item-status/merging)
+    (else merge-item-status/other)))
+
+(defn bool->approval (approved)
+  (if approved
+    merge-approval/approved merge-approval/not-approved))

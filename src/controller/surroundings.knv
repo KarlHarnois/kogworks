@@ -1,0 +1,246 @@
+(module
+  "Reads the terminal, the color settings and the local time for the controller log.")
+
+(export ->clock-time ->color-settings clock-time
+        clock-time->text color-mode color-settings
+        color-settings->color-mode colorterm env-flag
+        local-time local-time->text read-color-mode
+        read-color-settings second-of-day->clock-time
+        stderr-terminal? stderr-width stream)
+
+(def environment-set?
+  (rust "std::env::var_os({0}).is_some()"
+    (fn ((ref str)) bool)))
+
+(def environment-value
+  (rust "std::env::var_os({0}).and_then(|value| value.into_string().ok())"
+    (fn ((ref str)) (option string))))
+
+(def stderr-terminal?
+  (rust "{{
+    use std::io::IsTerminal;
+    std::io::stderr().is_terminal()
+  }}"
+    (fn () bool)))
+
+(def stderr-width
+  (rust "{{
+    #[cfg(unix)]
+    fn read_width() -> Option<i64> {{
+      use std::io::IsTerminal;
+      use std::os::raw::{{c_int, c_ulong}};
+      #[repr(C)]
+      struct WinSize {{
+        rows: u16,
+        columns: u16,
+        x_pixels: u16,
+        y_pixels: u16,
+      }}
+      unsafe extern \"C\" {{
+        fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
+      }}
+      #[cfg(any(target_os = \"macos\",
+                target_os = \"ios\",
+                target_os = \"freebsd\",
+                target_os = \"netbsd\",
+                target_os = \"openbsd\",
+                target_os = \"dragonfly\"))]
+      const TIOCGWINSZ: c_ulong = 0x4008_7468;
+      #[cfg(any(target_os = \"linux\", target_os = \"android\"))]
+      const TIOCGWINSZ: c_ulong = 0x5413;
+      #[cfg(any(target_os = \"solaris\", target_os = \"illumos\"))]
+      const TIOCGWINSZ: c_ulong = 0x5468;
+      #[cfg(not(any(target_os = \"macos\",
+                    target_os = \"ios\",
+                    target_os = \"freebsd\",
+                    target_os = \"netbsd\",
+                    target_os = \"openbsd\",
+                    target_os = \"dragonfly\",
+                    target_os = \"linux\",
+                    target_os = \"android\",
+                    target_os = \"solaris\",
+                    target_os = \"illumos\")))]
+      const TIOCGWINSZ: c_ulong = 0;
+
+      let stderr = std::io::stderr();
+      if !stderr.is_terminal() || TIOCGWINSZ == 0 {{
+        return None;
+      }}
+      let mut size =
+        WinSize {{ rows: 0, columns: 0, x_pixels: 0, y_pixels: 0 }};
+      let fd = std::os::fd::AsRawFd::as_raw_fd(&stderr);
+      let result = unsafe {{ ioctl(fd, TIOCGWINSZ, &mut size as *mut WinSize) }};
+      if result == 0 && size.columns > 0 {{
+        Some(i64::from(size.columns))
+      }} else {{
+        None
+      }}
+    }}
+    #[cfg(not(unix))]
+    fn read_width() -> Option<i64> {{
+      None
+    }}
+    read_width()
+  }}"
+    (fn () (option int))))
+
+(def local-second-of-day
+  (rust "{{
+    #[cfg(unix)]
+    fn read_second_of_day() -> Option<i64> {{
+      use std::os::raw::{{c_char, c_int, c_long}};
+      #[repr(C)]
+      struct LocalTime {{
+        seconds: c_int,
+        minutes: c_int,
+        hours: c_int,
+        day: c_int,
+        month: c_int,
+        year: c_int,
+        weekday: c_int,
+        year_day: c_int,
+        daylight: c_int,
+        offset: c_long,
+        zone: *const c_char,
+      }}
+      unsafe extern \"C\" {{
+        fn localtime_r(time: *const c_long, result: *mut LocalTime) -> *mut LocalTime;
+      }}
+      let seconds = c_long::try_from(
+        std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .ok()?
+          .as_secs(),
+      )
+      .ok()?;
+      let mut time = LocalTime {{
+        seconds: 0,
+        minutes: 0,
+        hours: 0,
+        day: 0,
+        month: 0,
+        year: 0,
+        weekday: 0,
+        year_day: 0,
+        daylight: 0,
+        offset: 0,
+        zone: std::ptr::null(),
+      }};
+      let result = unsafe {{ localtime_r(&seconds, &mut time) }};
+      if result.is_null() {{
+        None
+      }} else {{
+        Some(i64::from(time.hours) * 3600
+          + i64::from(time.minutes) * 60
+          + i64::from(time.seconds))
+      }}
+    }}
+    #[cfg(not(unix))]
+    fn read_second_of_day() -> Option<i64> {{
+      None
+    }}
+    read_second_of_day()
+  }}"
+    (fn () (option int))))
+
+(defstruct color-settings
+  :stderr-terminal stream
+  :no-color env-flag
+  :force-color env-flag
+  :colorterm colorterm)
+
+(defenum stream
+  terminal
+  not-a-terminal)
+
+(defenum env-flag
+  present
+  absent)
+
+(defenum colorterm
+  unset
+  truecolor
+  bit-24
+  other)
+
+(defenum color-mode
+  no-color
+  colors-256
+  true-color)
+
+(defstruct clock-time
+  :hours int
+  :minutes int
+  :seconds int)
+
+(defn read-color-mode ()
+  (color-settings->color-mode (read-color-settings)))
+
+(defn read-color-settings ()
+  (->color-settings :stderr-terminal (stderr-stream)
+                    :no-color (environment-flag (str "NO_COLOR"))
+                    :force-color (environment-flag (str "FORCE_COLOR"))
+                    :colorterm (colorterm-of (environment-value (as-str (str "COLORTERM"))))))
+
+(defn color-settings->color-mode (settings)
+  (if (color-on? settings)
+    (colorterm-mode (:colorterm settings))
+    color-mode/no-color))
+
+(defn local-time ()
+  (match (local-second-of-day)
+    ((some second-of-day)
+     (some (second-of-day->clock-time second-of-day)))
+    (none none)))
+
+(defn second-of-day->clock-time (second-of-day)
+  (->clock-time :hours (/ second-of-day 3600)
+                :minutes (/ (rem second-of-day 3600) 60)
+                :seconds (rem second-of-day 60)))
+
+(defn local-time->text (time)
+  (match time
+    ((some clock) (clock-time->text clock))
+    (none (str "--:--:--"))))
+
+(defn clock-time->text (time)
+  (str (two-digit (:hours time))
+       ":"
+       (two-digit (:minutes time))
+       ":"
+       (two-digit (:seconds time))))
+
+(defn color-on? (settings)
+  (and (= (:no-color settings) env-flag/absent)
+       (or (= (:force-color settings) env-flag/present)
+           (= (:stderr-terminal settings) stream/terminal))))
+
+(defn colorterm-mode (setting)
+  (match setting
+    (truecolor color-mode/true-color)
+    (bit-24 color-mode/true-color)
+    (_ color-mode/colors-256)))
+
+(defn stderr-stream ()
+  (if (stderr-terminal?)
+    stream/terminal stream/not-a-terminal))
+
+(defn environment-flag (name)
+  (if (environment-set? (as-str name))
+    env-flag/present env-flag/absent))
+
+(defn colorterm-of (value)
+  (match value
+    ((some text) (colorterm-text text))
+    (none colorterm/unset)))
+
+(defn colorterm-text (text)
+  (cond
+    ((= text (str "truecolor")) colorterm/truecolor)
+    ((= text (str "24bit")) colorterm/bit-24)
+    (else colorterm/other)))
+
+(defn two-digit (value)
+  (if (< value 10)
+    (str "0" value)
+    (str value)))

@@ -4,6 +4,14 @@
 (export field json json-array json-error json-error->message
         json-field json-object? json-text parse-json)
 
+(def hex-digit
+  (rust "{0}.to_digit(16).map(|digit| digit as i64)"
+    (fn (char) (option int))))
+
+(def char-from-code
+  (rust "char::from_u32({0} as u32).unwrap_or('?')"
+    (fn (int) char)))
+
 (defstruct field
   :key string
   :value json)
@@ -16,6 +24,13 @@
   (boolean bool)
   null)
 
+(defenum json-error
+  (unexpected-character int char)
+  (unexpected-end int)
+  (invalid-escape int)
+  (invalid-token int string)
+  (trailing-input int))
+
 (defstruct parsed
   :value json
   :position int)
@@ -24,12 +39,15 @@
   :text string
   :position int)
 
-(defenum json-error
-  (unexpected-character int char)
-  (unexpected-end int)
-  (invalid-escape int)
-  (invalid-token int string)
-  (trailing-input int))
+(defenum string-step
+  (append char)
+  (escaped escaped-character)
+  (done int)
+  (failed json-error))
+
+(defstruct escaped-character
+  :character char
+  :position int)
 
 (defn json-error->message (failure)
   (match failure
@@ -44,41 +62,37 @@
     ((trailing-input position)
      (str "trailing input at " position))))
 
-(defn whitespace? (character)
-  (or (= character (char " "))
-      (= character (char "\t"))
-      (= character (char "\n"))
-      (= character (char "\r"))))
-
-(defn space-at? (characters index)
-  (and (< index (len characters))
-       (whitespace? (deref (at characters index)))))
-
-(defn skip-space (characters position)
-  (loop (index position)
-    (if (space-at? characters index)
-      (recur (inc index))
-      index)))
-
-(def hex-digit
-  (rust "{0}.to_digit(16).map(|digit| digit as i64)"
-    (fn (char) (option int))))
-
-(def char-from-code
-  (rust "char::from_u32({0} as u32).unwrap_or('?')"
-    (fn (int) char)))
-
-(type parse-json
-  (fn ((ref str))
-    (result json json-error)))
-
 (defn parse-json (text)
-  (let (characters (collect (chars text)))
-    (let-try (found (parse-value (ref characters) 0))
-      (let (end (skip-space (ref characters) (:position found)))
-        (if (= end (len characters))
-          (ok (clone (:value found)))
-          (err (json-error/trailing-input end)))))))
+  (let (characters (collect (chars text))
+        found (try (parse-value (ref characters) 0))
+        end (skip-space (ref characters) (:position found)))
+    (if (= end (len characters))
+      (ok (clone (:value found)))
+      (err (json-error/trailing-input end)))))
+
+(defn json-field (value key)
+  (match value
+    ((object fields)
+     (map-some (find (iter fields)
+                 (fn (field)
+                   (= (as-str (:key field)) key)))
+               (fn (field) (clone (:value field)))))
+    (_ none)))
+
+(defn json-text (value)
+  (match value
+    ((text text) (some (clone text)))
+    (_ none)))
+
+(defn json-array (value)
+  (match value
+    ((array items) (some (clone items)))
+    (_ none)))
+
+(defn json-object? (value)
+  (match value
+    ((object _) true)
+    (_ false)))
 
 (defn parse-value (characters position)
   (let (start (skip-space characters position))
@@ -123,34 +137,18 @@
              (= (deref (at characters (+ position offset)))
                 (deref (at expected offset))))))))
 
-(defn delimiter? (character)
-  (or (whitespace? character)
-      (= character (char ","))
-      (= character (char "]"))
-      (= character (char "}"))))
-
-(defn number-character? (character)
-  (or (digit? character)
-      (= character (char "-"))
-      (= character (char "+"))
-      (= character (char "."))
-      (= character (char "e"))
-      (= character (char "E"))))
-
-(defn valid-number? (text)
-  (let (characters (collect (chars text)))
-    (and (not (empty? text))
-         (or (digit? (deref (at characters 0)))
-             (= (deref (at characters 0)) (char "-")))
-         (every? characters number-character?)
-         (any? characters digit?))))
-
 (defn parse-number (characters position)
   (loop (index position)
     (if (or (>= index (len characters))
             (delimiter? (deref (at characters index))))
       (finish-number characters position index)
       (recur (inc index)))))
+
+(defn delimiter? (character)
+  (or (whitespace? character)
+      (= character (char ","))
+      (= character (char "]"))
+      (= character (char "}"))))
 
 (defn finish-number (characters position end)
   (let (text (join (collect (map (range position end)
@@ -160,6 +158,22 @@
     (if (valid-number? (as-str text))
       (ok (->parsed :value (json/number text) :position end))
       (err (json-error/invalid-token position text)))))
+
+(defn valid-number? (text)
+  (let (characters (collect (chars text)))
+    (and (not (empty? text))
+         (or (digit? (deref (at characters 0)))
+             (= (deref (at characters 0)) (char "-")))
+         (every? characters number-character?)
+         (any? characters digit?))))
+
+(defn number-character? (character)
+  (or (digit? character)
+      (= character (char "-"))
+      (= character (char "+"))
+      (= character (char "."))
+      (= character (char "e"))
+      (= character (char "E"))))
 
 (defn parse-object (characters position)
   (let (start (skip-space characters (inc position)))
@@ -223,9 +237,6 @@
                          :position (inc position))))
           (else (err (json-error/unexpected-character position character))))))))
 
-(type with-field!
-  (fn ((vec field) field) (vec field)))
-
 (defn with-field! (fields field)
   (do (push! fields field) fields))
 
@@ -263,26 +274,24 @@
                        :position (inc position))))
         (else (err (json-error/unexpected-character position character)))))))
 
-(type with-item!
-  (fn ((vec json) json) (vec json)))
+(defn skip-space (characters position)
+  (loop (index position)
+    (if (space-at? characters index)
+      (recur (inc index))
+      index)))
+
+(defn space-at? (characters index)
+  (and (< index (len characters))
+       (whitespace? (deref (at characters index)))))
+
+(defn whitespace? (character)
+  (or (= character (char " "))
+      (= character (char "\t"))
+      (= character (char "\n"))
+      (= character (char "\r"))))
 
 (defn with-item! (items item)
   (do (push! items item) items))
-
-(defstruct escaped-character
-  :character char
-  :position int)
-
-(defenum string-step
-  (append char)
-  (escaped escaped-character)
-  (done int)
-  (failed json-error))
-
-(defn characters->text (characters)
-  (join (collect (map characters
-                   (fn (character) (str character))))
-        ""))
 
 (defn parse-string (characters position)
   (loop (index position
@@ -300,6 +309,11 @@
        (ok (->text-end :text (characters->text text) :position end)))
       ((failed failure) (err failure)))))
 
+(defn characters->text (characters)
+  (join (collect (map characters
+                   (fn (character) (str character))))
+        ""))
+
 (defn string-step-at (characters index)
   (if (>= index (len characters))
     (string-step/failed (json-error/unexpected-end index))
@@ -312,9 +326,6 @@
       ((= character (char "\\")) (escaped-step characters index))
       (else (string-step/append character)))))
 
-(defn first-character (text)
-  (deref (at (collect (chars (as-str text))) 0)))
-
 (defn escaped-step (characters index)
   (match (parse-escape characters index)
     ((ok escaped)
@@ -322,6 +333,9 @@
                                                                              escaped))
                                                :position (:position escaped))))
     ((err failure) (string-step/failed failure))))
+
+(defn first-character (text)
+  (deref (at (collect (chars (as-str text))) 0)))
 
 (defn parse-escape (characters position)
   (let (index (inc position))
@@ -371,40 +385,3 @@
                (+ (* value 16) digit)
                (dec remaining)))
     (none (err (json-error/invalid-escape position)))))
-
-(type json-field
-  (fn ((ref json) (ref str))
-    (option json)))
-
-(defn json-field (value key)
-  (match value
-    ((object fields)
-     (map-some (find (iter fields)
-                 (fn (field)
-                   (= (as-str (:key field)) key)))
-               (fn (field) (clone (:value field)))))
-    (_ none)))
-
-(type json-text
-  (fn ((ref json)) (option string)))
-
-(defn json-text (value)
-  (match value
-    ((text text) (some (clone text)))
-    (_ none)))
-
-(type json-array
-  (fn ((ref json)) (option (vec json))))
-
-(defn json-array (value)
-  (match value
-    ((array items) (some (clone items)))
-    (_ none)))
-
-(type json-object?
-  (fn ((ref json)) bool))
-
-(defn json-object? (value)
-  (match value
-    ((object _) true)
-    (_ false)))

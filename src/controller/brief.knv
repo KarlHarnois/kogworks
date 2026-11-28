@@ -27,13 +27,35 @@
   :skill string
   :manager string)
 
+(defstruct brief
+  :item string
+  :placeholders (vec placeholder))
+
 (defstruct placeholder
   :token string
   :value string)
 
-(defstruct brief
-  :item string
-  :placeholders (vec placeholder))
+(type worker-brief
+  (fn ((ref worker-values)) brief))
+
+(defn worker-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (worker-placeholders values)))
+
+(type reviewer-brief
+  (fn ((ref reviewer-values)) brief))
+
+(defn reviewer-brief (values)
+  (->brief :item (clone (:item values))
+           :placeholders (reviewer-placeholders values)))
+
+(defn fill-brief (path values)
+  (match (read-text-file path)
+    ((err reason)
+     (err (controller-error/unreadable-brief (str path) reason)))
+    ((ok text)
+     (filled-brief (fill (as-str text) (:placeholders values))
+                   (:item values)))))
 
 (type worker-placeholders
   (fn ((ref worker-values))
@@ -77,44 +99,14 @@
        (->placeholder :token (str "{{manager}}")
                       :value (clone (:manager values)))))
 
-(type worker-brief
-  (fn ((ref worker-values)) brief))
-
-(defn worker-brief (values)
-  (->brief :item (clone (:item values))
-           :placeholders (worker-placeholders values)))
-
-(type reviewer-brief
-  (fn ((ref reviewer-values)) brief))
-
-(defn reviewer-brief (values)
-  (->brief :item (clone (:item values))
-           :placeholders (reviewer-placeholders values)))
-
-(type fill
-  (fn ((ref str) (ref (vec placeholder)))
-    (result string string)))
-
 (defn fill (text placeholders)
   (let (characters (collect (chars text)))
     (fill-from placeholders characters 0 (str))))
-
-(type fill-from
-  (fn ((ref (vec placeholder))
-       (ref (vec char))
-       int string)
-    (result string string)))
 
 (defn fill-from (placeholders characters index result)
   (if (>= index (len characters))
     (ok result)
     (fill-step placeholders characters index result)))
-
-(type fill-step
-  (fn ((ref (vec placeholder))
-       (ref (vec char))
-       int string)
-    (result string string)))
 
 (defn fill-step (placeholders characters index result)
   (match (placeholder-at placeholders characters index)
@@ -161,14 +153,8 @@
              (= (deref (at characters (+ index offset)))
                 (deref (at expected offset))))))))
 
-(type token-length
-  (fn ((ref placeholder)) int))
-
 (defn token-length (placeholder)
   (count (chars (:token placeholder))))
-
-(type opening-braces-at?
-  (fn ((ref (vec char)) int) bool))
 
 (defn opening-braces-at? (characters index)
   (and (< (inc index) (len characters))
@@ -176,22 +162,6 @@
           (char "{"))
        (= (deref (at characters (inc index)))
           (char "{"))))
-
-(type fill-brief
-  (fn ((ref str) (ref brief))
-    (result string controller-error)))
-
-(defn fill-brief (path values)
-  (match (read-text-file path)
-    ((err reason)
-     (err (controller-error/unreadable-brief (str path) reason)))
-    ((ok text)
-     (filled-brief (fill (as-str text) (:placeholders values))
-                   (:item values)))))
-
-(type filled-brief
-  (fn ((result string string) (ref string))
-    (result string controller-error)))
 
 (defn filled-brief (filled item)
   (match filled

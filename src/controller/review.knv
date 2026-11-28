@@ -5,19 +5,16 @@
                       reviewer-brief)
 
 (use controller/failure ->action-failure controller-error)
-(use controller/factory factory-config)
 
-(use controller/item ->item-detail criteria->text
-                     item-detail item-error->message
+(use controller/item criteria->text item-error->message
                      parse-item-detail)
 
-(use controller/json json json-error->message parse-json)
+(use controller/json json-error->message parse-json)
 
-(use controller/process ->command command command-detail
-                        execute join-path outcome
-                        successful?)
+(use controller/process ->command command-detail execute
+                        join-path successful?)
 
-(use controller/repository default-branch)
+(use controller/repo default-branch)
 (use controller/session abandon-command failed-start-detail)
 
 (export review-mode review-mode->text start-review)
@@ -26,20 +23,10 @@
   review
   verify)
 
-(type review-mode->text
-  (fn ((ref review-mode)) string))
-
 (defn review-mode->text (mode)
   (match mode
     (review (str "review"))
     (verify (str "verify"))))
-
-(type start-review
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode))
-    (result string controller-error)))
 
 (defn start-review (repo config item mode)
   (match (show-item repo mode item)
@@ -47,25 +34,12 @@
     ((ok detail)
      (review-with-item repo config item mode detail))))
 
-(type show-item
-  (fn ((ref str)
-       (ref review-mode)
-       (ref string))
-    (result item-detail controller-error)))
-
 (defn show-item (repo mode item)
   (let (command (show-command item))
     (let (outcome (execute repo command))
       (if (successful? outcome)
         (parse-item-output mode item command (:stdout outcome))
         (err (command-failure mode item command outcome))))))
-
-(type parse-item-output
-  (fn ((ref review-mode)
-       (ref string)
-       (ref command)
-       (ref string))
-    (result item-detail controller-error)))
 
 (defn parse-item-output (mode item command text)
   (match (parse-json (as-str text))
@@ -75,13 +49,6 @@
      (err (invalid-item-output mode item command
                                (json-error->message failure))))))
 
-(type item-detail-result
-  (fn ((ref review-mode)
-       (ref string)
-       (ref command)
-       (ref json))
-    (result item-detail controller-error)))
-
 (defn item-detail-result (mode item command document)
   (match (parse-item-detail document)
     ((ok detail) (ok detail))
@@ -89,27 +56,10 @@
      (err (invalid-item-output mode item command
                                (item-error->message failure))))))
 
-(type review-with-item
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode)
-       (ref item-detail))
-    (result string controller-error)))
-
 (defn review-with-item (repo config item mode detail)
   (match (default-branch repo)
     ((err failure) (err failure))
     ((ok base) (begin-review repo config item mode detail base))))
-
-(type begin-review
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode)
-       (ref item-detail)
-       (ref string))
-    (result string controller-error)))
 
 (defn begin-review (repo config item mode detail base)
   (let (session (reviewer-session item (:head detail)))
@@ -133,16 +83,6 @@
                    (fn (character) (str character))))
         ""))
 
-(type reviewer-prompt
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode)
-       (ref item-detail)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
-
 (defn reviewer-prompt (repo config item mode detail session base)
   (let (path (join-path repo
                         (as-str (:brief (:reviewer config)))))
@@ -160,17 +100,10 @@
         ((err failure) (err failure))
         ((ok prompt) (ok (stressed-prompt mode prompt)))))))
 
-(type stressed-prompt
-  (fn ((ref review-mode) (ref string))
-    string))
-
 (defn stressed-prompt (mode prompt)
   (match mode
     (review (clone prompt))
     (verify (verify-stress prompt))))
-
-(type verify-stress
-  (fn ((ref string)) string))
 
 (defn verify-stress (prompt)
   (str "Verify action: the head is approved, but at least one acceptance "
@@ -178,32 +111,12 @@
        "`rmap item verify` verdict before `rmap pr review`.\n\n"
        prompt))
 
-(type start-review-session
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode)
-       (ref item-detail)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
-
 (defn start-review-session (repo config item mode detail session prompt)
   (let (start (review-start-command item session))
     (let (outcome (execute repo start))
       (if (successful? outcome)
         (start-reviewer repo config item mode detail session prompt)
         (err (command-failure mode item start outcome))))))
-
-(type start-reviewer
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref review-mode)
-       (ref item-detail)
-       (ref string)
-       (ref string))
-    (result string controller-error)))
 
 (defn start-reviewer (repo config item mode detail session prompt)
   (let (start (reviewer-start-command repo config session
@@ -214,36 +127,15 @@
         (reviewer-started session)
         (abandon-and-fail repo item mode session start outcome)))))
 
-(type reviewer-started
-  (fn ((ref string))
-    (result string controller-error)))
-
 (defn reviewer-started (session)
   (do
     (println session)
     (ok (clone session))))
 
-(type abandon-and-fail
-  (fn ((ref str)
-       (ref string)
-       (ref review-mode)
-       (ref string)
-       (ref command)
-       (ref outcome))
-    (result string controller-error)))
-
 (defn abandon-and-fail (repo item mode session start outcome)
   (let (abandon (abandon-command session))
     (let (end-outcome (execute repo abandon))
       (err (start-failure mode item start outcome end-outcome)))))
-
-(type start-failure
-  (fn ((ref review-mode)
-       (ref string)
-       (ref command)
-       (ref outcome)
-       (ref outcome))
-    controller-error))
 
 (defn start-failure (mode item start outcome end-outcome)
   (controller-error/command-failed
@@ -253,13 +145,6 @@
                       :code (:code outcome)
                       :detail (failed-start-detail outcome end-outcome))))
 
-(type command-failure
-  (fn ((ref review-mode)
-       (ref string)
-       (ref command)
-       (ref outcome))
-    controller-error))
-
 (defn command-failure (mode item command outcome)
   (controller-error/command-failed (->action-failure
                                      :action (review-mode->text mode)
@@ -267,13 +152,6 @@
                                      :command (clone (:label command))
                                      :code (:code outcome)
                                      :detail (command-detail outcome))))
-
-(type invalid-item-output
-  (fn ((ref review-mode)
-       (ref string)
-       (ref command)
-       (ref string))
-    controller-error))
 
 (defn invalid-item-output (mode item command reason)
   (controller-error/command-failed
@@ -283,51 +161,37 @@
                       :code 0
                       :detail (str "invalid item JSON: " reason))))
 
-(type show-command
-  (fn ((ref string)) command))
-
 (defn show-command (item)
   (->command :program (str "rmap")
-             :arguments (vec (str "item")
-                             (str "show")
-                             (clone item)
-                             (str "--json"))
+             :args (vec (str "item")
+                        (str "show")
+                        (clone item)
+                        (str "--json"))
              :label (str "rmap item show " item " --json")))
-
-(type review-start-command
-  (fn ((ref string) (ref string)) command))
 
 (defn review-start-command (item session)
   (->command :program (str "rmap")
-             :arguments (vec (str "review")
-                             (str "start")
-                             (clone item)
-                             (str "--session")
-                             (clone session))
+             :args (vec (str "review")
+                        (str "start")
+                        (clone item)
+                        (str "--session")
+                        (clone session))
              :label (str "rmap review start " item " --session " session)))
-
-(type reviewer-start-command
-  (fn ((ref str)
-       (ref factory-config)
-       (ref string)
-       (ref string)
-       (ref string))
-    command))
 
 (defn reviewer-start-command (repo config session branch prompt)
   (let (agent (:agent (:reviewer config)))
     (->command :program (str "ringleader")
-               :arguments (vec (str "new")
-                               (str "--name")
-                               (clone session)
-                               (str "--repo")
-                               (str repo)
-                               (str "--agent")
-                               (clone agent)
-                               (str "--base-branch")
-                               (clone branch)
-                               (str "--prompt")
-                               (clone prompt))
+               :args (vec (str "new")
+                          (str "--name")
+                          (clone session)
+                          (str "--repo")
+                          (str repo)
+                          (str "--agent")
+                          (clone agent)
+                          (str "--base-branch")
+                          (clone branch)
+                          (str "--prompt")
+                          (clone prompt))
                :label (str "ringleader new --name " session
                            " --repo " repo " --agent " agent
                            " --base-branch " branch

@@ -1,18 +1,6 @@
 (export ->factory ->role factory merge-method role
         role-name)
 
-(defenum merge-method gh-auto)
-
-(defenum role-name
-  worker
-  reviewer)
-
-(defstruct role
-  :name role-name
-  :agent string
-  :skill string
-  :brief string)
-
 (defstruct factory
   :schema int
   :name string
@@ -21,3 +9,15 @@
   :max-active int
   :merge merge-method
   :roles (vec role))
+
+(defenum merge-method gh-auto)
+
+(defstruct role
+  :name role-name
+  :agent string
+  :skill string
+  :brief string)
+
+(defenum role-name
+  worker
+  reviewer)

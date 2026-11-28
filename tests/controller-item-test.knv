@@ -8,13 +8,13 @@
        "\"session\":{\"branch\":\"build-rm-1\"}},"
        "\"pull_request\":{\"number\":7,\"head\":\"0123456789abcdef\"}}"))
 
-(defn document-from (text)
-  (unwrap-ok (parse-json (as-str text))))
-
 (defn reason-for (text)
   (match (parse-item-detail (document-from text))
     ((err failure) (item-error->message failure))
     ((ok _) (str "no failure"))))
+
+(defn document-from (text)
+  (unwrap-ok (parse-json (as-str text))))
 
 (deftest parse-item-detail-reads-the-review-fields
   (match (parse-item-detail (document-from (clone item-json)))

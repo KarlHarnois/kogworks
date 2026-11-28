@@ -1,56 +1,89 @@
 (module
-  "Builds the rmap and GitHub commands that the controller's merge action runs.")
+  "Builds the rmap, GitHub and ringleader commands that the controller runs.")
 
 (use controller/factory merge-method)
-(use controller/merge-target merge-target)
 (use controller/process ->command command)
 
 (export advance-command auto-merge-command close-command
-        merge-command repo-view-command
-        required-checks-command show-command view-command)
+        disarm-command fixing-command merge-command
+        merge-mode record-head-command repo-view-command
+        required-checks-command resume-view-command
+        send-command show-command update-branch-command
+        view-command)
 
-(type show-command
-  (fn ((ref string)) command))
+(defenum merge-mode
+  auto
+  direct)
 
 (defn show-command (item)
   (->command :program (str "rmap")
-             :arguments (vec (str "item")
-                             (str "show")
-                             (clone item)
-                             (str "--json"))
+             :args (vec (str "item")
+                        (str "show")
+                        (clone item)
+                        (str "--json"))
              :label (str "rmap item show " item " --json")))
-
-(type advance-command
-  (fn ((ref string)) command))
 
 (defn advance-command (item)
   (->command :program (str "rmap")
-             :arguments (vec (str "item")
-                             (str "advance")
-                             (clone item)
-                             (str "merging"))
+             :args (vec (str "item")
+                        (str "advance")
+                        (clone item)
+                        (str "merging"))
              :label (str "rmap item advance " item " merging")))
 
-(type close-command
-  (fn ((ref string)) command))
+(defn fixing-command (item)
+  (->command :program (str "rmap")
+             :args (vec (str "item")
+                        (str "advance")
+                        (clone item)
+                        (str "fixing"))
+             :label (str "rmap item advance " item " fixing")))
+
+(defn record-head-command (item head)
+  (->command :program (str "rmap")
+             :args (vec (str "pr")
+                        (str "head")
+                        (clone item)
+                        (clone head))
+             :label (str "rmap pr head " item " " head)))
 
 (defn close-command (item)
   (->command :program (str "rmap")
-             :arguments (vec (str "item")
-                             (str "close")
-                             (clone item))
+             :args (vec (str "item")
+                        (str "close")
+                        (clone item))
              :label (str "rmap item close " item)))
 
-(type repo-view-command (fn () command))
+(defn disarm-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "merge")
+                        (clone pull-request)
+                        (str "--disable-auto"))
+             :label (str "gh pr merge " pull-request " --disable-auto")))
+
+(defn send-command (worker message)
+  (->command :program (str "ringleader")
+             :args (vec (str "send")
+                        (clone worker)
+                        (clone message))
+             :label (str "ringleader send " worker)))
+
+(defn update-branch-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "update-branch")
+                        (clone pull-request))
+             :label (str "gh pr update-branch " pull-request)))
 
 (defn repo-view-command ()
   (->command :program (str "gh")
-             :arguments (vec (str "repo")
-                             (str "view")
-                             (str "--json")
-                             (str "nameWithOwner")
-                             (str "-q")
-                             (str ".nameWithOwner"))
+             :args (vec (str "repo")
+                        (str "view")
+                        (str "--json")
+                        (str "nameWithOwner")
+                        (str "-q")
+                        (str ".nameWithOwner"))
              :label (str
                       "gh repo view --json nameWithOwner -q .nameWithOwner")))
 
@@ -58,13 +91,13 @@
   (fn ((ref string)) command))
 
 (defn auto-merge-command (slug)
-  (let (repository (str "repos/" slug))
-    (let (label (str "gh api " repository " --jq .allow_auto_merge"))
+  (let (repo (str "repos/" slug))
+    (let (label (str "gh api " repo " --jq .allow_auto_merge"))
       (->command :program (str "gh")
-                 :arguments (vec (str "api")
-                                 repository
-                                 (str "--jq")
-                                 (str ".allow_auto_merge"))
+                 :args (vec (str "api")
+                            repo
+                            (str "--jq")
+                            (str ".allow_auto_merge"))
                  :label label))))
 
 (type required-checks-command
@@ -75,29 +108,43 @@
     (let (label (str "gh api " path
                      " --jq .required_status_checks.contexts | length"))
       (->command :program (str "gh")
-                 :arguments (vec (str "api")
-                                 path
-                                 (str "--jq")
-                                 (str
-                                   ".required_status_checks.contexts | length"))
+                 :args (vec (str "api")
+                            path
+                            (str "--jq")
+                            (str ".required_status_checks.contexts | length"))
                  :label label))))
 
-(type merge-command
-  (fn ((ref merge-method) (ref merge-target))
-    command))
+(defn merge-command (method mode target)
+  (let (args (merge-args method mode target))
+    (let (label (str "gh " (join args " ")))
+      (->command :program (str "gh") :args args :label label))))
 
-(defn merge-command (method target)
-  (let (arguments (merge-arguments method target))
-    (let (label (str "gh " (join arguments " ")))
-      (->command :program (str "gh")
-                 :arguments arguments
-                 :label label))))
+(defn view-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "view")
+                        (clone pull-request)
+                        (str "--json")
+                        (str "state,mergedAt,headRefOid"))
+             :label (str "gh pr view " pull-request
+                         " --json state,mergedAt,headRefOid")))
 
-(type merge-arguments
-  (fn ((ref merge-method) (ref merge-target))
-    (vec string)))
+(defn resume-view-command (pull-request)
+  (->command :program (str "gh")
+             :args (vec (str "pr")
+                        (str "view")
+                        (clone pull-request)
+                        (str "--json")
+                        (str "state,headRefOid,autoMergeRequest"))
+             :label (str "gh pr view " pull-request
+                         " --json state,headRefOid,autoMergeRequest")))
 
-(defn merge-arguments (method target)
+(defn merge-args (method mode target)
+  (match mode
+    (auto (auto-merge-args method target))
+    (direct (direct-merge-args method target))))
+
+(defn auto-merge-args (method target)
   (match method
     (gh-auto (vec (str "pr")
                   (str "merge")
@@ -107,15 +154,11 @@
                   (str "--match-head-commit")
                   (clone (:head target))))))
 
-(type view-command
-  (fn ((ref string)) command))
-
-(defn view-command (pull-request)
-  (->command :program (str "gh")
-             :arguments (vec (str "pr")
-                             (str "view")
-                             (clone pull-request)
-                             (str "--json")
-                             (str "state,mergedAt,headRefOid"))
-             :label (str "gh pr view " pull-request
-                         " --json state,mergedAt,headRefOid")))
+(defn direct-merge-args (method target)
+  (match method
+    (gh-auto (vec (str "pr")
+                  (str "merge")
+                  (clone (:pull-request target))
+                  (str "--merge")
+                  (str "--match-head-commit")
+                  (clone (:head target))))))

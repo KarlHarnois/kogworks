@@ -1,8 +1,6 @@
 (use fixtures/factory-fixture prepare-factory)
 (use synth error->message synth-factory)
 
-(deftype process-output (rust "std::process::Output"))
-
 (def run-synth
   (rust "std::process::Command::new(\"./target/knave/kogworks/kogworks\").args([\"synth\", {0}]).output().map_err(|error| error.to_string())"
     (fn ((ref str))
@@ -20,16 +18,18 @@
   (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
 
+(deftype process-output (rust "std::process::Output"))
+
 (defn failure-reason (outcome)
   (match outcome
     ((ok _) (str "unexpected success"))
     ((err failure) (error->message failure))))
 
 (deftest factory-without-factory-json-reports-the-eval-failure
-  (let (directory (str "target/knave/test-factories/no-factory-json"))
-    (unwrap-ok (prepare-factory directory (str "(def not-a-factory 1)\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+  (let (dir (str "target/knave/test-factories/no-factory-json"))
+    (unwrap-ok (prepare-factory dir (str "(def not-a-factory 1)\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains? reason "cannot evaluate"))
       (assert (contains? reason "factory.knv"))
       (assert (contains? reason "factory-json"))
@@ -41,15 +41,15 @@
       (assert (not (contains? (stderr-text output) "cannot read"))))))
 
 (deftest missing-setting-reports-its-message
-  (let (directory (str "target/knave/test-factories/missing-setting"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/missing-setting"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains? reason "deffactory needs `:manager`"))
       (assert (contains? reason "factory.knv:1:"))
       (assert (= (exit-code output) 1))
@@ -57,15 +57,15 @@
                          "deffactory needs `:manager`")))))
 
 (deftest missing-roles-reports-its-message
-  (let (directory (str "target/knave/test-factories/missing-roles"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/missing-roles"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :manager \"sample-manager\"\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto)\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains? reason "deffactory needs a `roles` form"))
       (assert (contains? reason "factory.knv:"))
       (assert (= (exit-code output) 1))
@@ -73,16 +73,16 @@
                          "deffactory needs a `roles` form")))))
 
 (deftest malformed-role-clause-reports-its-message
-  (let (directory (str "target/knave/test-factories/malformed-role-clause"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/malformed-role-clause"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :manager \"sample-manager\"\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles (worker :agent \"a\" :skill \"s\")))\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
@@ -92,16 +92,16 @@
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
 
 (deftest role-clause-must-be-a-list-reports-its-message
-  (let (directory (str "target/knave/test-factories/role-clause-symbol"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/role-clause-symbol"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :manager \"sample-manager\"\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles worker))\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
@@ -111,16 +111,16 @@
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
 
 (deftest role-clause-name-must-be-a-symbol-reports-its-message
-  (let (directory (str "target/knave/test-factories/role-clause-string"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/role-clause-string"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :manager \"sample-manager\"\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles (\"worker\" :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
@@ -130,16 +130,16 @@
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
 
 (deftest setting-value-that-is-a-keyword-reports-the-setting
-  (let (directory (str "target/knave/test-factories/setting-value-keyword"))
-    (unwrap-ok (prepare-factory directory
+  (let (dir (str "target/knave/test-factories/setting-value-keyword"))
+    (unwrap-ok (prepare-factory dir
                                 (str "(deffactory sample\n"
                                      "  :manager\n"
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
                                      "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
-    (let (reason (failure-reason (synth-factory (as-str directory)))
-          output (unwrap-ok (run-synth (as-str directory))))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains? reason "deffactory needs `:manager`"))
       (assert (not (contains? reason "deffactory needs `:roadmap`")))
       (assert (contains? reason "factory.knv:1:"))

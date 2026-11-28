@@ -14,10 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-knave
-      - name: Check the layout
-        run: knave fmt --check
       - name: Lint
         run: knave lint
+      - name: Check the layout
+        run: knave fmt --check
       - name: Build
         run: knave build
       - name: Test

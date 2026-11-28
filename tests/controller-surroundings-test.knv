@@ -1,0 +1,157 @@
+(use controller/surroundings ->clock-time ->color-settings
+                             clock-time->text color-mode
+                             color-settings->color-mode
+                             colorterm env-flag local-time
+                             local-time->text
+                             second-of-day->clock-time
+                             stderr-terminal? stderr-width
+                             stream)
+
+(defn assert-color-mode (stderr no-color force-color colorterm expected)
+  (assert (= (color-settings->color-mode (->color-settings
+                                           :stderr-terminal stderr
+                                           :no-color no-color
+                                           :force-color force-color
+                                           :colorterm colorterm))
+             expected)))
+
+(defn assert-clock-time (second-of-day hours minutes seconds)
+  (let (time (second-of-day->clock-time second-of-day))
+    (assert (= (:hours time) hours))
+    (assert (= (:minutes time) minutes))
+    (assert (= (:seconds time) seconds))))
+
+(deftest color-mode-covers-every-input-combination
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/absent colorterm/unset
+                     color-mode/colors-256)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/absent colorterm/unset
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/present colorterm/unset
+                     color-mode/colors-256)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/present colorterm/unset
+                     color-mode/colors-256)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/absent colorterm/unset
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/absent colorterm/unset
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/present colorterm/unset
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/present colorterm/unset
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/absent colorterm/truecolor
+                     color-mode/true-color)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/absent colorterm/truecolor
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/present colorterm/truecolor
+                     color-mode/true-color)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/present colorterm/truecolor
+                     color-mode/true-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/absent colorterm/truecolor
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/absent colorterm/truecolor
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/present colorterm/truecolor
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/present colorterm/truecolor
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/absent colorterm/bit-24
+                     color-mode/true-color)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/absent colorterm/bit-24
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/present colorterm/bit-24
+                     color-mode/true-color)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/present colorterm/bit-24
+                     color-mode/true-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/absent colorterm/bit-24
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/absent colorterm/bit-24
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/present colorterm/bit-24
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/present colorterm/bit-24
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/absent colorterm/other
+                     color-mode/colors-256)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/absent colorterm/other
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/absent
+                     env-flag/present colorterm/other
+                     color-mode/colors-256)
+  (assert-color-mode stream/not-a-terminal env-flag/absent
+                     env-flag/present colorterm/other
+                     color-mode/colors-256)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/absent colorterm/other
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/absent colorterm/other
+                     color-mode/no-color)
+  (assert-color-mode stream/terminal env-flag/present
+                     env-flag/present colorterm/other
+                     color-mode/no-color)
+  (assert-color-mode stream/not-a-terminal env-flag/present
+                     env-flag/present colorterm/other
+                     color-mode/no-color))
+
+(deftest clock-time-text-pads-each-part-to-two-digits
+  (assert (= (clock-time->text (->clock-time :hours 0 :minutes 0 :seconds 0))
+             (str "00:00:00")))
+  (assert (= (clock-time->text (->clock-time :hours 9 :minutes 5 :seconds 7))
+             (str "09:05:07")))
+  (assert (= (clock-time->text (->clock-time :hours 12 :minutes 34 :seconds 56))
+             (str "12:34:56")))
+  (assert (= (clock-time->text (->clock-time :hours 23 :minutes 59 :seconds 59))
+             (str "23:59:59"))))
+
+(deftest second-of-day-becomes-a-clock-time
+  (assert-clock-time 0 0 0 0)
+  (assert-clock-time 3661 1 1 1)
+  (assert-clock-time 45296 12 34 56)
+  (assert-clock-time 86399 23 59 59))
+
+(deftest local-time-holds-a-time-of-day
+  (match (local-time)
+    ((some time)
+     (assert (and (>= (:hours time) 0)
+                  (< (:hours time) 24)))
+     (assert (and (>= (:minutes time) 0)
+                  (< (:minutes time) 60)))
+     (assert (and (>= (:seconds time) 0)
+                  (< (:seconds time) 60))))
+    (none (assert true))))
+
+(deftest absent-local-time-is-explicit
+  (assert (= (local-time->text none) (str "--:--:--")))
+  (assert (= (local-time->text (some
+                                 (->clock-time :hours 9 :minutes 5 :seconds 7)))
+             (str "09:05:07"))))
+
+(deftest stderr-width-is-absent-without-a-terminal
+  (unless (stderr-terminal?)
+    (assert (none? (stderr-width)))))

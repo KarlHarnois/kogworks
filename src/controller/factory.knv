@@ -2,11 +2,9 @@
   "Reads the factory JSON that names the roadmap, manager, worker and reviewer roles.")
 
 (use controller/failure factory-error)
+(use controller/fields required-object required-text)
 
-(use controller/fields field-error required-object
-                       required-text)
-
-(use controller/json json json-error->message json-field
+(use controller/json json-error->message json-field
                      json-text parse-json)
 
 (use controller/process join-path read-text-file text-file?)
@@ -15,13 +13,6 @@
         merge-method read-factory read-factory-document
         read-manager role)
 
-(defenum merge-method gh-auto)
-
-(defstruct role
-  :agent string
-  :skill string
-  :brief string)
-
 (defstruct factory-config
   :manager string
   :roadmap string
@@ -29,16 +20,21 @@
   :worker role
   :reviewer role)
 
-(type factory-path
-  (fn ((ref str)) string))
+(defenum merge-method gh-auto)
 
-(defn factory-path (repo)
-  (let (directory (join-path repo ".kogworks"))
-    (join-path (as-str directory) "factory.json")))
+(defstruct role
+  :agent string
+  :skill string
+  :brief string)
 
-(type read-factory-document
-  (fn ((ref str))
-    (result json factory-error)))
+(defn read-factory (repo)
+  (let-try (document (read-factory-document repo))
+    (config-from-json document)))
+
+(defn read-manager (repo)
+  (match (read-factory-document repo)
+    ((ok document) (manager-from-document document))
+    ((err _) none)))
 
 (defn read-factory-document (repo)
   (let (path (factory-path repo))
@@ -46,9 +42,9 @@
       (document-from-file path)
       (err (factory-error/missing-factory path)))))
 
-(type document-from-file
-  (fn ((ref string))
-    (result json factory-error)))
+(defn factory-path (repo)
+  (let (dir (join-path repo ".kogworks"))
+    (join-path (as-str dir) "factory.json")))
 
 (defn document-from-file (path)
   (match (read-text-file (as-str path))
@@ -56,100 +52,49 @@
     ((err reason)
      (err (factory-error/unreadable-factory (clone path) reason)))))
 
-(type document-from-text
-  (fn ((ref string) (ref string))
-    (result json factory-error)))
-
 (defn document-from-text (path text)
   (map-err (parse-json (as-str text))
     (fn (failure)
       (factory-error/malformed-factory (clone path)
                                        (json-error->message failure)))))
 
-(type read-factory
-  (fn ((ref str))
-    (result factory-config factory-error)))
-
-(defn read-factory (repo)
-  (let-try (document (read-factory-document repo))
-    (config-from-json document)))
-
-(type read-manager
-  (fn ((ref str)) (option string)))
-
-(defn read-manager (repo)
-  (match (read-factory-document repo)
-    ((ok document) (manager-from-document document))
-    ((err _) none)))
-
 (defn manager-from-document (document)
   (match (json-field document "manager")
     ((some value) (json-text value))
     (none none)))
 
-(type config-from-json
-  (fn ((ref json))
-    (result factory-config factory-error)))
-
 (defn config-from-json (document)
-  (let-try (manager (factory-text document "manager" "manager"))
-    (let-try (roadmap (factory-text document "roadmap" "roadmap"))
-      (let-try (merge-text (factory-text document "merge" "merge"))
-        (let-try (merge (merge-method-of merge-text))
-          (let-try (roles (factory-object document "roles" "roles"))
-            (let-try (worker (required-role roles "worker" "roles.worker"))
-              (let-try (reviewer (required-role roles
-                                                "reviewer"
-                                                "roles.reviewer"))
-                (ok (->factory-config :manager manager
-                                      :roadmap roadmap
-                                      :merge merge
-                                      :worker worker
-                                      :reviewer reviewer))))))))))
-
-(type merge-method-of
-  (fn ((ref string))
-    (result merge-method factory-error)))
+  (let-try (manager (factory-text document "manager" "manager")
+            roadmap (factory-text document "roadmap" "roadmap")
+            merge-text (factory-text document "merge" "merge")
+            merge (merge-method-of merge-text)
+            roles (factory-object document "roles" "roles")
+            worker (required-role roles "worker" "roles.worker")
+            reviewer (required-role roles "reviewer" "roles.reviewer"))
+    (ok (->factory-config :manager manager
+                          :roadmap roadmap
+                          :merge merge
+                          :worker worker
+                          :reviewer reviewer))))
 
 (defn merge-method-of (text)
   (cond
     ((= text (str "gh-auto")) (ok merge-method/gh-auto))
     (else (err (factory-error/unsupported-merge-method (clone text))))))
 
-(type required-role
-  (fn ((ref json) (ref str) (ref str))
-    (result role factory-error)))
-
 (defn required-role (roles name path)
-  (let-try (value (factory-object roles name path))
-    (let-try (agent (factory-text value "agent" (as-str (str path ".agent"))))
-      (let-try (skill (factory-text value "skill" (as-str (str path ".skill"))))
-        (let-try (brief (factory-text value "brief"
-                                      (as-str (str path ".brief"))))
-          (ok (->role :agent agent :skill skill :brief brief)))))))
-
-(type factory-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string factory-error)))
+  (let-try (value (factory-object roles name path)
+            agent (factory-text value "agent" (as-str (str path ".agent")))
+            skill (factory-text value "skill" (as-str (str path ".skill")))
+            brief (factory-text value "brief" (as-str (str path ".brief"))))
+    (ok (->role :agent agent :skill skill :brief brief))))
 
 (defn factory-text (value key path)
   (map-err (required-text value key path) factory-field-error))
-
-(type factory-object
-  (fn ((ref json) (ref str) (ref str))
-    (result json factory-error)))
 
 (defn factory-object (value key path)
   (map-err (required-object value key path)
            factory-field-error))
 
-(type factory-field-error (fn (field-error) factory-error))
-
 (defn factory-field-error (failure)
-  (match failure
-    ((missing-field path) (factory-error/missing-field path))
-    ((non-text-field path) (factory-error/non-text-field path))
-    ((non-object-field path)
-     (factory-error/non-object-field path))
-    ((non-number-field path)
-     (factory-error/non-text-field path))))
+  (factory-error/field failure))

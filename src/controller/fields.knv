@@ -3,22 +3,50 @@
 
 (use controller/json json json-field json-object? json-text)
 
-(export field-error field-error->message required-field
-        required-number required-object required-text)
+(export field-error field-error->message required-bool
+        required-field required-number required-object
+        required-text)
 
 (defenum field-error
   (missing-field string)
   (non-text-field string)
   (non-object-field string)
-  (non-number-field string))
+  (non-number-field string)
+  (non-boolean-field string))
 
 (defn field-error->message (failure)
   (match failure
-    ((missing-field path) (str "missing `" path "`"))
+    ((missing-field path) (str "`" path "` is missing"))
     ((non-text-field path) (str "`" path "` is not text"))
     ((non-object-field path)
      (str "`" path "` is not an object"))
-    ((non-number-field path) (str "`" path "` is not a number"))))
+    ((non-number-field path) (str "`" path "` is not a number"))
+    ((non-boolean-field path)
+     (str "`" path "` is not a boolean"))))
+
+(defn required-object (value key path)
+  (let-try (found (required-field value key path))
+    (if (json-object? found)
+      (ok found)
+      (err (field-error/non-object-field (str path))))))
+
+(defn required-text (value key path)
+  (let-try (found (required-field value key path))
+    (match (json-text found)
+      ((some text) (ok text))
+      (none (err (field-error/non-text-field (str path)))))))
+
+(defn required-number (value key path)
+  (let-try (found (required-field value key path))
+    (match found
+      ((number text) (ok (clone text)))
+      (_ (err (field-error/non-number-field (str path)))))))
+
+(defn required-bool (value key path)
+  (let-try (found (required-field value key path))
+    (match found
+      ((boolean flag) (ok flag))
+      (_ (err (field-error/non-boolean-field (str path)))))))
 
 (type required-field
   (fn ((ref json) (ref str) (ref str))
@@ -28,33 +56,3 @@
   (match (json-field value key)
     (none (err (field-error/missing-field (str path))))
     ((some found) (ok found))))
-
-(type required-object
-  (fn ((ref json) (ref str) (ref str))
-    (result json field-error)))
-
-(defn required-object (value key path)
-  (let-try (found (required-field value key path))
-    (if (json-object? found)
-      (ok found)
-      (err (field-error/non-object-field (str path))))))
-
-(type required-text
-  (fn ((ref json) (ref str) (ref str))
-    (result string field-error)))
-
-(defn required-text (value key path)
-  (let-try (found (required-field value key path))
-    (match (json-text found)
-      ((some text) (ok text))
-      (none (err (field-error/non-text-field (str path)))))))
-
-(type required-number
-  (fn ((ref json) (ref str) (ref str))
-    (result string field-error)))
-
-(defn required-number (value key path)
-  (let-try (found (required-field value key path))
-    (match found
-      ((number text) (ok (clone text)))
-      (_ (err (field-error/non-number-field (str path)))))))

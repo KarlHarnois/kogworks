@@ -1,0 +1,245 @@
+(use fixtures/factory-fixture prepare-factory)
+(use synth synth-factory)
+
+(def sample-factory
+  (str "(deffactory checked-sample\n"
+       "  :manager \"checked-manager\"\n"
+       "  :roadmap \"checked-roadmap\"\n"
+       "  :max-active 2\n" "  :merge gh-auto\n"
+       "  (roles (worker :agent \"opencode\"\n"
+       "                 :skill \"writing-knave\"\n"
+       "                 :brief \".kogworks/briefs/worker.md\")\n"
+       "         (reviewer :agent \"opencode\"\n"
+       "                   :skill \"reviewing-prs\"\n"
+       "                   :brief \".kogworks/briefs/reviewer.md\")))\n"))
+
+(def lint-failure-factory
+  (str "(deffactory lint-failure\n"
+       "  :manager \"lint-manager\"\n"
+       "  :roadmap \"lint-roadmap\"\n" "  :max-active 1\n"
+       "  :merge gh-auto\n"
+       "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"
+       "\n" "(defn unused-helper ()\n" "  42)\n"))
+
+(def check-failure-factory
+  (str "(deffactory check-failure\n"
+       "  :manager \"check-manager\"\n"
+       "  :roadmap \"check-roadmap\"\n"
+       "  :max-active \"three\"\n" "  :merge gh-auto\n"
+       "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"))
+
+(def format-failure-factory
+  (str "(deffactory format-failure\n"
+       "        :manager \"format-manager\"\n"
+       "  :roadmap \"format-roadmap\"\n" "  :max-active 1\n"
+       "  :merge gh-auto\n"
+       "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"))
+
+(def create-directory
+  (rust "std::fs::create_dir_all({0}).map_err(|error| error.to_string())"
+    (fn ((ref str)) (result unit string))))
+
+(def remove-directory
+  (rust "{{
+    match std::fs::remove_dir_all({0}) {{
+      Ok(_) => Ok(()),
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+      Err(error) => Err(error.to_string()),
+    }}
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(def write-text
+  (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(def directory-names
+  (rust "{{
+    std::fs::read_dir({0})
+      .map_err(|error| error.to_string())
+      .map(|entries| {{
+        let mut names: Vec<String> = entries
+          .filter_map(|entry| entry.ok())
+          .map(|entry| entry.file_name().to_string_lossy().into_owned())
+          .collect();
+        names.sort();
+        names
+      }})
+  }}"
+    (fn ((ref str))
+      (result (vec string) string))))
+
+(def current-directory
+  (rust "std::env::current_dir().map(|directory| directory.to_string_lossy().into_owned()).map_err(|error| error.to_string())"
+    (fn () (result string string))))
+
+(def run-check
+  (rust "{{
+    let mut command = std::process::Command::new({0});
+    command.args([\"check\", {1}]);
+    command.current_dir({2});
+    command.env(\"TMPDIR\", {3});
+    command.output().map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str)
+         (ref str)
+         (ref str)
+         (ref str))
+      (result process-output string))))
+
+(def run-git-status
+  (rust "{{
+    std::process::Command::new(\"git\")
+      .args([\"status\", \"--porcelain\", \"--\", {1}])
+      .current_dir({0})
+      .output()
+      .map(|output| String::from_utf8_lossy(output.stdout.as_slice()).into_owned())
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref str))
+      (result string string))))
+
+(def exit-code
+  (rust "{0}.status.code().map(i64::from).unwrap_or(-1)"
+    (fn ((ref process-output)) int)))
+
+(def stderr-text
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(deftype process-output (rust "std::process::Output"))
+
+(type prepare-temp-base
+  (fn ((ref str) string)
+    (result string string)))
+
+(defn prepare-temp-base (root name)
+  (let (base (str "target/knave/test-factories/check/tmp/" name)
+        path (str root "/" base))
+    (match (remove-directory (as-str path))
+      ((ok _)
+       (map-ok (create-directory (as-str path))
+         (fn (_) base)))
+      ((err reason) (err reason)))))
+
+(defn check-output (root dir base)
+  (run-check (as-str (str root "/target/knave/kogworks/kogworks"))
+             (as-str (str root "/" dir))
+             root
+             (as-str (str root "/" base))))
+
+(deftest check-passes-and-removes-its-temporary-files
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/success/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "success"))))
+    (unwrap-ok (prepare-factory dir sample-factory))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (let (names-before (unwrap-ok (directory-names (as-str dir)))
+          json-before (unwrap-ok (slurp (as-str
+                                          (str root "/" dir "/factory.json"))))
+          output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 0))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base))))))
+      (assert (= (unwrap-ok (directory-names (as-str dir)))
+                 names-before))
+      (assert (= (unwrap-ok (slurp (as-str (str root "/" dir "/factory.json"))))
+                 json-before)))))
+
+(deftest check-reports-a-lint-failure
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/lint/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "lint"))))
+    (unwrap-ok (prepare-factory dir lint-failure-factory))
+    (let (output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "knave lint"))
+      (assert (contains? (stderr-text output) "unused-helper"))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
+
+(deftest check-reports-a-check-failure
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/check/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "check"))))
+    (unwrap-ok (prepare-factory dir check-failure-factory))
+    (let (output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "knave check"))
+      (assert (contains? (stderr-text output) "mismatched types"))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
+
+(deftest check-reports-a-format-failure
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/format/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "format"))))
+    (unwrap-ok (prepare-factory dir format-failure-factory))
+    (let (output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "knave fmt --check"))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
+
+(deftest check-reports-a-missing-factory
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/missing")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "missing"))))
+    (unwrap-ok (create-directory (as-str (str root "/" dir))))
+    (let (output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "no factory at"))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
+
+(deftest check-reports-a-stale-factory-json
+  (let (root (unwrap-ok (current-directory))
+        dir (str "target/knave/test-factories/check/stale/.kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "stale")))
+        json (str root "/" dir "/factory.json"))
+    (unwrap-ok (prepare-factory dir sample-factory))
+    (unwrap-ok (synth-factory (as-str dir)))
+    (unwrap-ok (write-text (as-str json)
+                           (as-str (str "{}\n"))))
+    (let (json-before (unwrap-ok (slurp (as-str json)))
+          output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output) "stale"))
+      (assert (= (unwrap-ok (slurp (as-str json)))
+                 json-before))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
+
+(deftest check-leaves-the-repository-untouched
+  (let (root (unwrap-ok (current-directory))
+        dir (str ".kogworks")
+        base (unwrap-ok (prepare-temp-base (as-str root) (str "repository")))
+        json (str root "/" dir "/factory.json"))
+    (let (names-before (unwrap-ok (directory-names (as-str (str root "/" dir))))
+          json-before (unwrap-ok (slurp (as-str json)))
+          status-before (unwrap-ok (run-git-status (as-str root) (as-str dir)))
+          output (unwrap-ok (check-output (as-str root)
+                                          (as-str dir)
+                                          (as-str base))))
+      (assert (= (exit-code output) 0))
+      (assert (= (unwrap-ok (directory-names (as-str (str root "/" dir))))
+                 names-before))
+      (assert (= (unwrap-ok (slurp (as-str json)))
+                 json-before))
+      (assert (= (unwrap-ok (run-git-status (as-str root) (as-str dir)))
+                 status-before))
+      (assert (empty? (unwrap-ok (directory-names (as-str
+                                                    (str root "/" base)))))))))
