@@ -10,6 +10,10 @@
   (fits string)
   (overflow string))
 
+(defstruct wrap-state
+  :line string
+  :lines (vec string))
+
 (defn display-width (text)
   (the int (convert (string-width text))))
 
@@ -32,9 +36,12 @@
 (defn title-piece (character)
   (if (title-space? character)
     (str " ")
-    (if (char-control? character)
-      (str)
-      (str character))))
+    (visible-title-piece character)))
+
+(defn visible-title-piece (character)
+  (if (char-control? character)
+    (str)
+    (str character)))
 
 (defn title-space? (character)
   (or (= (str character) (str "\n"))
@@ -53,15 +60,21 @@
 
 (defn wrap-words-from (limit words)
   (loop (index 0
-         line (str)
-         lines (vec))
+         state (->wrap-state :line (str) :lines (vec)))
     (if (>= index (len words))
-      (finish-wrapped lines line)
-      (let (word (clone (at words index)))
-        (match (wrap-decision limit line word)
-          ((fits next-line) (recur (inc index) next-line lines))
-          ((overflow next-line)
-           (recur (inc index) next-line (push-line! lines line))))))))
+      (let-match ((wrap-state line lines) state)
+        (finish-wrapped lines line))
+      (recur (inc index)
+             (wrap-next limit state (clone (at words index)))))))
+
+(defn wrap-next (limit state word)
+  (let-match ((wrap-state line lines) state)
+    (match (wrap-decision limit line word)
+      ((fits next-line)
+       (->wrap-state :line next-line :lines lines))
+      ((overflow next-line)
+       (->wrap-state :line next-line
+                     :lines (push-line! lines line))))))
 
 (defn wrap-decision (limit line word)
   (if (empty? line)
