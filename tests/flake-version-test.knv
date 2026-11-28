@@ -1,0 +1,33 @@
+(def project-path "project.knv")
+
+(def flake-path "flake.nix")
+
+(def knave-version-marker ":knave \"")
+
+(def project-revision-marker ":rev \"")
+
+(def flake-version-marker "knaveVersion = \"")
+
+(def flake-revision-marker "Revision = \"")
+
+(defn quoted-values-after (text marker)
+  (let (segments (collect (split (as-str text) marker)))
+    (-> (range 1 (len segments))
+        (map (fn (index)
+               (quoted-value (deref (at segments index)))))
+        collect)))
+
+(defn quoted-value (segment)
+  (str (deref (at (collect (split segment "\"")) 0))))
+
+(deftest flake-knave-version-matches-project
+  (let (project (unwrap-ok (slurp project-path))
+        flake (unwrap-ok (slurp flake-path)))
+    (assert (= (quoted-values-after flake flake-version-marker)
+               (quoted-values-after project knave-version-marker)))))
+
+(deftest flake-library-revisions-match-project
+  (let (project (unwrap-ok (slurp project-path))
+        flake (unwrap-ok (slurp flake-path)))
+    (assert (= (quoted-values-after flake flake-revision-marker)
+               (quoted-values-after project project-revision-marker)))))
