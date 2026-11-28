@@ -1,0 +1,204 @@
+(module
+  "Holds the controller log colors and opens the escape sequence for a text style.")
+
+(export color-mode style-open text-style)
+
+(def basic-colors
+  (vec (->rgb :red 0 :green 0 :blue 0)
+       (->rgb :red 128 :green 0 :blue 0)
+       (->rgb :red 0 :green 128 :blue 0)
+       (->rgb :red 128 :green 128 :blue 0)
+       (->rgb :red 0 :green 0 :blue 128)
+       (->rgb :red 128 :green 0 :blue 128)
+       (->rgb :red 0 :green 128 :blue 128)
+       (->rgb :red 192 :green 192 :blue 192)
+       (->rgb :red 128 :green 128 :blue 128)
+       (->rgb :red 255 :green 0 :blue 0)
+       (->rgb :red 0 :green 255 :blue 0)
+       (->rgb :red 255 :green 255 :blue 0)
+       (->rgb :red 0 :green 0 :blue 255)
+       (->rgb :red 255 :green 0 :blue 255)
+       (->rgb :red 0 :green 255 :blue 255)
+       (->rgb :red 255 :green 255 :blue 255)))
+
+(def cube-levels (vec 0 95 135 175 215 255))
+
+(def palette (build-palette))
+
+(defstruct palette-color
+  :code int
+  :red int
+  :green int
+  :blue int)
+
+(defstruct rgb
+  :red int
+  :green int
+  :blue int)
+
+(defenum color-role
+  success
+  failure
+  active
+  outcome
+  secondary)
+
+(defenum text-style
+  plain
+  bold
+  secondary
+  success
+  failure
+  active
+  outcome
+  bold-failure)
+
+(defenum color-mode
+  no-color
+  colors-256
+  truecolor)
+
+(defn style-open (colors style)
+  (match colors
+    (no-color (str))
+    (colors-256 (palette-open style))
+    (truecolor (truecolor-open style))))
+
+(defn build-palette ()
+  (-> (vec)
+      (append-basic-colors!)
+      (append-cube-colors!)
+      (append-gray-colors!)))
+
+(defn append-basic-colors! (entries)
+  (loop (index 0)
+    (if (>= index (len basic-colors))
+      entries
+      (do
+        (push! entries
+               (palette-color-of index (at basic-colors index)))
+        (recur (inc index))))))
+
+(defn append-cube-colors! (entries)
+  (loop (red 0
+         current entries)
+    (if (>= red 6)
+      current
+      (recur (inc red) (append-cube-row! current red)))))
+
+(defn append-cube-row! (entries red)
+  (loop (green 0
+         current entries)
+    (if (>= green 6)
+      current
+      (recur (inc green) (append-cube-cell! current red green)))))
+
+(defn append-cube-cell! (entries red green)
+  (loop (blue 0
+         current entries)
+    (if (>= blue 6)
+      current
+      (do
+        (push! current (cube-color red green blue))
+        (recur (inc blue) current)))))
+
+(defn append-gray-colors! (entries)
+  (loop (index 0)
+    (if (>= index 24)
+      entries
+      (do
+        (push! entries (gray-color index))
+        (recur (inc index))))))
+
+(defn palette-color-of (code color)
+  (->palette-color :code code
+                   :red (:red color)
+                   :green (:green color)
+                   :blue (:blue color)))
+
+(defn gray-color (index)
+  (let (level (+ 8 (* 10 index)))
+    (->palette-color :code (+ 232 index)
+                     :red level
+                     :green level
+                     :blue level)))
+
+(defn cube-color (red green blue)
+  (->palette-color :code (+ 16 (* 36 red) (* 6 green) blue)
+                   :red (clone (at cube-levels red))
+                   :green (clone (at cube-levels green))
+                   :blue (clone (at cube-levels blue))))
+
+(defn palette-open (style)
+  (match (style-role style)
+    (none (plain-open style))
+    ((some role) (palette-role-open role style))))
+
+(defn palette-role-open (role style)
+  (str "\u{1b}["
+       (bold-params style)
+       "38;5;"
+       (nearest-color-code (role-color role))
+       "m"))
+
+(defn truecolor-open (style)
+  (match (style-role style)
+    (none (plain-open style))
+    ((some role) (truecolor-role-open role style))))
+
+(defn truecolor-role-open (role style)
+  (let (color (role-color role))
+    (str "\u{1b}["
+         (bold-params style)
+         "38;2;"
+         (:red color)
+         ";"
+         (:green color)
+         ";"
+         (:blue color)
+         "m")))
+
+(defn plain-open (style)
+  (match style
+    (bold (str "\u{1b}[1m"))
+    (_ (str))))
+
+(defn style-role (style)
+  (match style
+    (text-style/plain none)
+    (text-style/bold none)
+    (text-style/secondary (some color-role/secondary))
+    (text-style/success (some color-role/success))
+    (text-style/failure (some color-role/failure))
+    (text-style/active (some color-role/active))
+    (text-style/outcome (some color-role/outcome))
+    (text-style/bold-failure (some color-role/failure))))
+
+(defn bold-params (style)
+  (match style
+    (bold (str "1;"))
+    (bold-failure (str "1;"))
+    (_ (str))))
+
+(defn nearest-color-code (color)
+  (match (max-by-key palette
+           (fn (entry)
+             (neg (color-distance color entry))))
+    (none 0)
+    ((some entry) (:code entry))))
+
+(defn role-color (role)
+  (match role
+    (color-role/success (->rgb :red 91 :green 208 :blue 138))
+    (color-role/failure (->rgb :red 242 :green 95 :blue 92))
+    (color-role/active (->rgb :red 79 :green 199 :blue 199))
+    (color-role/outcome (->rgb :red 224 :green 176 :blue 92))
+    (color-role/secondary (->rgb :red 122 :green 127 :blue 135))))
+
+(defn color-distance (color entry)
+  (let (red (- (:red color) (:red entry))
+        green (- (:green color) (:green entry))
+        blue (- (:blue color) (:blue entry)))
+    (+ (* red red)
+       (* green green)
+       (* blue blue))))
