@@ -2,8 +2,10 @@
 
 - The controller is the session that sends this brief.
 - You are the worker session `{{session}}` on item `{{item}}` of roadmap `{{roadmap}}`.
+<!-- build -->
 - Your branch is `{{branch}}`.
 - The base branch is `{{base}}`.
+<!-- /build -->
 
 ## Start
 
@@ -24,6 +26,7 @@
 
 ## Finish
 
+<!-- build -->
 1. Push `{{branch}}`.
 2. Open one pull request against `{{base}}`, assigned to the owner.
 3. Record the done report.
@@ -47,9 +50,22 @@ gh pr create --base {{base}} --assignee @me --title "$(cat target/scratch/pr-tit
 ```sh
 rmap report {{item}} --session {{session}} --kind done --pr <number> --head <sha> --file -
 ```
+<!-- /build -->
+<!-- report -->
+1. Record the done report.
+
+**Record the done report with `rmap report`.** Run:
+
+```sh
+rmap report {{item}} --session {{session}} --kind done --file -
+```
+
+**Do not push and open no pull request.** Record only the done report.
+<!-- /report -->
 
 **Give the report body these parts:**
 
+<!-- build -->
 - the status word
 - the branch
 - each commit hash with its title
@@ -57,6 +73,14 @@ rmap report {{item}} --session {{session}} --kind done --pr <number> --head <sha
 - the gate results
 - the changed snapshots
 - each departure
+<!-- /build -->
+<!-- report -->
+- the status word
+- each commit hash with its title
+- the gate results
+- the changed snapshots
+- each departure
+<!-- /report -->
 
 The status word is `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED`, or `NEEDS_CONTEXT`.
 

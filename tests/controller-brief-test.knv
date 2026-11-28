@@ -5,8 +5,12 @@
 (use controller/failure brief-role controller-error
                         error->message)
 
+(use controller/rules item-kind)
+
 (use fixtures/controller-fixture make-dir reset-dir
                                  write-text)
+
+(def worker-brief-path (str ".kogworks/briefs/worker.md"))
 
 (def worker-values
   (->worker-values :item (str "rm-0001")
@@ -14,7 +18,8 @@
                    :session (str "build-rm-0001")
                    :branch (str "build-rm-0001")
                    :base (str "main")
-                   :skill (str "fake-skill")))
+                   :skill (str "fake-skill")
+                   :kind item-kind/build))
 
 (def reviewer-values
   (->reviewer-values :item (str "rm-0001")
@@ -26,6 +31,18 @@
                      :base (str "main")
                      :skill (str "fake-reviewer-skill")
                      :manager (str "fake-manager")))
+
+(defn rendered-worker-brief (kind session)
+  (let (values (assoc (clone worker-values)
+                      :kind kind
+                      :session (str session)
+                      :branch (str session)))
+    (unwrap-ok (fill-brief (as-str worker-brief-path)
+                           (worker-brief values)))))
+
+(defn assert-no-section-markers (brief)
+  (assert (not (contains? brief "<!--")))
+  (assert (not (contains? brief "-->"))))
 
 (deftest names-the-reviewer-role-for-a-reviewer-brief-token
   (let (root (str
@@ -58,3 +75,48 @@
          (assert (= role brief-role/worker))
          (assert (contains? message "{{")))
         (_ (assert false))))))
+
+(deftest worker-brief-for-a-build-keeps-the-branch-pull-request-and-report-steps
+  (let (brief (rendered-worker-brief item-kind/build
+                                     (str "build-rm-0001")))
+    (assert (contains? brief "git push -u origin build-rm-0001"))
+    (assert (contains? brief "gh pr create --base main"))
+    (assert (contains? brief
+                       (as-str (str
+                                 "rmap report rm-0001 --session build-rm-0001 "
+                                 "--kind done --pr <number> --head <sha> --file -"))))
+    (assert (contains? brief "- the branch"))
+    (assert (contains? brief "- the pull request link"))
+    (assert (not (contains? brief "{{")))
+    (assert-no-section-markers brief)))
+
+(deftest worker-brief-for-a-research-item-reports-without-a-branch-or-pull-request
+  (let (brief (rendered-worker-brief item-kind/research
+                                     (str "research-rm-0001")))
+    (assert (contains? brief
+                       (as-str (str "rmap report rm-0001 --session research-rm-0001 "
+                                    "--kind done --file -"))))
+    (assert (not (contains? brief "--pr")))
+    (assert (not (contains? brief "--head")))
+    (assert (not (contains? brief "git push")))
+    (assert (not (contains? brief "gh pr create")))
+    (assert (not (contains? brief "- the branch")))
+    (assert (not (contains? brief "- the pull request link")))
+    (assert (not (contains? brief "{{")))
+    (assert-no-section-markers brief)))
+
+(deftest worker-brief-for-a-design-item-reports-without-a-branch-or-pull-request
+  (let (brief (rendered-worker-brief item-kind/design
+                                     (str "design-rm-0001")))
+    (assert (contains? brief
+                       (as-str (str
+                                 "rmap report rm-0001 --session design-rm-0001 "
+                                 "--kind done --file -"))))
+    (assert (not (contains? brief "--pr")))
+    (assert (not (contains? brief "--head")))
+    (assert (not (contains? brief "git push")))
+    (assert (not (contains? brief "gh pr create")))
+    (assert (not (contains? brief "- the branch")))
+    (assert (not (contains? brief "- the pull request link")))
+    (assert (not (contains? brief "{{")))
+    (assert-no-section-markers brief)))
