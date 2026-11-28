@@ -1,0 +1,633 @@
+(module
+  "Holds the controller log examples that docs/controller-log.md shows.")
+
+(use controller/log ->alive-line ->banner-line
+                    ->controller-failure ->item-line
+                    ->log-settings ->pr-summary
+                    ->running-item ->stop-line color-mode
+                    log-status output-target render-alive
+                    render-banner render-controller-failure
+                    render-item render-stop render-sub-lines
+                    running-status stage-state sub-line
+                    track)
+
+(export banner-actual banner-expected bdc-building
+        changes-118-item controller-actual
+        controller-expected failed-command-actual
+        failure-actual failure-expected main-actual
+        main-expected narrow-actual narrow-expected
+        review-actual review-expected settings-118
+        settings-256 settings-80 settings-stream
+        settings-truecolor stream-error-actual
+        stream-stop-actual stream-stop-expected
+        stream-sub-lines-actual stream-sub-lines-expected
+        stream-title-actual stream-title-expected)
+
+(def disarm-title
+  (str "Disarm auto-merge when the approved head changes or the item closes before the merge"))
+
+(def add-title
+  (str "Add kogworks check and remove the module and format commands"))
+
+(def compare-title
+  (str "Compare OSC 8 hyperlink support across terminals"))
+
+(def heartbeat-title
+  (str "Show a heartbeat line while the controller waits on long builds to finish"))
+
+(def print-title
+  (str "Print the stop summary when the controller exits"))
+
+(def layout-title
+  (str "Lay out the stop summary for narrow terminals"))
+
+(def stream-title-text
+  (str "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"))
+
+(def banner-expected
+  (vec "14:02:11  ● kogworks  roadmap factory-mvp · manager kw-manager · poll 30s"))
+
+(def main-expected
+  (vec
+    "14:02:12  rm-8bdc  build ▸ review ○ merge ○  building     Disarm auto-merge when the approved head changes or the ite…"
+    "14:02:13  rm-35cb  build ▸ review ○ merge ○  building     Add kogworks check and remove the module and format commands"
+    "14:02:40  rm-c41e  write ▸ accept ○          researching  Compare OSC 8 hyperlink support across terminals"
+    "14:05:40  rm-8bdc  build ✓ review ▸ merge ○  reviewing    Disarm auto-merge when the approved head changes or the ite…"
+    "14:09:12  rm-8bdc  build ✓ review ↺ merge ○  changes      Disarm auto-merge when the approved head changes or the ite…"
+    "          ├─ criterion 2  no test shows the disarm when the approved head changes"
+    "          ├─ criterion 4  the return to fixing leaves auto-merge armed"
+    "          ╰─ reviewer     review-rm-8bdc-7da1703, behavior review"
+    "14:09:40  rm-8bdc  build ▸ review ↺ merge ○  fixing (2)   Disarm auto-merge when the approved head changes or the ite…"
+    "14:14:40  · running rm-8bdc fixing 5m, rm-35cb building 12m, rm-c41e researching 12m · 0 merged"
+    "14:15:03  rm-8bdc  build ✓ review ▸ merge ○  reviewing    Disarm auto-merge when the approved head changes or the ite…"
+    "14:17:44  rm-8bdc  build ✓ review ✓ merge ▸  merging      Disarm auto-merge when the approved head changes or the ite…"
+    "14:18:40  rm-8bdc  build ✓ review ✓ merge ✓  merged #33   Disarm auto-merge when the approved head changes or the ite…"
+    "14:18:41  rm-9a01  build ▸ review ○ merge ○  building     Show a heartbeat line while the controller waits on long bu…"
+    "14:19:20  rm-c41e  write ✓ accept ▸          reported     Compare OSC 8 hyperlink support across terminals"
+    "14:20:05  rm-c41e  write ✓ accept ✓          accepted     Compare OSC 8 hyperlink support across terminals"
+    "14:20:30  rm-d210  write ▸ accept ○          designing    Lay out the stop summary for narrow terminals"
+    "14:21:47  rm-35cb  build ✓ review ▸ merge ○  reviewing    Add kogworks check and remove the module and format commands"
+    "14:22:30  rm-35cb  build ✓ review ✓ merge ▸  merging      Add kogworks check and remove the module and format commands"
+    "14:23:02  rm-35cb  build ✓ review ✓ merge ✗  head moved   Add kogworks check and remove the module and format commands"
+    "          ├─ error        PR 34 head is 4f5a6b7, not the approved 9f1c2ab"
+    "          ├─ pr           #34  build-rm-35cb"
+    "          ├─ disarmed     gh pr merge 34 --disable-auto"
+    "          ├─ manager      message sent to kw-manager"
+    "          ╰─ next         rerun, the new head needs a review"
+    "14:23:02  ■ controller stopped  1 merged · 1 accepted · 1 failed · 2 running"
+    "          ├─ running      rm-9a01 building 4m · its session keeps running"
+    "          ├─ running      rm-d210 designing 3m · its session keeps running"
+    "          ╰─ rerun        kogworks controller --repo . --poll 30"))
+
+(def review-expected
+  (vec
+    "15:01:10  rm-77c0  build ✓ review ▸ merge ○  reviewing    Print the stop summary when the controller exits"
+    "15:03:22  rm-77c0  build ✓ review ○ merge ○  new head     Print the stop summary when the controller exits"
+    "15:03:52  rm-77c0  build ✓ review ▸ merge ○  reviewing    Print the stop summary when the controller exits"
+    "15:07:30  rm-77c0  build ✓ review ▸ merge ○  verifying    Print the stop summary when the controller exits"
+    "          ├─ criterion 3  no verdict on this head"
+    "          ├─ criterion 5  no verdict on this head"
+    "          ╰─ reviewer     review-rm-77c0-5d6e7f8 approved, verify starts"
+    "15:09:41  rm-77c0  build ✓ review ✓ merge ▸  merging      Print the stop summary when the controller exits"
+    "15:20:04  rm-9a01  build ✓ review ↺ merge ○  changes      Show a heartbeat line while the controller waits on long bu…"
+    "          ├─ criteria     all 6 met on this head"
+    "          ╰─ reviewer     review-rm-9a01-4be21c0, behavior review"
+    "15:31:18  rm-35cb  build ✓ review ○ merge ○  abandoned    Add kogworks check and remove the module and format commands"
+    "          ╰─ session      review-rm-35cb-9f1c2ab ended with no verdict"
+    "15:40:09  rm-77c0  build ▸ review ○ merge ○  fixing (2)   Print the stop summary when the controller exits"
+    "          ╰─ moved        in_review to fixing with no review verdict"))
+
+(def failure-expected
+  (vec "14:52:57  rm-9a01  build ✓ review ✓ merge ✗  timed out    Show a heartbeat line while the controller waits on long bu…"
+       "          ├─ error        PR 35 did not merge within 3600 seconds"
+       "          ├─ pr           #35  build-rm-9a01 @ 4be21c0"
+       "          ├─ disarmed     gh pr merge 35 --disable-auto"
+       "          ├─ manager      message sent to kw-manager"
+       "          ╰─ next         find what holds #35 open, then rerun"
+       "14:31:10  rm-77c0  build ✓ review ✓ merge ✗  refused      Print the stop summary when the controller exits"
+       "          ├─ error        `gh api repos/KarlHarnois/kogworks --jq .allow_auto_merge` printed `false`, not `true`"
+       "          ├─ pr           #37  build-rm-77c0 @ a81f0c2"
+       "          ├─ manager      message sent to kw-manager"
+       "          ╰─ next         enable \"Allow auto-merge\" in the repository settings, then rerun"
+       "14:35:48  rm-77c0  build ✓ review ✗ merge ○  failed       Print the stop summary when the controller exits"
+       "          ├─ error        a session named review-rm-77c0-a81f0c2 already exists"
+       "          ├─ exit 1       ringleader new --name review-rm-77c0-a81f0c2 --repo . --agent claude --prompt <filled brief>"
+       "          ├─ cleanup      rmap session end review-rm-77c0-a81f0c2 --reason abandoned"
+       "          ├─ manager      message sent to kw-manager"
+       "          ╰─ next         fix the error above, then rerun"
+       "14:40:22  rm-9a01  build ✗ review ○ merge ○  failed       Show a heartbeat line while the controller waits on long bu…"
+       "          ├─ error        agent \"opencode\" is not installed"
+       "          ├─ exit 127     ringleader new --name build-rm-9a01 --repo . --agent opencode --prompt <filled brief>"
+       "          ├─ cleanup      rmap session end build-rm-9a01 --reason abandoned"
+       "          ├─ manager      message sent to kw-manager"
+       "          ╰─ next         fix the error above, then rerun"))
+
+(def controller-expected
+  (vec "14:02:12  controller  rmap next failed"
+       "          ├─ error        roadmap \"factory-mvp\" not found"
+       "          ├─ exit 1       rmap next --roadmap factory-mvp --taken-by controller --json"
+       "          ├─ manager      message sent to kw-manager"
+       "          ╰─ next         check the roadmap name in .kogworks/factory.knv, then rerun"))
+
+(def narrow-expected
+  (vec
+    "14:02:12  rm-8bdc  ▸○○  building     Disarm auto-merge when the approved head c…"
+    "14:02:13  rm-35cb  ▸○○  building     Add kogworks check and remove the module a…"
+    "14:02:40  rm-c41e  ▸○   researching  Compare OSC 8 hyperlink support across ter…"
+    "14:05:40  rm-8bdc  ✓▸○  reviewing    Disarm auto-merge when the approved head c…"
+    "14:09:12  rm-8bdc  ✓↺○  changes      Disarm auto-merge when the approved head c…"
+    "          ├─ criterion 2  no test shows the disarm when the approved head"
+    "          │               changes"))
+
+(def stream-sub-lines-expected
+  (vec "          rm-35cb  ├─ pr           #34  build-rm-35cb"
+       "          rm-35cb  ├─ disarmed     gh pr merge 34 --disable-auto"
+       "          rm-35cb  ├─ manager      message sent to kw-manager"
+       "          rm-35cb  ╰─ next         rerun, the new head needs a review"))
+
+(def stream-stop-expected
+  (vec "14:23:02  ■ controller stopped  1 merged · 1 accepted · 1 failed · 2 running"
+       "          controller  ├─ running      rm-9a01 building 4m · its session keeps running"
+       "          controller  ├─ running      rm-d210 designing 3m · its session keeps running"))
+
+(def stream-title-expected
+  (vec "16:00:00  rm-0001  build ▸ review ○ merge ○  building     abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmno…"))
+
+(defn banner-actual ()
+  (render-banner (settings-118) (banner-of)))
+
+(defn changes-118-item () (bdc-changes))
+
+(defn controller-actual ()
+  (render-controller-failure (settings-118)
+                             (controller-failure-of)))
+
+(defn failed-command-actual ()
+  (render-item (settings-80) (print-failed-start)))
+
+(defn failure-actual ()
+  (concat-lines (vec (render-item (settings-118) (heartbeat-timed-out))
+                     (render-item (settings-118) (print-refused))
+                     (render-item (settings-118) (print-failed-start))
+                     (render-item (settings-118) (heartbeat-failed-start)))))
+
+(defn main-actual ()
+  (concat-lines (vec (render-item (settings-118) (bdc-building))
+                     (render-item (settings-118) (cb-building))
+                     (render-item (settings-118) (c41e-researching))
+                     (render-item (settings-118) (bdc-reviewing))
+                     (render-item (settings-118) (bdc-changes))
+                     (render-item (settings-118) (bdc-fixing))
+                     (render-alive (settings-118) (main-alive))
+                     (render-item (settings-118) (bdc-reviewing-later))
+                     (render-item (settings-118) (bdc-merging))
+                     (render-item (settings-118) (bdc-merged))
+                     (render-item (settings-118) (heartbeat-building))
+                     (render-item (settings-118) (c41e-reported))
+                     (render-item (settings-118) (c41e-accepted))
+                     (render-item (settings-118) (d210-designing))
+                     (render-item (settings-118) (cb-reviewing))
+                     (render-item (settings-118) (cb-merging))
+                     (render-item (settings-118) (cb-head-moved))
+                     (render-stop (settings-118) (main-stop)))))
+
+(defn narrow-actual ()
+  (concat-lines (vec (render-item (settings-80) (bdc-building))
+                     (render-item (settings-80) (cb-building))
+                     (render-item (settings-80) (c41e-researching))
+                     (render-item (settings-80) (bdc-reviewing))
+                     (render-item (settings-80) (bdc-changes)))))
+
+(defn review-actual ()
+  (concat-lines (vec (render-item (settings-118) (print-reviewing))
+                     (render-item (settings-118) (print-new-head))
+                     (render-item (settings-118) (print-reviewing-again))
+                     (render-item (settings-118) (print-verifying))
+                     (render-item (settings-118) (print-merging))
+                     (render-item (settings-118) (heartbeat-changes))
+                     (render-item (settings-118) (cb-abandoned))
+                     (render-item (settings-118) (print-fixing-moved)))))
+
+(defn settings-256 ()
+  (->log-settings :colors color-mode/colors-256
+                  :width (some 118)
+                  :target output-target/terminal))
+
+(defn settings-truecolor ()
+  (->log-settings :colors color-mode/truecolor
+                  :width (some 118)
+                  :target output-target/terminal))
+
+(defn stream-error-actual ()
+  (render-sub-lines (settings-stream)
+                    (str "rm-35cb")
+                    (head-moved-sub-lines)))
+
+(defn stream-stop-actual ()
+  (render-stop (settings-stream) (main-stop)))
+
+(defn stream-sub-lines-actual ()
+  (cb-head-moved-stream-sub-lines-actual))
+
+(defn stream-title-actual ()
+  (render-item (settings-stream)
+               (item-line-of "16:00:00" "rm-0001"
+                             (build-stages stage-state/active
+                                           stage-state/waiting
+                                           stage-state/waiting)
+                             log-status/building
+                             (clone stream-title-text)
+                             (vec))))
+
+(defn bdc-building ()
+  (item-line-of "14:02:12" "rm-8bdc"
+                (build-stages stage-state/active
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/building
+                (clone disarm-title)
+                (vec)))
+
+(defn settings-118 ()
+  (->log-settings :colors color-mode/no-color
+                  :width (some 118)
+                  :target output-target/terminal))
+
+(defn settings-80 ()
+  (->log-settings :colors color-mode/no-color
+                  :width (some 80)
+                  :target output-target/terminal))
+
+(defn settings-stream ()
+  (->log-settings :colors color-mode/no-color
+                  :width none
+                  :target output-target/stream))
+
+(defn banner-of ()
+  (->banner-line :time (str "14:02:11")
+                 :roadmap (str "factory-mvp")
+                 :manager (some (str "kw-manager"))
+                 :poll-seconds 30))
+
+(defn bdc-changes ()
+  (item-line-of "14:09:12" "rm-8bdc"
+                (build-stages stage-state/done
+                              stage-state/sent-back
+                              stage-state/waiting)
+                log-status/changes
+                (clone disarm-title)
+                (vec (sub-line/criterion 2
+                                         (str "no test shows the disarm when the approved head changes"))
+                     (sub-line/criterion 4
+                                         (str "the return to fixing leaves auto-merge armed"))
+                     (sub-line/reviewer (str "review-rm-8bdc-7da1703, behavior review")))))
+
+(defn bdc-fixing ()
+  (item-line-of "14:09:40" "rm-8bdc"
+                (build-stages stage-state/active
+                              stage-state/sent-back
+                              stage-state/waiting)
+                (log-status/fixing 2)
+                (clone disarm-title)
+                (vec)))
+
+(defn bdc-merged ()
+  (item-line-of "14:18:40" "rm-8bdc"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/done)
+                (log-status/merged 33)
+                (clone disarm-title)
+                (vec)))
+
+(defn bdc-merging ()
+  (item-line-of "14:17:44" "rm-8bdc"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/active)
+                log-status/merging
+                (clone disarm-title)
+                (vec)))
+
+(defn bdc-reviewing ()
+  (item-line-of "14:05:40" "rm-8bdc"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone disarm-title)
+                (vec)))
+
+(defn bdc-reviewing-later ()
+  (item-line-of "14:15:03" "rm-8bdc"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone disarm-title)
+                (vec)))
+
+(defn c41e-accepted ()
+  (item-line-of "14:20:05" "rm-c41e"
+                (write-stages stage-state/done stage-state/done)
+                log-status/accepted
+                (clone compare-title)
+                (vec)))
+
+(defn c41e-reported ()
+  (item-line-of "14:19:20" "rm-c41e"
+                (write-stages stage-state/done stage-state/active)
+                log-status/reported
+                (clone compare-title)
+                (vec)))
+
+(defn c41e-researching ()
+  (item-line-of "14:02:40" "rm-c41e"
+                (write-stages stage-state/active stage-state/waiting)
+                log-status/researching
+                (clone compare-title)
+                (vec)))
+
+(defn cb-abandoned ()
+  (item-line-of "15:31:18" "rm-35cb"
+                (build-stages stage-state/done
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/abandoned
+                (clone add-title)
+                (vec (sub-line/session (str "review-rm-35cb-9f1c2ab ended with no verdict")))))
+
+(defn cb-building ()
+  (item-line-of "14:02:13" "rm-35cb"
+                (build-stages stage-state/active
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/building
+                (clone add-title)
+                (vec)))
+
+(defn cb-head-moved ()
+  (item-line-of "14:23:02" "rm-35cb"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/failed)
+                log-status/head-moved
+                (clone add-title)
+                (head-moved-sub-lines)))
+
+(defn cb-head-moved-stream-sub-lines-actual ()
+  (render-sub-lines (settings-stream)
+                    (str "rm-35cb")
+                    (head-moved-tail-sub-lines)))
+
+(defn cb-merging ()
+  (item-line-of "14:22:30" "rm-35cb"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/active)
+                log-status/merging
+                (clone add-title)
+                (vec)))
+
+(defn cb-reviewing ()
+  (item-line-of "14:21:47" "rm-35cb"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone add-title)
+                (vec)))
+
+(defn concat-lines (groups)
+  (loop (index 0
+         lines (vec))
+    (if (>= index (len groups))
+      lines
+      (recur (inc index)
+             (append-lines lines (at groups index))))))
+
+(defn controller-failure-of ()
+  (->controller-failure :time (str "14:02:12")
+                        :status (str "rmap next failed")
+                        :sub-lines (vec (sub-line/error (str "roadmap \"factory-mvp\" not found"))
+                                        (sub-line/exit 1
+                                                       (str "rmap next --roadmap factory-mvp --taken-by controller"
+                                                            " --json"))
+                                        (sub-line/manager (str "kw-manager"))
+                                        (sub-line/next (str "check the roadmap name in .kogworks/factory.knv,"
+                                                            " then rerun")))))
+
+(defn d210-designing ()
+  (item-line-of "14:20:30" "rm-d210"
+                (write-stages stage-state/active stage-state/waiting)
+                log-status/designing
+                (clone layout-title)
+                (vec)))
+
+(defn heartbeat-building ()
+  (item-line-of "14:18:41" "rm-9a01"
+                (build-stages stage-state/active
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/building
+                (clone heartbeat-title)
+                (vec)))
+
+(defn heartbeat-changes ()
+  (item-line-of "15:20:04" "rm-9a01"
+                (build-stages stage-state/done
+                              stage-state/sent-back
+                              stage-state/waiting)
+                log-status/changes
+                (clone heartbeat-title)
+                (vec (sub-line/criteria (str "all 6 met on this head"))
+                     (sub-line/reviewer (str "review-rm-9a01-4be21c0, behavior review")))))
+
+(defn heartbeat-failed-start ()
+  (item-line-of "14:40:22" "rm-9a01"
+                (build-stages stage-state/failed
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/failed
+                (clone heartbeat-title)
+                (vec (sub-line/error (str
+                                       "agent \"opencode\" is not installed"))
+                     (sub-line/exit 127
+                                    (str "ringleader new --name build-rm-9a01"
+                                         " --repo . --agent opencode --prompt <filled brief>"))
+                     (sub-line/cleanup (str "rmap session end build-rm-9a01"
+                                            " --reason abandoned"))
+                     (sub-line/manager (str "kw-manager"))
+                     (sub-line/next (str "fix the error above, then rerun")))))
+
+(defn heartbeat-timed-out ()
+  (item-line-of "14:52:57" "rm-9a01"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/failed)
+                log-status/timed-out
+                (clone heartbeat-title)
+                (vec (sub-line/error (str "PR 35 did not merge within 3600 seconds"))
+                     (sub-line/pr (->pr-summary :number 35
+                                                :branch (str "build-rm-9a01")
+                                                :head (some (str "4be21c0"))))
+                     (sub-line/disarmed (str "gh pr merge 35 --disable-auto"))
+                     (sub-line/manager (str "kw-manager"))
+                     (sub-line/next (str "find what holds #35 open, then rerun")))))
+
+(defn main-alive ()
+  (->alive-line
+    :time (str "14:14:40")
+    :running (vec (running-item-of "rm-8bdc" running-status/fixing 5)
+                  (running-item-of "rm-35cb" running-status/building 12)
+                  (running-item-of "rm-c41e" running-status/researching 12))
+    :merged 0
+    :accepted 0))
+
+(defn main-stop ()
+  (->stop-line
+    :time (str "14:23:02")
+    :merged 1
+    :accepted 1
+    :failed 1
+    :running (vec (running-item-of "rm-9a01" running-status/building 4)
+                  (running-item-of "rm-d210" running-status/designing 3))
+    :rerun (str "kogworks controller --repo . --poll 30")))
+
+(defn print-failed-start ()
+  (item-line-of "14:35:48" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/failed
+                              stage-state/waiting)
+                log-status/failed
+                (clone print-title)
+                (vec (sub-line/error (str
+                                       "a session named review-rm-77c0-a81f0c2"
+                                       " already exists"))
+                     (sub-line/exit 1
+                                    (str "ringleader new --name review-rm-77c0-a81f0c2"
+                                         " --repo . --agent claude --prompt <filled brief>"))
+                     (sub-line/cleanup (str "rmap session end review-rm-77c0-a81f0c2"
+                                            " --reason abandoned"))
+                     (sub-line/manager (str "kw-manager"))
+                     (sub-line/next (str "fix the error above, then rerun")))))
+
+(defn print-fixing-moved ()
+  (item-line-of "15:40:09" "rm-77c0"
+                (build-stages stage-state/active
+                              stage-state/waiting
+                              stage-state/waiting)
+                (log-status/fixing 2)
+                (clone print-title)
+                (vec (sub-line/moved (str "in_review to fixing with no review verdict")))))
+
+(defn print-merging ()
+  (item-line-of "15:09:41" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/active)
+                log-status/merging
+                (clone print-title)
+                (vec)))
+
+(defn print-new-head ()
+  (item-line-of "15:03:22" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/waiting
+                              stage-state/waiting)
+                log-status/new-head
+                (clone print-title)
+                (vec)))
+
+(defn print-refused ()
+  (item-line-of "14:31:10" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/done
+                              stage-state/failed)
+                log-status/refused
+                (clone print-title)
+                (vec (sub-line/error (str
+                                       "`gh api repos/KarlHarnois/kogworks --jq"
+                                       " .allow_auto_merge` printed `false`, not `true`"))
+                     (sub-line/pr (->pr-summary :number 37
+                                                :branch (str "build-rm-77c0")
+                                                :head (some (str "a81f0c2"))))
+                     (sub-line/manager (str "kw-manager"))
+                     (sub-line/next (str "enable \"Allow auto-merge\" in the repository"
+                                         " settings, then rerun")))))
+
+(defn print-reviewing ()
+  (item-line-of "15:01:10" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone print-title)
+                (vec)))
+
+(defn print-reviewing-again ()
+  (item-line-of "15:03:52" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone print-title)
+                (vec)))
+
+(defn print-verifying ()
+  (item-line-of "15:07:30" "rm-77c0"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/verifying
+                (clone print-title)
+                (vec (sub-line/criterion 3 (str "no verdict on this head"))
+                     (sub-line/criterion 5 (str "no verdict on this head"))
+                     (sub-line/reviewer (str "review-rm-77c0-5d6e7f8 approved, verify starts")))))
+
+(defn append-lines (left right)
+  (loop (index 0
+         lines left)
+    (if (>= index (len right))
+      lines
+      (recur (inc index)
+             (push-line lines (clone (at right index)))))))
+
+(defn build-stages (build review merge)
+  (track/build-track build review merge))
+
+(defn head-moved-sub-lines ()
+  (vec (sub-line/error (str "PR 34 head is 4f5a6b7, not the approved 9f1c2ab"))
+       (sub-line/pr (->pr-summary :number 34
+                                  :branch (str "build-rm-35cb")
+                                  :head none))
+       (sub-line/disarmed (str "gh pr merge 34 --disable-auto"))
+       (sub-line/manager (str "kw-manager"))
+       (sub-line/next (str "rerun, the new head needs a review"))))
+
+(defn head-moved-tail-sub-lines ()
+  (vec (sub-line/pr (->pr-summary :number 34
+                                  :branch (str "build-rm-35cb")
+                                  :head none))
+       (sub-line/disarmed (str "gh pr merge 34 --disable-auto"))
+       (sub-line/manager (str "kw-manager"))
+       (sub-line/next (str "rerun, the new head needs a review"))))
+
+(defn item-line-of (time id track status title sub-lines)
+  (->item-line :time (str time)
+               :id (str id)
+               :track track
+               :status status
+               :title title
+               :sub-lines sub-lines))
+
+(defn running-item-of (id status minutes)
+  (->running-item :id (str id)
+                  :status status
+                  :minutes minutes))
+
+(defn write-stages (write accept)
+  (track/write-track write accept))
+
+(defn push-line (lines line)
+  (do (push! lines line) lines))

@@ -1,0 +1,917 @@
+(module
+  "Renders the controller log lines that docs/controller-log.md specifies.")
+
+(export ->alive-line ->banner-line ->controller-failure
+        ->item-line ->log-settings ->pr-summary
+        ->running-item ->stop-line alive-line banner-line
+        color-mode controller-failure display-width
+        item-line log-settings log-status output-target
+        pr-summary render-alive render-banner
+        render-controller-failure render-item render-stop
+        render-sub-lines running-item running-status
+        stage-state stop-line sub-line text-style track)
+
+(def string-width
+  (rust "unicode_width::UnicodeWidthStr::width({0})"
+    (fn ((ref str)) usize)))
+
+(def truncate-with-ellipsis
+  (rust "{{
+    let budget = {1};
+    let mut best = 0usize;
+    for (index, character) in {0}.char_indices() {{
+      let end = index + character.len_utf8();
+      if unicode_width::UnicodeWidthStr::width(&{0}[..end]) > budget {{
+        break;
+      }}
+      best = end;
+    }}
+    let mut result = String::from(&{0}[..best]);
+    result.push('…');
+    result
+  }}"
+    (fn ((ref str) usize) string)))
+
+(def basic-colors
+  (vec (->rgb :red 0 :green 0 :blue 0)
+       (->rgb :red 128 :green 0 :blue 0)
+       (->rgb :red 0 :green 128 :blue 0)
+       (->rgb :red 128 :green 128 :blue 0)
+       (->rgb :red 0 :green 0 :blue 128)
+       (->rgb :red 128 :green 0 :blue 128)
+       (->rgb :red 0 :green 128 :blue 128)
+       (->rgb :red 192 :green 192 :blue 192)
+       (->rgb :red 128 :green 128 :blue 128)
+       (->rgb :red 255 :green 0 :blue 0)
+       (->rgb :red 0 :green 255 :blue 0)
+       (->rgb :red 255 :green 255 :blue 0)
+       (->rgb :red 0 :green 0 :blue 255)
+       (->rgb :red 255 :green 0 :blue 255)
+       (->rgb :red 0 :green 255 :blue 255)
+       (->rgb :red 255 :green 255 :blue 255)))
+
+(def cube-levels (vec 0 95 135 175 215 255))
+
+(def palette (build-palette))
+
+(def char-control?
+  (rust "({0}).is_control()" (fn (char) bool)))
+
+(defstruct alive-line
+  :time string
+  :running (vec running-item)
+  :merged int
+  :accepted int)
+
+(defstruct banner-line
+  :time string
+  :roadmap string
+  :manager (option string)
+  :poll-seconds int)
+
+(defenum color-role
+  success
+  failure
+  active
+  outcome
+  secondary)
+
+(defstruct controller-failure
+  :time string
+  :status string
+  :sub-lines (vec sub-line))
+
+(defstruct item-line
+  :time string
+  :id string
+  :track track
+  :status log-status
+  :title string
+  :sub-lines (vec sub-line))
+
+(defstruct log-settings
+  :colors color-mode
+  :width (option int)
+  :target output-target)
+
+(defstruct palette-color
+  :code int
+  :red int
+  :green int
+  :blue int)
+
+(defstruct rgb
+  :red int
+  :green int
+  :blue int)
+
+(defstruct stage-entry
+  :name string
+  :state stage-state)
+
+(defstruct stop-line
+  :time string
+  :merged int
+  :accepted int
+  :failed int
+  :running (vec running-item)
+  :rerun string)
+
+(defenum text-style
+  plain
+  bold
+  secondary
+  success
+  failure
+  active
+  outcome
+  bold-failure)
+
+(defenum track-form
+  full
+  glyphs)
+
+(defenum tree-branch
+  middle
+  last)
+
+(defenum word-fit
+  (fits string)
+  (overflow string))
+
+(defenum color-mode
+  no-color
+  colors-256
+  truecolor)
+
+(defenum log-status
+  building
+  researching
+  designing
+  working
+  reviewing
+  verifying
+  changes
+  (fixing int)
+  new-head
+  abandoned
+  merging
+  (merged int)
+  reported
+  accepted
+  head-moved
+  timed-out
+  refused
+  failed)
+
+(defenum output-target
+  terminal
+  stream)
+
+(defenum sub-line
+  (error string)
+  (exit int string)
+  (pr pr-summary)
+  (disarmed string)
+  (cleanup string)
+  (manager string)
+  (next string)
+  (criterion int string)
+  (criteria string)
+  (reviewer string)
+  (session string)
+  (moved string)
+  (running running-item)
+  (rerun string))
+
+(defenum track
+  (build-track stage-state stage-state stage-state)
+  (write-track stage-state stage-state))
+
+(defstruct pr-summary
+  :number int
+  :branch string
+  :head (option string))
+
+(defstruct running-item
+  :id string
+  :status running-status
+  :minutes int)
+
+(defenum stage-state
+  active
+  done
+  waiting
+  sent-back
+  failed)
+
+(defenum running-status
+  building
+  researching
+  designing
+  working
+  reviewing
+  verifying
+  changes
+  fixing
+  new-head
+  abandoned
+  merging
+  reported)
+
+(defn render-alive (settings alive)
+  (let (full (full-alive-text alive))
+    (if (alive-full? settings alive full)
+      (vec (styled settings text-style/secondary (as-str full)))
+      (vec (styled settings text-style/secondary
+                   (as-str (counts-alive-text alive)))))))
+
+(defn render-banner (settings banner)
+  (vec (banner-text settings banner)))
+
+(defn render-controller-failure (settings failure)
+  (let (line (str (:time failure) "  controller  " (:status failure)))
+    (with-first-line line
+                     (render-sub-lines settings
+                                       (str "controller")
+                                       (:sub-lines failure)))))
+
+(defn render-item (settings item)
+  (let (form (track-form-of settings)
+        prefix-width (item-prefix-width item form)
+        line (str (:time item)
+                  "  "
+                  (:id item)
+                  "  "
+                  (track-text settings (clone (:track item)))
+                  "  "
+                  (status-cell settings (:status item))
+                  "  "
+                  (fitted-title settings prefix-width (:title item)))
+        sub-lines (render-sub-lines settings (:id item) (:sub-lines item)))
+    (with-first-line line sub-lines)))
+
+(defn render-stop (settings stop)
+  (let (line (stop-text stop))
+    (with-first-line line
+                     (render-sub-lines settings
+                                       (str "controller")
+                                       (stop-sub-lines stop)))))
+
+(defn render-sub-lines (settings owner sub-lines)
+  (loop (index 0
+         lines (vec))
+    (if (>= index (len sub-lines))
+      lines
+      (recur (inc index)
+             (append-lines lines
+                           (render-sub-line settings owner
+                                            (branch-at sub-lines index)
+                                            (at sub-lines index)))))))
+
+(defn display-width (text)
+  (the int (convert (string-width text))))
+
+(defn build-palette ()
+  (-> (vec)
+      (append-basic-colors!)
+      (append-cube-colors!)
+      (append-gray-colors!)))
+
+(defn alive-full? (settings alive text)
+  (if (empty? (:running alive))
+    false
+    (alive-fits? settings text)))
+
+(defn append-basic-colors! (entries)
+  (loop (index 0)
+    (if (>= index (len basic-colors))
+      entries
+      (do
+        (push! entries
+               (palette-color-of index (at basic-colors index)))
+        (recur (inc index))))))
+
+(defn append-cube-colors! (entries)
+  (loop (red 0
+         current entries)
+    (if (>= red 6)
+      current
+      (recur (inc red) (append-cube-row! current red)))))
+
+(defn append-gray-colors! (entries)
+  (loop (index 0)
+    (if (>= index 24)
+      entries
+      (do
+        (push! entries (gray-color index))
+        (recur (inc index))))))
+
+(type banner-text
+  (fn (log-settings (ref banner-line)) string))
+
+(defn banner-text (settings banner)
+  (str (:time banner)
+       "  ● kogworks  roadmap "
+       (:roadmap banner)
+       " · "
+       (manager-text settings (:manager banner))
+       " · poll "
+       (:poll-seconds banner)
+       "s"))
+
+(defn counts-alive-text (alive)
+  (str (:time alive)
+       "  · "
+       (len (:running alive))
+       " running · "
+       (:merged alive)
+       " merged · "
+       (:accepted alive)
+       " accepted"))
+
+(defn fitted-title (settings prefix-width title)
+  (let (limit (title-limit settings prefix-width)
+        cleaned (clean-title (as-str title)))
+    (if (<= (display-width (as-str cleaned)) limit)
+      cleaned
+      (fit-title limit (as-str cleaned)))))
+
+(defn full-alive-text (alive)
+  (str (:time alive)
+       "  · running "
+       (join (collect (map (:running alive) running-description))
+             ", ")
+       " · "
+       (:merged alive)
+       " merged"))
+
+(defn item-prefix-width (item form)
+  (let (status-width (max 11
+                          (display-width (as-str (status-text (:status
+                                                                item))))))
+    (+ (display-width (as-str (:time item)))
+       2
+       (display-width (as-str (:id item)))
+       2
+       (track-cell-width form)
+       2 status-width 2)))
+
+(defn status-cell (settings status)
+  (let (text (status-text status))
+    (str (styled settings (status-style status) (as-str text))
+         (spaces (max 0
+                      (- 11 (display-width (as-str text))))))))
+
+(defn stop-sub-lines (stop)
+  (loop (index 0
+         lines (vec))
+    (if (>= index (len (:running stop)))
+      (push-line! lines
+                  (sub-line/rerun (clone (:rerun stop))))
+      (recur (inc index)
+             (push-line! lines
+                         (sub-line/running (clone (at (:running stop)
+                                                      index))))))))
+
+(defn stop-text (stop)
+  (str (:time stop)
+       "  ■ controller stopped  "
+       (:merged stop)
+       " merged · "
+       (:accepted stop)
+       " accepted · "
+       (:failed stop)
+       " failed · "
+       (len (:running stop))
+       " running"))
+
+(defn track-text (settings track)
+  (let (form (track-form-of settings)
+        stages (track-stages track))
+    (str (rendered-track settings form stages)
+         (track-padding form stages))))
+
+(defn with-first-line (line lines)
+  (append-lines (vec line) lines))
+
+(defn alive-fits? (settings text)
+  (match (:width settings)
+    (none true)
+    ((some width) (<= (display-width (as-str text)) width))))
+
+(defn append-cube-row! (entries red)
+  (loop (green 0
+         current entries)
+    (if (>= green 6)
+      current
+      (recur (inc green) (append-cube-cell! current red green)))))
+
+(defn append-lines (left right)
+  (loop (index 0
+         lines left)
+    (if (>= index (len right))
+      lines
+      (recur (inc index)
+             (push-line! lines (clone (at right index)))))))
+
+(defn branch-at (lines index)
+  (if (= index (dec (len lines)))
+    tree-branch/last tree-branch/middle))
+
+(defn clean-title (title)
+  (join (collect (map (chars title) title-piece))
+        ""))
+
+(defn fit-title (limit text)
+  (if (<= limit 0)
+    (str)
+    (truncate-with-ellipsis text
+                            (the usize (convert (dec limit))))))
+
+(defn gray-color (index)
+  (let (level (+ 8 (* 10 index)))
+    (->palette-color :code (+ 232 index)
+                     :red level
+                     :green level
+                     :blue level)))
+
+(defn manager-text (settings manager)
+  (match manager
+    (none (styled settings text-style/outcome "no manager"))
+    ((some session) (str "manager " session))))
+
+(defn palette-color-of (code color)
+  (->palette-color :code code
+                   :red (:red color)
+                   :green (:green color)
+                   :blue (:blue color)))
+
+(defn render-sub-line (settings owner branch line)
+  (let (base (sub-line-base settings owner)
+        values (wrap-value (sub-line-limit settings (as-str base))
+                           (sub-line-value line))
+        first-line (sub-line-first settings base branch line
+                                   (as-str (at values 0))))
+    (append-wrap-lines settings base branch line values 1
+                       (vec first-line))))
+
+(defn rendered-track (settings form stages)
+  (match form
+    (full (full-track settings stages))
+    (glyphs (glyph-track settings stages))))
+
+(type running-description
+  (fn ((ref running-item)) string))
+
+(defn running-description (item)
+  (str (:id item)
+       " "
+       (running-status-text (:status item))
+       " "
+       (:minutes item)
+       "m"))
+
+(defn status-style (status)
+  (match status
+    (building text-style/secondary)
+    (researching text-style/secondary)
+    (designing text-style/secondary)
+    (working text-style/secondary)
+    (reviewing text-style/plain)
+    (verifying text-style/plain)
+    (changes text-style/outcome)
+    ((fixing _) text-style/secondary)
+    (new-head text-style/outcome)
+    (abandoned text-style/outcome)
+    (merging text-style/plain)
+    ((merged _) text-style/success)
+    (reported text-style/plain)
+    (accepted text-style/success)
+    (head-moved text-style/bold-failure)
+    (timed-out text-style/bold-failure)
+    (refused text-style/bold-failure)
+    (failed text-style/bold-failure)))
+
+(defn status-text (status)
+  (match status
+    (building (str "building"))
+    (researching (str "researching"))
+    (designing (str "designing"))
+    (working (str "working"))
+    (reviewing (str "reviewing"))
+    (verifying (str "verifying"))
+    (changes (str "changes"))
+    ((fixing round) (str "fixing (" round ")"))
+    (new-head (str "new head"))
+    (abandoned (str "abandoned"))
+    (merging (str "merging"))
+    ((merged number) (str "merged #" number))
+    (reported (str "reported"))
+    (accepted (str "accepted"))
+    (head-moved (str "head moved"))
+    (timed-out (str "timed out"))
+    (refused (str "refused"))
+    (failed (str "failed"))))
+
+(defn title-limit (settings prefix-width)
+  (match (:width settings)
+    (none 120)
+    ((some width) (max 0 (- width prefix-width)))))
+
+(defn track-cell-width (form)
+  (match form (full 24) (glyphs 3)))
+
+(defn track-form-of (settings)
+  (match (:width settings)
+    (none track-form/full)
+    ((some width) (track-form-of-width width))))
+
+(defn track-padding (form stages)
+  (let (count (len stages))
+    (match form
+      (full (spaces (- 24 (plain-track-width stages))))
+      (glyphs (spaces (- 3 count))))))
+
+(defn track-stages (track)
+  (match track
+    ((build-track build review merge)
+     (vec (->stage-entry :name (str "build") :state build)
+          (->stage-entry :name (str "review") :state review)
+          (->stage-entry :name (str "merge") :state merge)))
+    ((write-track write accept)
+     (vec (->stage-entry :name (str "write") :state write)
+          (->stage-entry :name (str "accept") :state accept)))))
+
+(defn append-cube-cell! (entries red green)
+  (loop (blue 0
+         current entries)
+    (if (>= blue 6)
+      current
+      (do
+        (push! current (cube-color red green blue))
+        (recur (inc blue) current)))))
+
+(defn append-wrap-lines (settings base branch line values index lines)
+  (if (>= index (len values))
+    lines
+    (recur settings base branch line values
+           (inc index)
+           (push-line! lines
+                       (sub-line-continuation settings base
+                                              branch line
+                                              (as-str (at values index)))))))
+
+(type full-track
+  (fn ((ref log-settings)
+       (iterator (ref stage-entry)))
+    string))
+
+(defn full-track (settings stages)
+  (join (collect (map stages
+                   (fn (entry) (stage-text settings entry))))
+        " "))
+
+(type glyph-track
+  (fn ((ref log-settings)
+       (iterator (ref stage-entry)))
+    string))
+
+(defn glyph-track (settings stages)
+  (join (collect (map stages
+                   (fn (entry)
+                     (styled settings
+                             (stage-glyph-style (:state entry))
+                             (stage-glyph (:state entry))))))
+        ""))
+
+(type plain-track-width
+  (fn ((ref (vec stage-entry))) int))
+
+(defn plain-track-width (stages)
+  (let (count (len stages))
+    (+ (sum (map stages plain-stage-width))
+       (max 0 (- count 1)))))
+
+(defn sub-line-base (settings owner)
+  (str "          " (owner-prefix settings owner)))
+
+(defn sub-line-first (settings base branch line value)
+  (str base
+       (tree-glyph branch)
+       (label-cell settings (as-str (sub-line-label line)))
+       (styled settings (sub-line-style line) value)))
+
+(defn sub-line-limit (settings base)
+  (match (:width settings)
+    (none none)
+    ((some width) (sub-line-limit-at width base))))
+
+(defn sub-line-value (line)
+  (match line
+    ((error message) (clone message))
+    ((exit _ command) (clone command))
+    ((pr summary) (pr-value summary))
+    ((disarmed command) (clone command))
+    ((cleanup command) (clone command))
+    ((manager session) (str "message sent to " session))
+    ((next step) (clone step))
+    ((criterion _ note) (clone note))
+    ((criteria text) (clone text))
+    ((reviewer text) (clone text))
+    ((session text) (clone text))
+    ((moved text) (clone text))
+    ((running item) (running-sub-line-value item))
+    ((rerun command) (clone command))))
+
+(defn title-piece (character)
+  (if (title-space? character)
+    (str " ")
+    (if (char-control? character)
+      (str)
+      (str character))))
+
+(defn track-form-of-width (width)
+  (if (< width 110) track-form/glyphs track-form/full))
+
+(defn wrap-value (limit text)
+  (match limit
+    (none (vec (clone text)))
+    ((some width) (wrap-words-from width (words-of text)))))
+
+(defn cube-color (red green blue)
+  (->palette-color :code (+ 16 (* 36 red) (* 6 green) blue)
+                   :red (clone (at cube-levels red))
+                   :green (clone (at cube-levels green))
+                   :blue (clone (at cube-levels blue))))
+
+(defn label-cell (settings label)
+  (str (styled settings text-style/secondary label)
+       (spaces (max 0 (- 12 (display-width label))))
+       " "))
+
+(defn owner-prefix (settings owner)
+  (match (:target settings)
+    (terminal (str))
+    (stream (str owner "  "))))
+
+(defn plain-stage-width (entry)
+  (+ (display-width (as-str (:name entry)))
+     2))
+
+(type pr-value
+  (fn ((ref pr-summary)) string))
+
+(defn pr-value (summary)
+  (match (:head summary)
+    (none (str "#" (:number summary) "  " (:branch summary)))
+    ((some head)
+     (str "#"
+          (:number summary)
+          "  "
+          (:branch summary)
+          " @ " head))))
+
+(defn running-sub-line-value (item)
+  (str (:id item)
+       " "
+       (running-status-text (:status item))
+       " "
+       (:minutes item)
+       "m · its session keeps running"))
+
+(defn stage-text (settings entry)
+  (str (styled settings
+               (stage-name-style (:state entry))
+               (:name entry))
+       " "
+       (styled settings
+               (stage-glyph-style (:state entry))
+               (stage-glyph (:state entry)))))
+
+(defn sub-line-continuation (settings base branch line value)
+  (str (continuation-prefix (as-str base) branch)
+       (styled settings (sub-line-style line) value)))
+
+(defn sub-line-label (line)
+  (match line
+    ((error _) (str "error"))
+    ((exit code _) (str "exit " code))
+    ((pr _) (str "pr"))
+    ((disarmed _) (str "disarmed"))
+    ((cleanup _) (str "cleanup"))
+    ((manager _) (str "manager"))
+    ((next _) (str "next"))
+    ((criterion index _) (str "criterion " index))
+    ((criteria _) (str "criteria"))
+    ((reviewer _) (str "reviewer"))
+    ((session _) (str "session"))
+    ((moved _) (str "moved"))
+    ((running _) (str "running"))
+    ((rerun _) (str "rerun"))))
+
+(defn sub-line-limit-at (width base)
+  (some (max 1
+             (- width (+ (display-width base) 16)))))
+
+(defn title-space? (character)
+  (or (= (str character) (str "\n"))
+      (= (str character) (str "\t"))))
+
+(defn tree-glyph (branch)
+  (match branch (middle "├─ ") (last "╰─ ")))
+
+(defn words-of (text)
+  (collect (map (split (as-str text) " ")
+             (fn (word) (str word)))))
+
+(defn wrap-words-from (limit words)
+  (loop (index 0
+         line (str)
+         lines (vec))
+    (if (>= index (len words))
+      (finish-wrapped lines line)
+      (let (word (clone (at words index)))
+        (match (wrap-decision limit line word)
+          ((fits next-line) (recur (inc index) next-line lines))
+          ((overflow next-line)
+           (recur (inc index) next-line (push-line! lines line))))))))
+
+(defn continuation-prefix (base branch)
+  (str base
+       (continuation-marker branch)
+       (spaces (- (+ (display-width base) 16)
+                  (display-width base)
+                  1))))
+
+(defn finish-wrapped (lines line)
+  (if (empty? lines)
+    (push-line! lines line)
+    (finish-nonempty-lines lines line)))
+
+(defn running-status-text (status)
+  (match status
+    (building (str "building"))
+    (researching (str "researching"))
+    (designing (str "designing"))
+    (working (str "working"))
+    (reviewing (str "reviewing"))
+    (verifying (str "verifying"))
+    (changes (str "changes"))
+    (fixing (str "fixing"))
+    (new-head (str "new head"))
+    (abandoned (str "abandoned"))
+    (merging (str "merging"))
+    (reported (str "reported"))))
+
+(defn stage-glyph (state)
+  (match state
+    (active "▸")
+    (done "✓")
+    (waiting "○")
+    (sent-back "↺")
+    (failed "✗")))
+
+(defn stage-glyph-style (state)
+  (match state
+    (active text-style/active)
+    (done text-style/success)
+    (waiting text-style/secondary)
+    (sent-back text-style/outcome)
+    (failed text-style/failure)))
+
+(defn stage-name-style (state)
+  (match state
+    (active text-style/bold)
+    (done text-style/secondary)
+    (waiting text-style/secondary)
+    (sent-back text-style/bold)
+    (failed text-style/bold)))
+
+(type styled
+  (fn ((ref log-settings) text-style (ref str))
+    string))
+
+(defn styled (settings style text)
+  (match (:colors settings)
+    (no-color (str text))
+    (_ (colored-span (style-open settings style) text))))
+
+(defn sub-line-style (line)
+  (match line
+    ((error _) text-style/failure)
+    ((rerun _) text-style/bold)
+    (_ text-style/plain)))
+
+(defn wrap-decision (limit line word)
+  (if (empty? line)
+    (word-fit/fits (clone word))
+    (candidate-decision limit (word-after line word) word)))
+
+(defn candidate-decision (limit candidate word)
+  (if (<= (display-width (as-str candidate)) limit)
+    (word-fit/fits candidate)
+    (word-fit/overflow (clone word))))
+
+(defn colored-span (open text)
+  (if (= open (str))
+    (str text)
+    (str open text "\u{1b}[0m")))
+
+(defn continuation-marker (branch)
+  (match branch (middle "│") (last " ")))
+
+(defn finish-nonempty-lines (lines line)
+  (if (empty? line) lines (push-line! lines line)))
+
+(defn spaces (count)
+  (join (collect (map (range 0 count) (fn (_) (str " "))))
+        ""))
+
+(defn style-open (settings style)
+  (match (:colors settings)
+    (no-color (str))
+    (colors-256 (palette-open style))
+    (truecolor (truecolor-open style))))
+
+(defn word-after (line word)
+  (if (empty? line)
+    (str word)
+    (str line " " word)))
+
+(defn palette-open (style)
+  (match (style-role style)
+    (none (plain-open style))
+    ((some role) (palette-role-open role style))))
+
+(defn push-line! (lines line)
+  (do (push! lines line) lines))
+
+(defn truecolor-open (style)
+  (match (style-role style)
+    (none (plain-open style))
+    ((some role) (truecolor-role-open role style))))
+
+(defn palette-role-open (role style)
+  (str "\u{1b}["
+       (bold-params style)
+       "38;5;"
+       (nearest-color-code (role-color role))
+       "m"))
+
+(defn plain-open (style)
+  (match style
+    (bold (str "\u{1b}[1m"))
+    (_ (str))))
+
+(defn style-role (style)
+  (match style
+    (text-style/plain none)
+    (text-style/bold none)
+    (text-style/secondary (some color-role/secondary))
+    (text-style/success (some color-role/success))
+    (text-style/failure (some color-role/failure))
+    (text-style/active (some color-role/active))
+    (text-style/outcome (some color-role/outcome))
+    (text-style/bold-failure (some color-role/failure))))
+
+(defn truecolor-role-open (role style)
+  (let (color (role-color role))
+    (str "\u{1b}["
+         (bold-params style)
+         "38;2;"
+         (:red color)
+         ";"
+         (:green color)
+         ";"
+         (:blue color)
+         "m")))
+
+(defn bold-params (style)
+  (match style
+    (bold (str "1;"))
+    (bold-failure (str "1;"))
+    (_ (str))))
+
+(defn nearest-color-code (color)
+  (match (max-by-key palette
+           (fn (entry)
+             (neg (color-distance color entry))))
+    (none 0)
+    ((some entry) (:code entry))))
+
+(defn role-color (role)
+  (match role
+    (color-role/success (->rgb :red 91 :green 208 :blue 138))
+    (color-role/failure (->rgb :red 242 :green 95 :blue 92))
+    (color-role/active (->rgb :red 79 :green 199 :blue 199))
+    (color-role/outcome (->rgb :red 224 :green 176 :blue 92))
+    (color-role/secondary (->rgb :red 122 :green 127 :blue 135))))
+
+(defn color-distance (color entry)
+  (let (red (- (:red color) (:red entry))
+        green (- (:green color) (:green entry))
+        blue (- (:blue color) (:blue entry)))
+    (+ (* red red)
+       (* green green)
+       (* blue blue))))

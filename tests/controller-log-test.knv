@@ -1,0 +1,271 @@
+(use controller/log ->banner-line ->item-line ->log-settings
+                    color-mode display-width log-status
+                    output-target render-banner render-item
+                    stage-state sub-line track)
+
+(use fixtures/log-fixture banner-actual banner-expected
+                          bdc-building changes-118-item
+                          controller-actual
+                          controller-expected
+                          failed-command-actual
+                          failure-actual failure-expected
+                          main-actual main-expected
+                          narrow-actual narrow-expected
+                          review-actual review-expected
+                          settings-118 settings-256
+                          settings-80 settings-truecolor
+                          stream-error-actual
+                          stream-stop-actual
+                          stream-stop-expected
+                          stream-sub-lines-actual
+                          stream-sub-lines-expected
+                          stream-title-actual
+                          stream-title-expected)
+
+(def unicode-width
+  (rust "unicode_width::UnicodeWidthStr::width({0})"
+    (fn ((ref str)) usize)))
+
+(defenum span-step
+  invalid
+  (opened int))
+
+(defn balanced-spans? (text)
+  (let (parts (collect (split (as-str text) "\u{1b}[")))
+    (loop (index 1
+           depth 0)
+      (if (>= index (len parts))
+        (= depth 0)
+        (match (span-step (at parts index) depth)
+          (invalid false)
+          ((opened next-depth) (recur (inc index) next-depth)))))))
+
+(defn first-seven-lines (lines)
+  (vec (clone (at lines 0))
+       (clone (at lines 1))
+       (clone (at lines 2))
+       (clone (at lines 3))
+       (clone (at lines 4))
+       (clone (at lines 5))
+       (clone (at lines 6))))
+
+(defn first-three-lines (lines)
+  (vec (clone (at lines 0))
+       (clone (at lines 1))
+       (clone (at lines 2))))
+
+(defn same-lines? (actual expected)
+  (= (join actual "\n") (join expected "\n")))
+
+(defn span-step (part depth)
+  (if (starts-with? part "0m")
+    (reset-step depth)
+    (open-step depth)))
+
+(defn open-step (depth)
+  (if (= depth 0)
+    (span-step/opened (inc depth))
+    span-step/invalid))
+
+(defn reset-step (depth)
+  (if (= depth 0)
+    span-step/invalid
+    (span-step/opened (dec depth))))
+
+(deftest renders-the-banner-example
+  (assert (same-lines? (banner-actual) banner-expected)))
+
+(deftest renders-the-main-example-at-118-columns
+  (assert (same-lines? (main-actual) main-expected)))
+
+(deftest renders-the-review-outcome-examples-at-118-columns
+  (assert (same-lines? (review-actual) review-expected)))
+
+(deftest renders-the-failure-examples-at-118-columns
+  (assert (same-lines? (failure-actual) failure-expected)))
+
+(deftest renders-the-controller-failure-example
+  (assert (same-lines? (controller-actual) controller-expected)))
+
+(deftest renders-the-narrow-example-at-80-columns
+  (assert (same-lines? (first-seven-lines (narrow-actual))
+                       narrow-expected)))
+
+(deftest renders-the-non-terminal-sub-lines-with-the-id
+  (assert (same-lines? (stream-sub-lines-actual)
+                       stream-sub-lines-expected)))
+
+(deftest renders-the-non-terminal-stop-block
+  (assert (same-lines? (first-three-lines (stream-stop-actual))
+                       stream-stop-expected))
+  (assert (= (clone (at (stream-stop-actual) 3))
+             (str "          controller  ╰─ rerun        "
+                  "kogworks controller --repo . --poll 30"))))
+
+(deftest cuts-a-non-terminal-title-at-120-columns
+  (assert (same-lines? (stream-title-actual) stream-title-expected)))
+
+(deftest leaves-no-escape-sequence-with-no-color
+  (assert (not (contains? (join (main-actual) "\n") "\u{1b}"))))
+
+(deftest resets-every-truecolor-span
+  (let (text (join (render-item (settings-truecolor) (changes-118-item))
+                   "\n"))
+    (assert (contains? text "\u{1b}[38;2;224;176;92m"))
+    (assert (contains? text "\u{1b}[38;2;91;208;138m"))
+    (assert (contains? text "\u{1b}[0m"))
+    (assert (balanced-spans? text))))
+
+(deftest resets-every-256-color-span
+  (let (text (join (render-item (settings-256) (changes-118-item))
+                   "\n"))
+    (assert (contains? text "\u{1b}[38;5;"))
+    (assert (contains? text "\u{1b}[0m"))
+    (assert (balanced-spans? text))))
+
+(deftest cleans-a-title
+  (let (item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/active
+                                                    stage-state/waiting
+                                                    stage-state/waiting)
+                          :status log-status/building
+                          :title (str "a\nb\tc\u{7}d")
+                          :sub-lines (vec)))
+    (assert (same-lines? (render-item (settings-118) item)
+                         (vec (str "14:02:12  rm-8bdc  build ▸ review ○ merge ○"
+                                   "  building     a b cd"))))))
+
+(deftest measures-a-title-in-display-columns
+  (let (title (join (collect (map (range 0 40) (fn (_) (str "界"))))
+                    "")
+        cut (join (collect (map (range 0 29) (fn (_) (str "界"))))
+                  "")
+        item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/active
+                                                    stage-state/waiting
+                                                    stage-state/waiting)
+                          :status log-status/building
+                          :title title
+                          :sub-lines (vec)))
+    (assert (same-lines? (render-item (settings-118) item)
+                         (vec (str "14:02:12  rm-8bdc  build ▸ review ○ merge ○"
+                                   "  building     " cut
+                                   "…"))))))
+
+(deftest shows-no-manager-when-none-is-configured
+  (let (banner (->banner-line :time (str "14:02:11")
+                              :roadmap (str "factory-mvp")
+                              :manager none
+                              :poll-seconds 30))
+    (assert (same-lines? (render-banner (settings-118) banner)
+                         (vec (str "14:02:11  ● kogworks  roadmap factory-mvp"
+                                   " · no manager · poll 30s"))))
+    (assert (contains? (join (render-banner (settings-truecolor) banner) "\n")
+                       (as-str (str "\u{1b}[38;2;224;176;92mno manager\u{1b}[0m"))))))
+
+(deftest measures-display-columns
+  (for-each (vec (str "abc")
+                 (str "héllo")
+                 (str "界")
+                 (str "🙂")
+                 (str "a\u{300}b")
+                 (str "コン")
+                 (str "✅")
+                 (str "🚀")
+                 (str "⌚")
+                 (str "✅✅✅")
+                 (str "❤️")
+                 (str "👍🏽")
+                 (str "\u{17D8}")
+                 (str "👨‍👩‍👧")
+                 (str "🇺🇸")
+                 (str "⌚\u{FE0E}")
+                 (str "😀\u{FE0E}")
+                 (str "a\u{FE0F}")
+                 (str "1\u{FE0F}\u{20E3}"))
+            (fn (text)
+              (assert (= (display-width (as-str text))
+                         (the int
+                              (convert (unicode-width (as-str text)))))))))
+
+(deftest renders-the-non-terminal-error-sub-line
+  (assert (= (clone (at (stream-error-actual) 0))
+             (str "          rm-35cb  ├─ error        PR 34 head is 4f5a6b7,"
+                  " not the approved 9f1c2ab"))))
+
+(deftest never-cuts-a-command
+  (let (lines (failed-command-actual)
+        command-lines (vec (clone (at lines 2))
+                           (clone (at lines 3)))
+        command (join command-lines "\n"))
+    (assert (contains? (as-str command)
+                       (as-str (str
+                                 "ringleader new --name review-rm-77c0-a81f0c2"
+                                 " --repo ."))))
+    (assert (contains? (as-str command)
+                       (as-str (str "--agent claude --prompt <filled brief>"))))
+    (assert (not (contains? (as-str command)
+                            (as-str (str "…")))))))
+
+(deftest switches-to-glyph-track-below-110-columns
+  (let (item (bdc-building)
+        narrow (->log-settings :colors color-mode/no-color
+                               :width (some 109)
+                               :target output-target/terminal)
+        wide (->log-settings :colors color-mode/no-color
+                             :width (some 110)
+                             :target output-target/terminal))
+    (assert (contains? (as-str (join (render-item narrow item) "\n"))
+                       (as-str (str "▸○○"))))
+    (assert (not (contains? (as-str (join (render-item narrow item) "\n"))
+                            (as-str (str "build ▸")))))
+    (assert (contains? (as-str (join (render-item wide (bdc-building)) "\n"))
+                       (as-str (str "build ▸"))))))
+
+(deftest cuts-an-emoji-presentation-title-at-80-columns
+  (let (marks (join (collect (map (range 0 30) (fn (_) (str "❤️"))))
+                    "")
+        cut (join (collect (map (range 0 21) (fn (_) (str "❤️"))))
+                  "")
+        item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/active
+                                                    stage-state/waiting
+                                                    stage-state/waiting)
+                          :status log-status/building
+                          :title marks
+                          :sub-lines (vec)))
+    (assert (same-lines? (render-item (settings-80) item)
+                         (vec (str "14:02:12  rm-8bdc  ▸○○  building     "
+                                   cut "…"))))))
+
+(deftest keeps-an-emoji-modifier-sequence-title
+  (let (title (join (collect (map (range 0 20) (fn (_) (str "👍🏽"))))
+                    "")
+        item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/active
+                                                    stage-state/waiting
+                                                    stage-state/waiting)
+                          :status log-status/building
+                          :title (clone title)
+                          :sub-lines (vec)))
+    (assert (same-lines? (render-item (settings-80) item)
+                         (vec (str "14:02:12  rm-8bdc  ▸○○  building     "
+                                   title))))))
+
+(deftest renders-an-empty-sub-line-value
+  (let (item (->item-line :time (str "14:02:12")
+                          :id (str "rm-8bdc")
+                          :track (track/build-track stage-state/done
+                                                    stage-state/sent-back
+                                                    stage-state/waiting)
+                          :status log-status/changes
+                          :title (str "Empty note")
+                          :sub-lines (vec (sub-line/criterion 2 (str)))))
+    (assert (same-lines? (render-item (settings-118) item)
+                         (vec (str "14:02:12  rm-8bdc  build ✓ review ↺ merge ○"
+                                   "  changes      Empty note")
+                              (str "          ╰─ criterion 2  "))))))

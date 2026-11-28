@@ -76,28 +76,41 @@
 
 (def run-eval
   (rust "{{
-    use std::io::Write;
-    std::process::Command::new(\"knave\")
-      .args([\"eval\", \"--stdin\", \"factory.knv\", \"(do (print (factory-json)) (exit 0))\"])
-      .current_dir({0})
-      .env(\"TMPDIR\", {2})
-      .stdin(std::process::Stdio::piped())
-      .stdout(std::process::Stdio::piped())
-      .stderr(std::process::Stdio::piped())
-      .spawn()
-      .map_err(|error| error.to_string())
-      .and_then(|mut child| {{
-        let mut input = child
-          .stdin
-          .take()
-          .ok_or_else(|| \"knave did not open standard input\".to_string())?;
-        input
-          .write_all({1}.as_bytes())
-          .map_err(|error| error.to_string())?;
-        drop(input);
-        child.wait_with_output().map_err(|error| error.to_string())
-      }})
-  }}"
+  (|| -> Result<std::process::Output, String> {{
+    let temporary = {0};
+    let factory_dir = {1};
+    let module_text = {2};
+    let program_file = std::path::Path::new(temporary)
+      .join(\"src\")
+      .join(\"run.knv\");
+    if let Some(parent) = program_file.parent() {{
+      std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }}
+    let mut program = String::from(module_text);
+    program.push_str(\"\\n\\n(defn main () (print (factory-json)))\\n\");
+    std::fs::write(&program_file, program).map_err(|error| error.to_string())?;
+    let binary_file = std::path::Path::new(temporary).join(\"factory-bin\");
+    let build = std::process::Command::new(\"knave\")
+      .args([
+        \"build\",
+        program_file.to_str().unwrap_or_default(),
+        \"-o\",
+        binary_file.to_str().unwrap_or_default(),
+      ])
+      .current_dir(temporary)
+      .env(\"TMPDIR\", temporary)
+      .output()
+      .map_err(|error| error.to_string())?;
+    if build.status.success() {{
+      std::process::Command::new(&binary_file)
+        .current_dir(factory_dir)
+        .output()
+        .map_err(|error| error.to_string())
+    }} else {{
+      Ok(build)
+    }}
+  }})()
+}}"
     (fn ((ref str) (ref str) (ref str))
       (result process-output string))))
 
@@ -300,10 +313,11 @@
     (compare-factory-json dir json)))
 
 (defn eval-factory-json (dir factory-text temporary)
-  (let (path (join-path (as-str dir) "factory.knv"))
-    (match (run-eval (as-str dir)
-                     (as-str (factory-module-text (as-str factory-text)))
-                     (as-str temporary))
+  (let (path (join-path (as-str dir) "factory.knv")
+        module-text (factory-module-text (as-str factory-text)))
+    (match (run-eval (as-str temporary)
+                     (as-str dir)
+                     (as-str module-text))
       ((ok output) (eval-json-outcome path output))
       ((err reason)
        (err (check-error/factory-eval-failed path reason))))))
