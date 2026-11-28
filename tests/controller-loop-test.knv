@@ -174,7 +174,7 @@
 
 (defn dispatch-actions-for (root id session)
   (let (repo (absolute-repo-of root))
-    (str (next-line (str "fake-roadmap"))
+    (str (start-line (str "fake-roadmap"))
          (send-line (clone send-fixes-notice))
          (ready-line (str "fake-roadmap"))
          "rmap item claim " id " --session " session
@@ -224,7 +224,7 @@
   (str (review-preface) (reviewer-start-line root)))
 
 (defn review-preface ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        "rmap item show " review-item " --json\n"
        "rmap review start " review-item " --session "
        review-session "\n"))
@@ -242,7 +242,7 @@
 (defn repo-of (root) (str root "/repo"))
 
 (defn missing-detail-sequence ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        "rmap item show " review-item " --json\n"
        (send-line (str "review: " review-item
                        ": `rmap item show " review-item
@@ -252,7 +252,7 @@
 
 (defn claim-refusal-sequence ()
   (str
-    (next-line (str "fake-roadmap"))
+    (start-line (str "fake-roadmap"))
     (send-line (clone send-fixes-notice))
     (ready-line (str "fake-roadmap"))
     "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
@@ -262,7 +262,7 @@
     "rmap item show rm-0001 --json\n"))
 
 (defn poll-sequence ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        (ready-line (str "fake-roadmap"))
        (next-line (str "fake-roadmap"))
        (ready-line (str "fake-roadmap"))
@@ -270,7 +270,7 @@
        (poll-limit-line)))
 
 (defn notice-once-sequence ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        (send-line (clone send-fixes-notice))
        (send-line (clone accept-report-notice))
        (ready-line (str "fake-roadmap"))
@@ -280,7 +280,7 @@
        (poll-limit-line)))
 
 (defn notice-repeat-sequence ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        (send-line (clone send-fixes-notice))
        (send-line (clone accept-report-notice))
        (ready-line (str "fake-roadmap"))
@@ -292,7 +292,7 @@
        (poll-limit-line)))
 
 (defn notice-retry-sequence ()
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        (send-line (clone send-fixes-notice))
        (ready-line (str "fake-roadmap"))
        (next-line (str "fake-roadmap"))
@@ -303,7 +303,7 @@
        (poll-limit-line)))
 
 (defn decision-review-sequence (root)
-  (str (next-line (str "fake-roadmap"))
+  (str (start-line (str "fake-roadmap"))
        (send-line (clone decision-notice))
        "rmap item show " review-item " --json\n"
        "rmap review start " review-item " --session "
@@ -313,6 +313,12 @@
 (defn poll-limit-line ()
   (send-line (str "next: -: `rmap next --roadmap fake-roadmap --json` "
                   "exited 7: poll limit")))
+
+(defn start-line (roadmap)
+  (str (list-line roadmap) (next-line roadmap)))
+
+(defn list-line (roadmap)
+  (str "rmap item list --roadmap " roadmap " --json\n"))
 
 (defn next-line (roadmap)
   (str "rmap next --roadmap " roadmap " --json\n"))

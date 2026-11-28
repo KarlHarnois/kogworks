@@ -1,27 +1,26 @@
 (module
   "Holds the controller log examples that docs/controller-log.md shows.")
 
-(use controller/log ->alive-line ->banner-line
-                    ->controller-failure ->item-line
-                    ->log-settings ->pr-summary
-                    ->running-item ->stop-line color-mode
-                    log-status output-target render-alive
-                    render-banner render-controller-failure
-                    render-item render-stop render-sub-lines
-                    running-status stage-state sub-line
-                    track)
+(use controller/log ->alive-line ->controller-failure
+                    ->item-line ->log-settings ->pr-summary
+                    ->running-item ->start-line ->stop-line
+                    color-mode log-status output-target
+                    render-alive render-controller-failure
+                    render-item render-start render-stop
+                    render-sub-lines running-status
+                    stage-state sub-line track)
 
-(export banner-actual banner-expected bdc-building
-        changes-118-item controller-actual
+(export bdc-building changes-118-item controller-actual
         controller-expected failed-command-actual
         failure-actual failure-expected main-actual
         main-expected narrow-actual narrow-expected
         review-actual review-expected settings-118
         settings-256 settings-80 settings-stream
-        settings-truecolor stream-error-actual
-        stream-stop-actual stream-stop-expected
-        stream-sub-lines-actual stream-sub-lines-expected
-        stream-title-actual stream-title-expected)
+        settings-truecolor start-actual start-expected
+        stream-error-actual stream-stop-actual
+        stream-stop-expected stream-sub-lines-actual
+        stream-sub-lines-expected stream-title-actual
+        stream-title-expected)
 
 (def disarm-title
   (str "Disarm auto-merge when the approved head changes or the item closes before the merge"))
@@ -44,8 +43,8 @@
 (def stream-title-text
   (str "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"))
 
-(def banner-expected
-  (vec "14:02:11  ● kogworks  roadmap factory-mvp · manager kw-manager · poll 30s"))
+(def start-expected
+  (vec "14:02:11  ● controller started  factory-mvp · manager kw-manager · 3 running"))
 
 (def main-expected
   (vec
@@ -154,8 +153,8 @@
 (def stream-title-expected
   (vec "16:00:00  rm-0001  build ▸ review ○ merge ○  building     abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmno…"))
 
-(defn banner-actual ()
-  (render-banner (settings-118) (banner-of)))
+(defn start-actual ()
+  (render-start (settings-118) (start-of)))
 
 (defn changes-118-item () (bdc-changes))
 
@@ -270,11 +269,11 @@
                   :target output-target/stream
                   :remote none))
 
-(defn banner-of ()
-  (->banner-line :time (str "14:02:11")
-                 :roadmap (str "factory-mvp")
-                 :manager (some (str "kw-manager"))
-                 :poll-seconds 30))
+(defn start-of ()
+  (->start-line :time (str "14:02:11")
+                :roadmap (str "factory-mvp")
+                :manager (some (str "kw-manager"))
+                :running 3))
 
 (defn bdc-changes ()
   (item-line-of "14:09:12" "rm-8bdc"

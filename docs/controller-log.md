@@ -15,7 +15,7 @@ This document specifies what `kogworks controller` prints while it runs. The log
 At 118 columns:
 
 ```
-14:02:11  ● kogworks  roadmap factory-mvp · manager kw-manager · poll 30s
+14:02:11  ● controller started  factory-mvp · manager kw-manager · 3 running
 
 14:02:12  rm-8bdc  build ▸ review ○ merge ○  building     Disarm auto-merge when the approved head changes or the ite…
 14:02:13  rm-35cb  build ▸ review ○ merge ○  building     Add kogworks check and remove the module and format commands
@@ -64,7 +64,7 @@ Below 110 columns the track shows glyphs only:
 
 | Line | Shape |
 |---|---|
-| Banner | `time  ● kogworks  roadmap <name> · manager <session> · poll <n>s` |
+| Start | `time  ● controller started  <name> · manager <session> · <n> running` |
 | Item | `time  id  track  status  title` |
 | Sub-line | `├─ label  value`, indented under the item ID |
 | Alive | `time  · running <id> <status> <n>m, ... · <n> merged` |
@@ -73,7 +73,9 @@ Below 110 columns the track shows glyphs only:
 
 Columns are two spaces apart. The time is local wall-clock time as `HH:MM:SS`.
 
-When no manager is configured, the banner reads `no manager` in yellow in place of `manager <session>`.
+The start line is the first line of a run. `<n> running` is the count of the roadmap's items in the status `dispatched`, `reported`, `in_review`, `fixing` or `merging` when the controller starts, and prints even when it is 0.
+
+When no manager is configured, the start line reads `no manager` in yellow in place of `manager <session>`.
 
 ## Item line
 
@@ -259,12 +261,12 @@ Colors are fixed 24-bit values so that the terminal theme does not change them.
 |---|---|
 | the time at the start of any line | secondary |
 | the item ID on an item line | bold |
-| `kogworks` in the banner | bold |
-| `roadmap` and `manager` in the banner | secondary |
-| each `·` in the banner | secondary |
-| `poll <n>s` in the banner | secondary |
-| `no manager` in the banner | yellow |
-| the roadmap name and the manager session in the banner | default |
+| `manager` in the start line | secondary |
+| each `·` in the start line | secondary |
+| `●` in the start line | success |
+| `controller started` in the start line | bold |
+| `no manager` in the start line | yellow |
+| the roadmap name, the session and the count in the start line | default |
 | the tree glyphs `├─` and `╰─` | secondary |
 | the continuation glyph `│` | secondary |
 | `■` in the stop line | failure |
@@ -297,6 +299,7 @@ Rules:
 When stderr is a file or a pipe, each sub-line carries the item ID so that a search for the ID finds every line of that item:
 
 ```
+14:02:11  ● controller started  factory-mvp · manager kw-manager · 3 running
           rm-35cb  ├─ pr           #34  build-rm-35cb
           rm-35cb  ├─ disarmed     gh pr merge 34 --disable-auto
           rm-35cb  ├─ manager      message sent to kw-manager

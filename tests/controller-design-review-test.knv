@@ -117,13 +117,17 @@
 
 (defn design-sequence (root)
   (let (repo (unwrap-ok (absolute-path (as-str (str root "/repo")))))
-    (str (next-line)
+    (str (list-line)
+         (next-line)
          "rmap item show " design-item " --json\n"
          "rmap review start " design-item " --session "
          design-session "\n" "ringleader new --name "
          design-session " --repo " repo
          " --agent fake-design-agent" " --base-branch "
          design-branch " --prompt <filled>\n")))
+
+(defn list-line ()
+  (str "rmap item list --roadmap fake-roadmap --json\n"))
 
 (defn next-line ()
   (str "rmap next --roadmap fake-roadmap --json\n"))

@@ -112,8 +112,9 @@
     "      printf 'poll limit\\n' >&2\n" "      exit 7\n"
     "    fi\n" "    cat \"$root/next.json\"\n" "    ;;\n"
     "  ready) cat \"$root/ready.json\" ;;\n" "  item)\n"
-    "    case \"$2\" in\n" "      show)\n"
-    "        shows=0\n"
+    "    case \"$2\" in\n"
+    "      list) cat \"$root/items.json\" ;;\n"
+    "      show)\n" "        shows=0\n"
     "        if [ -f \"$root/show-count\" ]; then\n"
     "          shows=$(cat \"$root/show-count\")\n"
     "        fi\n" "        shows=$((shows + 1))\n"
@@ -336,6 +337,7 @@
   :next-json string
   :next-signal string
   :ready-json string
+  :items-json string
   :item-json string
   :item-later-json string
   :stop-after int
@@ -395,6 +397,7 @@
   (->fake-settings :next-json next-json
                    :next-signal (str)
                    :ready-json ready-json
+                   :items-json (str "{\"items\":[]}")
                    :item-json (clone dispatch-item-json)
                    :item-later-json (str)
                    :stop-after 0
@@ -615,6 +618,8 @@
                           (as-str (:next-json settings)))
             _ (write-text (as-str (str root "/ready.json"))
                           (as-str (:ready-json settings)))
+            _ (write-text (as-str (str root "/items.json"))
+                          (as-str (:items-json settings)))
             _ (write-text (as-str (str root "/item.json"))
                           (as-str (:item-json settings)))
             _ (write-text (as-str (str root "/view.json"))

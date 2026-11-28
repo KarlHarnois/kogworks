@@ -1,13 +1,12 @@
-(use controller/log ->banner-line ->item-line ->log-settings
-                    ->pr-summary ->running-item ->stop-line
+(use controller/log ->item-line ->log-settings ->pr-summary
+                    ->running-item ->start-line ->stop-line
                     color-mode display-width log-status
-                    output-target render-banner render-item
+                    output-target render-item render-start
                     render-stop render-sub-lines
                     running-status stage-state sub-line
                     track)
 
-(use fixtures/log-fixture banner-actual banner-expected
-                          bdc-building changes-118-item
+(use fixtures/log-fixture bdc-building changes-118-item
                           controller-actual
                           controller-expected
                           failed-command-actual
@@ -17,6 +16,7 @@
                           review-actual review-expected
                           settings-118 settings-256
                           settings-80 settings-truecolor
+                          start-actual start-expected
                           stream-error-actual
                           stream-stop-actual
                           stream-stop-expected
@@ -82,8 +82,14 @@
                   :remote (some (str
                                   "https://github.com/KarlHarnois/kogworks"))))
 
-(deftest renders-the-banner-example
-  (assert (same-lines? (banner-actual) banner-expected)))
+(defn start-line-with (manager running)
+  (->start-line :time (str "14:02:11")
+                :roadmap (str "factory-mvp")
+                :manager manager
+                :running running))
+
+(deftest renders-the-start-example
+  (assert (same-lines? (start-actual) start-expected)))
 
 (deftest renders-the-main-example-at-118-columns
   (assert (same-lines? (main-actual) main-expected)))
@@ -225,16 +231,48 @@
     (assert (contains? (as-str text)
                        (as-str (str "#12"))))))
 
-(deftest shows-no-manager-when-none-is-configured
-  (let (banner (->banner-line :time (str "14:02:11")
-                              :roadmap (str "factory-mvp")
-                              :manager none
-                              :poll-seconds 30))
-    (assert (same-lines? (render-banner (settings-118) banner)
-                         (vec (str "14:02:11  ● kogworks  roadmap factory-mvp"
-                                   " · no manager · poll 30s"))))
-    (assert (contains? (join (render-banner (settings-truecolor) banner) "\n")
-                       (as-str (str "\u{1b}[38;2;224;176;92mno manager\u{1b}[0m"))))))
+(deftest compares-the-start-line-with-a-manager
+  (let (line (start-line-with (some (str "kw-manager")) 3)
+        plain (join (render-start (settings-118) line) "\n")
+        colored (join (render-start (settings-truecolor) line) "\n"))
+    (assert (= plain
+               (str "14:02:11  ● controller started  factory-mvp"
+                    " · manager kw-manager · 3 running")))
+    (assert (not (contains? plain "\u{1b}")))
+    (assert (contains? colored
+                       (as-str (str
+                                 "\u{1b}[38;2;122;127;135m14:02:11\u{1b}[0m"))))
+    (assert (contains? colored
+                       (as-str (str "\u{1b}[38;2;91;208;138m●\u{1b}[0m"))))
+    (assert (contains? colored
+                       (as-str (str "\u{1b}[1mcontroller started\u{1b}[0m"))))
+    (assert (contains? colored
+                       (as-str (str
+                                 "\u{1b}[38;2;122;127;135mmanager\u{1b}[0m"))))
+    (assert (contains? colored
+                       (as-str (str "\u{1b}[38;2;122;127;135m·\u{1b}[0m"))))
+    (assert (balanced-spans? colored))))
+
+(deftest compares-the-start-line-with-no-manager
+  (let (line (start-line-with none 3)
+        plain (join (render-start (settings-118) line) "\n")
+        colored (join (render-start (settings-truecolor) line) "\n"))
+    (assert (= plain
+               (str "14:02:11  ● controller started  factory-mvp"
+                    " · no manager · 3 running")))
+    (assert (contains? colored
+                       (as-str (str "\u{1b}[38;2;224;176;92mno manager\u{1b}[0m"))))
+    (assert (balanced-spans? colored))))
+
+(deftest compares-the-start-line-with-no-running-items
+  (let (line (start-line-with (some (str "kw-manager")) 0)
+        plain (join (render-start (settings-118) line) "\n")
+        colored (join (render-start (settings-truecolor) line) "\n"))
+    (assert (= plain
+               (str "14:02:11  ● controller started  factory-mvp"
+                    " · manager kw-manager · 0 running")))
+    (assert (contains? colored "0 running"))
+    (assert (balanced-spans? colored))))
 
 (deftest measures-display-columns
   (for-each (vec (str "abc")
@@ -350,11 +388,11 @@
         success "\u{1b}[38;2;91;208;138m"
         failure "\u{1b}[38;2;242;95;92m"
         outcome "\u{1b}[38;2;224;176;92m"
-        banner (render-banner (settings-truecolor)
-                              (->banner-line :time (str "14:02:11")
-                                             :roadmap (str "factory-mvp")
-                                             :manager (some (str "kw-manager"))
-                                             :poll-seconds 30))
+        start (render-start (settings-truecolor)
+                            (->start-line :time (str "14:02:11")
+                                          :roadmap (str "factory-mvp")
+                                          :manager (some (str "kw-manager"))
+                                          :running 3))
         item (render-item (settings-truecolor) (changes-118-item))
         stop (render-stop (settings-truecolor)
                           (->stop-line
@@ -368,14 +406,14 @@
                                             :minutes 4))
                             :rerun (str "kogworks controller --repo . --poll 30"))))
     (assert (same-lines?
-              banner
-              (vec (str secondary "14:02:11" reset "  ● "
-                        bold "kogworks" reset "  " secondary
-                        "roadmap" reset " factory-mvp "
-                        secondary "·" reset " " secondary
-                        "manager" reset " kw-manager "
-                        secondary "·" reset " " secondary
-                        "poll 30s" reset))))
+              start
+              (vec (str secondary "14:02:11" reset "  "
+                        success "●" reset " " bold
+                        "controller started" reset "  "
+                        "factory-mvp " secondary "·" reset
+                        " " secondary "manager" reset
+                        " kw-manager " secondary "·" reset
+                        " " "3 running"))))
     (assert (same-lines?
               item
               (vec (str secondary "14:09:12" reset "  " bold
@@ -415,7 +453,7 @@
                   secondary "rerun" reset "        " bold
                   "kogworks controller --repo . --poll 30"
                   reset))))
-    (assert (balanced-spans? (join banner "\n")))
+    (assert (balanced-spans? (join start "\n")))
     (assert (balanced-spans? (join item "\n")))
     (assert (balanced-spans? (join stop "\n")))))
 

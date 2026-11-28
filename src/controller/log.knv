@@ -1,33 +1,32 @@
 (module
   "Renders the controller log lines that docs/controller-log.md specifies.")
 
-(use controller/log-model ->alive-line ->banner-line
-                          ->controller-failure ->item-line
-                          ->log-settings ->pr-summary
-                          ->running-item ->stop-line
-                          alive-line banner-line
-                          controller-failure item-line
-                          log-settings log-status
+(use controller/log-model ->alive-line ->controller-failure
+                          ->item-line ->log-settings
+                          ->pr-summary ->running-item
+                          ->start-line ->stop-line
+                          alive-line controller-failure
+                          item-line log-settings log-status
                           output-target pr-summary
                           running-item running-status
-                          stage-state stop-line sub-line
-                          track)
+                          stage-state start-line stop-line
+                          sub-line track)
 
 (use controller/log-palette color-mode text-style)
 
-(use controller/log-render render-alive render-banner
+(use controller/log-render render-alive
                            render-controller-failure
-                           render-item render-stop
-                           render-sub-lines)
+                           render-item render-start
+                           render-stop render-sub-lines)
 
 (use controller/log-width display-width)
 
-(export ->alive-line ->banner-line ->controller-failure
-        ->item-line ->log-settings ->pr-summary
-        ->running-item ->stop-line alive-line banner-line
-        color-mode controller-failure display-width
-        item-line log-settings log-status output-target
-        pr-summary render-alive render-banner
-        render-controller-failure render-item render-stop
-        render-sub-lines running-item running-status
-        stage-state stop-line sub-line text-style track)
+(export ->alive-line ->controller-failure ->item-line
+        ->log-settings ->pr-summary ->running-item
+        ->start-line ->stop-line alive-line color-mode
+        controller-failure display-width item-line
+        log-settings log-status output-target pr-summary
+        render-alive render-controller-failure render-item
+        render-start render-stop render-sub-lines
+        running-item running-status stage-state start-line
+        stop-line sub-line text-style track)
