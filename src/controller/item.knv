@@ -7,8 +7,9 @@
 
 (use controller/json json json-array json-field json-text)
 
-(export ->item-detail criteria->text item-detail item-error
-        item-error->message parse-item-detail)
+(export ->item-detail criteria->text design-approval
+        item-detail item-error item-error->message
+        parse-item-detail)
 
 (defstruct item-detail
   :pr string
@@ -16,7 +17,12 @@
   :branch string
   :criteria (vec string)
   :title string
-  :kind string)
+  :kind string
+  :design-approval design-approval)
+
+(defenum design-approval
+  design-approved
+  design-missing)
 
 (defenum item-error
   (field field-error)
@@ -46,11 +52,12 @@
             branch (required-text session "branch" "item.session.branch")
             criteria (required-criteria item))
     (ok (->item-detail :pr pr
-                       :head head
+                       :head (clone head)
                        :branch branch
                        :criteria criteria
                        :title (optional-text item "title" "")
-                       :kind (optional-text item "kind" "build")))))
+                       :kind (optional-text item "kind" "build")
+                       :design-approval (design-approval-of pull head)))))
 
 (type criteria->text
   (fn ((ref (vec string))) string))
@@ -97,3 +104,35 @@
 
 (defn with-text! (texts text)
   (do (push! texts text) texts))
+
+(defn design-approval-of (pull head)
+  (match (json-field pull "reviews")
+    (none design-approval/design-missing)
+    ((some value) (reviews-design-approval value head))))
+
+(defn reviews-design-approval (value head)
+  (match (json-array value)
+    (none design-approval/design-missing)
+    ((some reviews) (design-approval-among reviews head 0))))
+
+(defn design-approval-among (reviews head index)
+  (cond
+    ((>= index (len reviews)) design-approval/design-missing)
+    ((approving-design-review? (at reviews index) head)
+     design-approval/design-approved)
+    (else (design-approval-among reviews head (inc index)))))
+
+(defn approving-design-review? (review head)
+  (and (review-field-is? review "kind" (str "design"))
+       (review-field-is? review "verdict" (str "approve"))
+       (review-field-is? review "head" head)))
+
+(defn review-field-is? (review key expected)
+  (match (json-field review key)
+    (none false)
+    ((some value) (text-is? value expected))))
+
+(defn text-is? (value expected)
+  (match (json-text value)
+    ((some text) (= text (as-str expected)))
+    (none false)))

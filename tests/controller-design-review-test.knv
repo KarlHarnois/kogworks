@@ -1,0 +1,311 @@
+(use fixtures/controller-fixture absolute-path
+                                 default-settings exit-code
+                                 prepare-design-repo
+                                 read-text run-controller
+                                 stderr-text write-fakes)
+
+(def design-next
+  (str "{\"next\":[{\"item\":\"" design-item
+       "\",\"actions\":["
+       "{\"action\":\"merge\",\"actor\":\"controller\"}]}]}"))
+
+(def design-item-json
+  (str "{\"item\":{\"id\":\"" design-item "\","
+       "\"title\":\"Merge after the design review\","
+       "\"kind\":\"build\"," "\"status\":\"in_review\","
+       "\"criteria\":[\"c1\"]," "\"session\":{\"name\":\""
+       design-branch "\",\"branch\":\"" design-branch
+       "\"}}," "\"pull_request\":{\"number\":12,"
+       "\"head\":\"" design-head "\"," "\"approved\":true,"
+       "\"approval\":{\"head\":\"" design-head "\"}}}"))
+
+(def design-approved-item-json
+  (str "{\"item\":{\"id\":\"" design-item "\","
+       "\"title\":\"Merge after the design review\","
+       "\"kind\":\"build\"," "\"status\":\"in_review\","
+       "\"criteria\":[\"c1\"]," "\"session\":{\"name\":\""
+       design-branch "\",\"branch\":\"" design-branch
+       "\"}}," "\"pull_request\":{\"number\":12,"
+       "\"head\":\"" design-head "\"," "\"approved\":true,"
+       "\"approval\":{\"head\":\"" design-head "\"},"
+       "\"reviews\":["
+       "{\"kind\":\"behavior\",\"verdict\":\"approve\",\"head\":\""
+       design-head "\"},"
+       "{\"kind\":\"design\",\"verdict\":\"approve\",\"head\":\""
+       design-head "\"}]}}"))
+
+(def merged-view
+  (str "{\"state\":\"MERGED\",\"mergedAt\":\"2026-11-26T00:00:00Z\","
+       "\"headRefOid\":\"" design-head "\"}"))
+
+(def design-session (str "design-rm-0009-abcdef0"))
+
+(def design-item (str "rm-0009"))
+
+(def design-branch (str "build-rm-0009"))
+
+(def design-head
+  (str "abcdef0123456789abcdef0123456789abcdef01"))
+
+(def run-program
+  (rust "{{
+    std::process::Command::new({0})
+      .args({1}.iter().map(|argument| argument.as_str()))
+      .current_dir({2})
+      .output()
+      .map_err(|error| error.to_string())
+  }}"
+    (fn ((ref str) (ref (vec string)) (ref str))
+      (result process-output string))))
+
+(def process-ok?
+  (rust "{0}.status.success()"
+    (fn ((ref process-output)) bool)))
+
+(def process-stdout
+  (rust "String::from_utf8_lossy({0}.stdout.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def process-stderr
+  (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
+    (fn ((ref process-output)) string)))
+
+(def remove-file
+  (rust "{{
+    match std::fs::remove_file({0}) {{
+      Ok(_) => Ok(()),
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+      Err(error) => Err(error.to_string()),
+    }}
+  }}"
+    (fn ((ref str)) (result unit string))))
+
+(deftype process-output (rust "std::process::Output"))
+
+(defn design-settings ()
+  (assoc (default-settings (clone design-next)
+                           (str "{\"ready\":[]}"))
+         :item-json (clone design-item-json)
+         :slug (str "fake-owner/fake-repo")
+         :allow-auto-merge (str "true")
+         :required-checks (str "1")
+         :view-json (clone merged-view)))
+
+(defn setup (name settings)
+  (let (root (str "target/knave/controller-tests/" name))
+    (match (prepare-design-repo (as-str root))
+      ((err reason) (err reason))
+      ((ok _)
+       (match (write-fakes (as-str root) settings)
+         ((err reason) (err reason))
+         ((ok _) (ok root)))))))
+
+(defn run (root)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str (str root "/repo"))
+                  (vec (str "--once")
+                       (str "--merge-retry-delay")
+                       (str "0"))))
+
+(defn sequence-text (root)
+  (unwrap-ok (read-text (as-str (str root "/sequence")))))
+
+(defn prompt-text (root)
+  (unwrap-ok (read-text (as-str (str root "/prompt")))))
+
+(defn design-sequence (root)
+  (let (repo (unwrap-ok (absolute-path (as-str (str root "/repo")))))
+    (str (next-line)
+         "rmap item show " design-item " --json\n"
+         "rmap review start " design-item " --session "
+         design-session "\n" "ringleader new --name "
+         design-session " --repo " repo
+         " --agent fake-design-agent" " --base-branch "
+         design-branch " --prompt <filled>\n")))
+
+(defn next-line ()
+  (str "rmap next --roadmap fake-roadmap --json\n"))
+
+(defn run-command (dir program args)
+  (match (run-program (as-str program) args (as-str dir))
+    ((err reason) (do (eprintln reason) (assert false)))
+    ((ok outcome)
+     (do
+       (if (process-ok? outcome)
+         (do)
+         (eprintln (str program " failed: " (process-stderr outcome))))
+       (assert (process-ok? outcome))))))
+
+(defn run-capturing (dir program args)
+  (match (run-program (as-str program) args (as-str dir))
+    ((err reason) (do (eprintln reason) (assert false) (str)))
+    ((ok outcome)
+     (do
+       (assert (process-ok? outcome))
+       (clone (process-stdout outcome))))))
+
+(defn added-id (text)
+  (let (parts (collect (split (as-str (first-line text)) " ")))
+    (str (deref (at parts 1)))))
+
+(defn first-line (text)
+  (match (first (collect (lines (as-str text))))
+    ((some line) (str line))
+    (none (str text))))
+
+(defn first-controller-run (root repo)
+  (run-controller (as-str (str root "/bin"))
+                  (as-str repo)
+                  (vec (str "--once"))))
+
+(defn design-reviewer-commands (id)
+  (vec (str "pr")
+       (str "review")
+       (clone id)
+       (str "--verdict")
+       (str "approve")
+       (str "--kind")
+       (str "design")
+       (str "--head")
+       (clone design-head)
+       (str "--reviewer")
+       (str "design-" (clone id) "-abcdef0")))
+
+(defn behavior-approve-commands (id)
+  (vec (str "pr")
+       (str "review")
+       (clone id)
+       (str "--verdict")
+       (str "approve")
+       (str "--kind")
+       (str "behavior")
+       (str "--head")
+       (clone design-head)
+       (str "--reviewer")
+       (str "review-beh")))
+
+(deftest starts-a-design-reviewer-before-merging
+  (let (root (unwrap-ok (setup "design-review" (design-settings))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root) (design-sequence root)))
+      (assert (not (contains? (sequence-text root) "gh pr merge")))
+      (assert (contains? (stderr-text output) "reviewing"))
+      (assert (contains? (prompt-text root)
+                         (as-str (str "design item=" design-item))))
+      (assert (contains? (prompt-text root)
+                         (as-str (str "session=" design-session))))
+      (assert (contains? (prompt-text root) "skill=fake-design-skill")))))
+
+(deftest merges-after-a-design-approve
+  (let (root (unwrap-ok (setup "design-merge"
+                               (assoc (design-settings)
+                                      :item-json (clone design-approved-item-json)))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 0))
+      (assert (contains? (sequence-text root) "gh pr merge"))
+      (assert (not (contains? (sequence-text root)
+                              "ringleader new --name design"))))))
+
+(deftest holds-the-merge-until-a-design-approve
+  (let (root (str "target/knave/controller-tests/design-ledger")
+        repo (str root "/repo"))
+    (unwrap-ok (prepare-design-repo (as-str root)))
+    (unwrap-ok (write-fakes (as-str root) (design-settings)))
+    (unwrap-ok (remove-file (as-str (str root "/bin/rmap"))))
+    (unwrap-ok (remove-file (as-str (str root "/bin/git"))))
+    (run-command repo
+                 (str "git")
+                 (vec (str "init") (str "-q")))
+    (run-command repo
+                 (str "git")
+                 (vec (str "remote")
+                      (str "add")
+                      (str "origin")
+                      (str "git@github.com:fake-owner/fake-repo.git")))
+    (run-command repo
+                 (str "git")
+                 (vec (str "symbolic-ref")
+                      (str "refs/remotes/origin/HEAD")
+                      (str "refs/remotes/origin/main")))
+    (run-command repo
+                 (str "rmap")
+                 (vec (str "init")))
+    (run-command repo
+                 (str "rmap")
+                 (vec (str "new")
+                      (str "fake-roadmap")
+                      (str "--manager")
+                      (str "fake-manager")))
+    (let (added (run-capturing repo
+                               (str "rmap")
+                               (vec (str "item")
+                                    (str "add")
+                                    (str "--roadmap")
+                                    (str "fake-roadmap")
+                                    (str "--title")
+                                    (str "Design review")
+                                    (str "--description")
+                                    (str "d")
+                                    (str "--criterion")
+                                    (str "c1")
+                                    (str "--kind")
+                                    (str "build"))))
+      (let (id (added-id added)
+            worker (str "build-" id)
+            design (str "design-" id "-abcdef0"))
+        (run-command repo
+                     (str "rmap")
+                     (vec (str "item")
+                          (str "claim")
+                          (clone id)
+                          (str "--session")
+                          (clone worker)
+                          (str "--branch")
+                          (clone worker)))
+        (run-command repo
+                     (str "rmap")
+                     (vec (str "report")
+                          (clone id)
+                          (str "--session")
+                          (clone worker)
+                          (str "--kind")
+                          (str "done")
+                          (str "--pr")
+                          (str "12")
+                          (str "--head")
+                          (clone design-head)
+                          (str "--text")
+                          (str "DONE")))
+        (run-command repo
+                     (str "rmap")
+                     (vec (str "review")
+                          (str "start")
+                          (clone id)
+                          (str "--session")
+                          (str "review-beh")))
+        (run-command repo
+                     (str "rmap")
+                     (vec (str "item")
+                          (str "verify")
+                          (clone id)
+                          (str "1")
+                          (str "--met")
+                          (str "--reviewer")
+                          (str "review-beh")
+                          (str "--head")
+                          (clone design-head)))
+        (run-command repo
+                     (str "rmap")
+                     (behavior-approve-commands (clone id)))
+        (let (first (unwrap-ok (first-controller-run root (clone repo))))
+          (assert (= (exit-code first) 0))
+          (assert (contains? (sequence-text root)
+                             (as-str (str "ringleader new --name " design))))
+          (assert (not (contains? (sequence-text root) "gh pr merge"))))
+        (run-command repo
+                     (str "rmap")
+                     (design-reviewer-commands (clone id)))
+        (let (second (unwrap-ok (first-controller-run root (clone repo))))
+          (assert (= (exit-code second) 0))
+          (assert (contains? (sequence-text root) "gh pr merge")))))))

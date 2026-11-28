@@ -37,7 +37,9 @@
                         command-detail execute successful?)
 
 (use controller/remote read-remote)
-(use controller/review review-mode start-review)
+
+(use controller/review design-review-gate review-mode
+                       start-review)
 
 (use controller/rules action-kind action-kind->text
                       first-controller-action first-dispatch
@@ -322,6 +324,24 @@
     (_ (out-of-scope-report config manager action))))
 
 (defn start-merge-report (repo config manager settings action)
+  (match (:design-reviewer config)
+    (none (merge-report repo config manager settings action))
+    ((some role)
+     (design-gated-merge repo config manager settings action
+                         role))))
+
+(defn design-gated-merge (repo config manager settings action role)
+  (match (design-review-gate repo config (:item action) role)
+    ((err failure)
+     (err (->failure-report :manager manager :error failure)))
+    ((ok none)
+     (merge-report repo config manager settings action))
+    ((ok (some started))
+     (started-review-progress settings
+                              (:item action)
+                              started review-mode/design))))
+
+(defn merge-report (repo config manager settings action)
   (let (merge-wait (assoc (clone (:merge-wait settings))
                           :report print-merge-line
                           :report-data (->merge-report :remote (clone (:remote settings))
@@ -336,23 +356,29 @@
 (defn start-review-report (repo config manager settings action mode)
   (match (start-review repo config (:item action) mode)
     ((ok result)
-     (do
-       (print-action (:remote settings)
-                     (review-log-item (clone (:item action))
-                                      (clone (:title (:detail result)))
-                                      (clone (:kind (:detail result)))
-                                      (clone (:branch (:detail result)))
-                                      (clone (:pr (:detail result)))
-                                      (clone (:head (:detail result))))
-                     (review-log-action mode))
-       (ok pass-outcome/dispatched)))
+     (started-review-progress settings
+                              (:item action)
+                              result mode))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
+
+(defn started-review-progress (settings item result mode)
+  (do
+    (print-action (:remote settings)
+                  (review-log-item (clone item)
+                                   (clone (:title (:detail result)))
+                                   (clone (:kind (:detail result)))
+                                   (clone (:branch (:detail result)))
+                                   (clone (:pr (:detail result)))
+                                   (clone (:head (:detail result))))
+                  (review-log-action mode))
+    (ok pass-outcome/dispatched)))
 
 (defn review-log-action (mode)
   (match mode
     (review-mode/review log-action/review)
-    (review-mode/verify log-action/verify)))
+    (review-mode/verify log-action/verify)
+    (review-mode/design log-action/review)))
 
 (defn out-of-scope-report (config manager action)
   (err (->failure-report :manager manager
