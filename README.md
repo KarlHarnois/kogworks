@@ -4,7 +4,15 @@ Kogworks synthesizes a factory file for a repository. Its controller advances th
 
 ## Install
 
-TBD
+Enable [flakes](https://nixos.wiki/wiki/Flakes) in [Nix](https://nixos.org/download/), then run:
+
+```sh
+nix profile add github:KarlHarnois/kogworks
+```
+
+Without Nix, install [Rust](https://rustup.rs) and [knave](https://crates.io/crates/knave) 0.22.0, then run `knave build`. The build writes the binary to `target/knave/kogworks/kogworks`.
+
+The `controller` command runs `rmap`, `ringleader`, `gh` and `git` from the `PATH`, so install them first. Kogworks does not install them.
 
 ## Usage
 
