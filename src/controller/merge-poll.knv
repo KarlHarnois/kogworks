@@ -28,8 +28,9 @@
                        restore-stop-handlers)
 
 (export auto-merge-state close-item disarm-and-stop
-        head-change-error item-fixing-error poll-merge
-        read-poll-state read-resume-state)
+        head-change-error item-fixing-error poll-armed-merge
+        poll-merge read-poll-state read-resume-state
+        stop-on-signal)
 
 (def already-disarmed-message
   (str "Pull request is not in auto merge state"))
@@ -49,11 +50,22 @@
   waiting)
 
 (defn poll-merge (repo item target settings)
+  (install-stop-handlers)
+  (poll-armed-merge repo item target settings))
+
+(defn poll-armed-merge (repo item target settings)
   (let (start (now))
-    (install-stop-handlers)
     (let (outcome (poll-iteration repo item target settings start))
       (restore-stop-handlers)
       outcome)))
+
+(defn stop-on-signal (repo item target signal)
+  (let (pull-request (clone (:pull-request target)))
+    (err (controller-error/signal-stop
+           (->signal-stop-report :item (clone item)
+                                 :pull-request-number (clone pull-request)
+                                 :signal signal
+                                 :disarm (disarm-once repo pull-request))))))
 
 (defn read-poll-state (repo settings item target)
   (let (command (view-command (:pull-request target))
@@ -137,14 +149,6 @@
      (disarm-and-stop repo settings item target failure))
     ((ok state)
      (handle-poll repo item target settings start state))))
-
-(defn stop-on-signal (repo item target signal)
-  (let (pull-request (clone (:pull-request target)))
-    (err (controller-error/signal-stop
-           (->signal-stop-report :item (clone item)
-                                 :pull-request-number (clone pull-request)
-                                 :signal signal
-                                 :disarm (disarm-once repo pull-request))))))
 
 (defn disarm-once (repo pull-request)
   (let (command (disarm-command pull-request)

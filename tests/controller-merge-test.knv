@@ -981,3 +981,51 @@
       (assert (= (stderr-text output)
                  (signal-stop-line (str "SIGINT") (str "is disarmed"))))
       (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest disarms-on-sigint-during-arming
+  (let (root (unwrap-ok (setup "merge-signal-arming"
+                               (assoc (merge-settings)
+                                      :merge-signal (str "INT")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (merge-preface) (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "pr view")))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest disarms-on-sigterm-while-re-arming-after-a-conflict
+  (let (root (unwrap-ok (setup "merge-signal-re-arming"
+                               (assoc (merge-settings)
+                                      :merge-exit 1
+                                      :merge-error (clone conflict-error)
+                                      :view-json (clone open-view)
+                                      :later-merge-signal (str "TERM")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (merge-preface)
+                      (update-branch-line)
+                      (view-line)
+                      (merge-line)
+                      (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGTERM") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "item close")))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
+
+(deftest reports-the-signal-when-the-arming-also-fails
+  (let (root (unwrap-ok (setup "merge-signal-arming-failure"
+                               (assoc (merge-settings)
+                                      :merge-signal (str "INT")
+                                      :merge-exit 3
+                                      :merge-error (str "merge refused")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root)
+                 (str (merge-preface) (disarm-line))))
+      (assert (= (stderr-text output)
+                 (signal-stop-line (str "SIGINT") (str "is disarmed"))))
+      (assert (not (contains? (sequence-text root) "ringleader send"))))))
