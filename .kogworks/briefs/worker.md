@@ -12,9 +12,14 @@
 1. If the `coordinating-through-rmap` skill is available, invoke it.
 2. If the `coordinating-through-rmap` skill is unavailable, follow the rmap commands in this brief.
 3. Read the description and acceptance criteria with `rmap item show {{item}}`.
-4. Invoke the `{{skill}}` skill.
-5. Invoke the `writing-knave` skill.
-6. Read `AGENTS.md` and `.agents/skills/writing-knave/SKILL.md`.
+4. Invoke the `{{skill}}` skill. Give it these inputs:
+   - `TASK`: the item description and acceptance criteria.
+   - `BRANCH`: `{{branch}}`.
+   - `BASE`: `{{base}}`.
+   - `MODE`: `headless`.
+   - `PULL_REQUEST`: `brief`.
+   - `STANDARD_SKILLS`: `writing-knave,writing-clean-code`.
+5. Read `AGENTS.md` and `.agents/skills/writing-knave/SKILL.md`.
 
 ## Work
 
@@ -23,6 +28,8 @@
 **Use `knave-commandant` for command-line work.** NEVER hand-roll argument parsing.
 
 **Follow the gate in `AGENTS.md`.** If a command fails, fix the cause and rerun it at most twice. If the command still fails, record a question report and stop.
+
+**If the factory worker skill returns `blocked`, `agent failed` or `reviewer failed`, record a question report and stop.**
 
 ## Finish
 
