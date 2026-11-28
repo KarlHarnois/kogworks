@@ -30,7 +30,11 @@ Commands:
               after such a merge. It has no automatic restart, supervisor or
               backoff loop. The pilot pins rmap to a build that predates the
               design approval requirement, so a behavior approve alone merges
-              and the controller starts no design reviewer.
+              and the controller starts no design reviewer. A factory that names
+              a `design-reviewer` role starts a design reviewer once rmap lists
+              merge and no design approve stands on the current head, and merges
+              only once that approve is on the head. A factory without that role
+              merges on the behavior review alone.
   apply       Sets a governed repository's roadmap max active from its factory.
   help        Print the help of a command
 
