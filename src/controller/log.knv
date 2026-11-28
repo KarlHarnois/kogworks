@@ -18,6 +18,18 @@
         render-sub-lines running-item running-status
         stage-state stop-line sub-line text-style track)
 
+(def status-column-width 11)
+
+(def label-column-width 12)
+
+(def value-column-offset 16)
+
+(def full-track-width 24)
+
+(def glyph-track-width 3)
+
+(def narrow-track-width 110)
+
 (defstruct alive-line
   :time string
   :running (vec running-item)
@@ -236,7 +248,7 @@
        " merged"))
 
 (defn item-prefix-width (item form)
-  (let (status-width (max 11
+  (let (status-width (max status-column-width
                           (display-width (as-str (status-text (:status
                                                                 item))))))
     (+ (display-width (as-str (:time item)))
@@ -250,7 +262,7 @@
   (let (text (status-text status))
     (str (styled settings (status-style status) (as-str text))
          (spaces (max 0
-                      (- 11 (display-width (as-str text))))))))
+                      (- status-column-width (display-width (as-str text))))))))
 
 (defn stop-sub-lines (stop)
   (loop (index 0
@@ -361,7 +373,9 @@
     (failed (str "failed"))))
 
 (defn track-cell-width (form)
-  (match form (full 24) (glyphs 3)))
+  (match form
+    (full full-track-width)
+    (glyphs glyph-track-width)))
 
 (defn track-form-of (settings)
   (match (:width settings)
@@ -369,13 +383,14 @@
     ((some width) (track-form-of-width width))))
 
 (defn track-form-of-width (width)
-  (if (< width 110) track-form/glyphs track-form/full))
+  (if (< width narrow-track-width)
+    track-form/glyphs track-form/full))
 
 (defn track-padding (form stages)
   (let (count (len stages))
     (match form
-      (full (spaces (- 24 (plain-track-width stages))))
-      (glyphs (spaces (- 3 count))))))
+      (full (spaces (- full-track-width (plain-track-width stages))))
+      (glyphs (spaces (- glyph-track-width count))))))
 
 (defn track-stages (track)
   (match track
@@ -461,7 +476,7 @@
 
 (defn label-cell (settings label)
   (str (styled settings text-style/secondary label)
-       (spaces (max 0 (- 12 (display-width label))))
+       (spaces (max 0 (- label-column-width (display-width label))))
        " "))
 
 (defn owner-prefix (settings owner)
@@ -526,7 +541,7 @@
 
 (defn sub-line-limit-at (width base)
   (some (max 1
-             (- width (+ (display-width base) 16)))))
+             (- width (+ (display-width base) value-column-offset)))))
 
 (defn tree-glyph (branch)
   (match branch (middle "├─ ") (last "╰─ ")))
@@ -534,9 +549,7 @@
 (defn continuation-prefix (base branch)
   (str base
        (continuation-marker branch)
-       (spaces (- (+ (display-width base) 16)
-                  (display-width base)
-                  1))))
+       (spaces (dec value-column-offset))))
 
 (defn running-status-text (status)
   (match status

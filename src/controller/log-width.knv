@@ -4,6 +4,8 @@
 (export append-lines display-width fitted-title push-line!
         spaces wrap-value)
 
+(def stream-title-width 120)
+
 (defenum word-fit
   (fits string)
   (overflow string))
@@ -20,7 +22,7 @@
 
 (defn title-limit (width prefix-width)
   (match width
-    (none 120)
+    (none stream-title-width)
     ((some columns) (max 0 (- columns prefix-width)))))
 
 (defn clean-title (title)
