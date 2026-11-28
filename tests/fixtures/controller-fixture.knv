@@ -199,10 +199,16 @@
     "        merges=$((merges + 1))\n"
     "        printf '%s' \"$merges\" > \"$root/merge-count\"\n"
     "        if [ \"$merges\" -ge 2 ]; then\n"
+    "          if [ -n \"[LATER_MERGE_SIGNAL]\" ]; then\n"
+    "            kill -s [LATER_MERGE_SIGNAL] \"$PPID\"\n"
+    "          fi\n"
     "          if [ [LATER_MERGE_EXIT] -ne 0 ]; then\n"
     "            printf '%s\\n' '[LATER_MERGE_ERROR]' >&2\n"
     "            exit [LATER_MERGE_EXIT]\n" "          fi\n"
     "        else\n"
+    "          if [ -n \"[MERGE_SIGNAL]\" ]; then\n"
+    "            kill -s [MERGE_SIGNAL] \"$PPID\"\n"
+    "          fi\n"
     "          if [ [MERGE_EXIT] -ne 0 ]; then\n"
     "            printf '%s\\n' '[MERGE_ERROR]' >&2\n"
     "            exit [MERGE_EXIT]\n" "          fi\n"
@@ -279,8 +285,10 @@
   :new-error string
   :merge-exit int
   :merge-error string
+  :merge-signal string
   :later-merge-exit int
   :later-merge-error string
+  :later-merge-signal string
   :direct-merge-exit int
   :direct-merge-error string
   :disarm-exit int
@@ -333,8 +341,10 @@
                    :new-error (str)
                    :merge-exit 0
                    :merge-error (str)
+                   :merge-signal (str)
                    :later-merge-exit 0
                    :later-merge-error (str)
+                   :later-merge-signal (str)
                    :direct-merge-exit 0
                    :direct-merge-error (str)
                    :disarm-exit 0
@@ -415,10 +425,14 @@
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")
                      (clone (:merge-error settings)))
+      (replace-token (str "[MERGE_SIGNAL]")
+                     (clone (:merge-signal settings)))
       (replace-token (str "[LATER_MERGE_EXIT]")
                      (str (:later-merge-exit settings)))
       (replace-token (str "[LATER_MERGE_ERROR]")
                      (clone (:later-merge-error settings)))
+      (replace-token (str "[LATER_MERGE_SIGNAL]")
+                     (clone (:later-merge-signal settings)))
       (replace-token (str "[DIRECT_MERGE_EXIT]")
                      (str (:direct-merge-exit settings)))
       (replace-token (str "[DIRECT_MERGE_ERROR]")

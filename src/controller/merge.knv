@@ -19,9 +19,10 @@
 
 (use controller/merge-poll auto-merge-state close-item
                            disarm-and-stop head-change-error
-                           item-fixing-error poll-merge
-                           read-poll-state
-                           read-resume-state)
+                           item-fixing-error
+                           poll-armed-merge poll-merge
+                           read-poll-state read-resume-state
+                           stop-on-signal)
 
 (use controller/merge-retry execute-github)
 
@@ -36,6 +37,10 @@
 (use controller/process command command-detail execute
                         successful?)
 
+(use controller/signal install-stop-handlers
+                       read-stop-signal
+                       restore-stop-handlers)
+
 (export ->merge-settings merge-settings start-merge)
 
 (def clean-status-message
@@ -46,6 +51,10 @@
   moved
   polling
   arming)
+
+(defenum arming-failure
+  recover
+  report)
 
 (defn start-merge (repo config settings item)
   (match (read-merge-target repo item)
@@ -192,13 +201,34 @@
         (err (merge-command-failure item command outcome))))))
 
 (defn enable-auto-merge (repo config settings item target)
-  (let (command (merge-command (:merge config) merge-mode/auto target))
-    (let (outcome (execute-github repo command
-                                  (:retry-delay-seconds settings)))
-      (if (successful? outcome)
-        (poll-merge repo item target settings)
-        (handle-merge-failure repo config settings item
-                              target command outcome)))))
+  (arm-auto-merge repo config settings item target
+                  (merge-command (:merge config) merge-mode/auto target)
+                  arming-failure/recover))
+
+(defn arm-auto-merge (repo config settings item target command recovery)
+  (install-stop-handlers)
+  (let (outcome (execute-github repo command
+                                (:retry-delay-seconds settings)))
+    (match (read-stop-signal)
+      ((some signal)
+       (let (result (stop-on-signal repo item target signal))
+         (restore-stop-handlers)
+         result))
+      (none (armed-result repo config settings item target
+                          command outcome recovery)))))
+
+(defn armed-result (repo config settings item target command outcome recovery)
+  (if (successful? outcome)
+    (poll-armed-merge repo item target settings)
+    (failed-arming repo config settings item target command
+                   outcome recovery)))
+
+(defn failed-arming (repo config settings item target command outcome recovery)
+  (restore-stop-handlers)
+  (match recovery
+    (recover (handle-merge-failure repo config settings item
+                                   target command outcome))
+    (report (err (merge-command-failure item command outcome)))))
 
 (defn handle-merge-failure (repo config settings item target command outcome)
   (if (clean-status-refusal? outcome)
@@ -260,12 +290,9 @@
       (err (merge-command-failure item command outcome)))))
 
 (defn retry-enable-auto-merge (repo config settings item target)
-  (let (command (merge-command (:merge config) merge-mode/auto target)
-        outcome (execute-github repo command
-                                (:retry-delay-seconds settings)))
-    (if (successful? outcome)
-      (poll-merge repo item target settings)
-      (err (merge-command-failure item command outcome)))))
+  (arm-auto-merge repo config settings item target
+                  (merge-command (:merge config) merge-mode/auto target)
+                  arming-failure/report))
 
 (defn rebase-fallback (repo item target outcome)
   (match (advance-to-fixing repo item)
