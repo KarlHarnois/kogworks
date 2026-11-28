@@ -3,6 +3,28 @@
 
 (export color-mode style-open text-style)
 
+(def basic-colors
+  (vec (->rgb :red 0 :green 0 :blue 0)
+       (->rgb :red 128 :green 0 :blue 0)
+       (->rgb :red 0 :green 128 :blue 0)
+       (->rgb :red 128 :green 128 :blue 0)
+       (->rgb :red 0 :green 0 :blue 128)
+       (->rgb :red 128 :green 0 :blue 128)
+       (->rgb :red 0 :green 128 :blue 128)
+       (->rgb :red 192 :green 192 :blue 192)
+       (->rgb :red 128 :green 128 :blue 128)
+       (->rgb :red 255 :green 0 :blue 0)
+       (->rgb :red 0 :green 255 :blue 0)
+       (->rgb :red 255 :green 255 :blue 0)
+       (->rgb :red 0 :green 0 :blue 255)
+       (->rgb :red 255 :green 0 :blue 255)
+       (->rgb :red 0 :green 255 :blue 255)
+       (->rgb :red 255 :green 255 :blue 255)))
+
+(def cube-levels (vec 0 95 135 175 215 255))
+
+(def palette (build-palette))
+
 (defstruct palette-color
   :code int
   :red int
@@ -36,27 +58,11 @@
   colors-256
   truecolor)
 
-(def basic-colors
-  (vec (->rgb :red 0 :green 0 :blue 0)
-       (->rgb :red 128 :green 0 :blue 0)
-       (->rgb :red 0 :green 128 :blue 0)
-       (->rgb :red 128 :green 128 :blue 0)
-       (->rgb :red 0 :green 0 :blue 128)
-       (->rgb :red 128 :green 0 :blue 128)
-       (->rgb :red 0 :green 128 :blue 128)
-       (->rgb :red 192 :green 192 :blue 192)
-       (->rgb :red 128 :green 128 :blue 128)
-       (->rgb :red 255 :green 0 :blue 0)
-       (->rgb :red 0 :green 255 :blue 0)
-       (->rgb :red 255 :green 255 :blue 0)
-       (->rgb :red 0 :green 0 :blue 255)
-       (->rgb :red 255 :green 0 :blue 255)
-       (->rgb :red 0 :green 255 :blue 255)
-       (->rgb :red 255 :green 255 :blue 255)))
-
-(def cube-levels (vec 0 95 135 175 215 255))
-
-(def palette (build-palette))
+(defn style-open (colors style)
+  (match colors
+    (no-color (str))
+    (colors-256 (palette-open style))
+    (truecolor (truecolor-open style))))
 
 (defn build-palette ()
   (-> (vec)
@@ -122,12 +128,6 @@
                    :red (clone (at cube-levels red))
                    :green (clone (at cube-levels green))
                    :blue (clone (at cube-levels blue))))
-
-(defn style-open (colors style)
-  (match colors
-    (no-color (str))
-    (colors-256 (palette-open style))
-    (truecolor (truecolor-open style))))
 
 (defn palette-open (style)
   (match (style-role style)

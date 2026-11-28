@@ -6,6 +6,30 @@
 
 (def stream-title-width 120)
 
+(def string-width
+  (rust "unicode_width::UnicodeWidthStr::width({0})"
+    (fn ((ref str)) usize)))
+
+(def truncate-with-ellipsis
+  (rust "{{
+    let budget = {1};
+    let mut best = 0usize;
+    for (index, character) in {0}.char_indices() {{
+      let end = index + character.len_utf8();
+      if unicode_width::UnicodeWidthStr::width(&{0}[..end]) > budget {{
+        break;
+      }}
+      best = end;
+    }}
+    let mut result = String::from(&{0}[..best]);
+    result.push('…');
+    result
+  }}"
+    (fn ((ref str) usize) string)))
+
+(def char-control?
+  (rust "({0}).is_control()" (fn (char) bool)))
+
 (defenum word-fit
   (fits string)
   (overflow string))
@@ -14,15 +38,35 @@
   :line string
   :lines (vec string))
 
-(defn display-width (text)
-  (the int (convert (string-width text))))
-
 (defn fitted-title (width prefix-width title)
   (let (limit (title-limit width prefix-width)
         cleaned (clean-title (as-str title)))
     (if (<= (display-width (as-str cleaned)) limit)
       cleaned
       (fit-title limit (as-str cleaned)))))
+
+(defn display-width (text)
+  (the int (convert (string-width text))))
+
+(defn wrap-value (limit text)
+  (match limit
+    (none (vec (clone text)))
+    ((some width) (wrap-words-from width (words-of text)))))
+
+(defn spaces (count)
+  (join (collect (map (range 0 count) (fn (_) (str " "))))
+        ""))
+
+(defn append-lines! (left right)
+  (loop (index 0
+         lines left)
+    (if (>= index (len right))
+      lines
+      (recur (inc index)
+             (push-line! lines (clone (at right index)))))))
+
+(defn push-line! (lines line)
+  (do (push! lines line) lines))
 
 (defn title-limit (width prefix-width)
   (match width
@@ -38,25 +82,20 @@
     (str " ")
     (visible-title-piece character)))
 
+(defn title-space? (character)
+  (or (= (str character) (str "\n"))
+      (= (str character) (str "\t"))))
+
 (defn visible-title-piece (character)
   (if (char-control? character)
     (str)
     (str character)))
-
-(defn title-space? (character)
-  (or (= (str character) (str "\n"))
-      (= (str character) (str "\t"))))
 
 (defn fit-title (limit text)
   (if (<= limit 0)
     (str)
     (truncate-with-ellipsis text
                             (the usize (convert (dec limit))))))
-
-(defn wrap-value (limit text)
-  (match limit
-    (none (vec (clone text)))
-    ((some width) (wrap-words-from width (words-of text)))))
 
 (defn wrap-words-from (limit words)
   (loop (index 0
@@ -102,42 +141,3 @@
 (defn words-of (text)
   (collect (map (split (as-str text) " ")
              (fn (word) (str word)))))
-
-(defn spaces (count)
-  (join (collect (map (range 0 count) (fn (_) (str " "))))
-        ""))
-
-(defn push-line! (lines line)
-  (do (push! lines line) lines))
-
-(defn append-lines! (left right)
-  (loop (index 0
-         lines left)
-    (if (>= index (len right))
-      lines
-      (recur (inc index)
-             (push-line! lines (clone (at right index)))))))
-
-(def string-width
-  (rust "unicode_width::UnicodeWidthStr::width({0})"
-    (fn ((ref str)) usize)))
-
-(def truncate-with-ellipsis
-  (rust "{{
-    let budget = {1};
-    let mut best = 0usize;
-    for (index, character) in {0}.char_indices() {{
-      let end = index + character.len_utf8();
-      if unicode_width::UnicodeWidthStr::width(&{0}[..end]) > budget {{
-        break;
-      }}
-      best = end;
-    }}
-    let mut result = String::from(&{0}[..best]);
-    result.push('…');
-    result
-  }}"
-    (fn ((ref str) usize) string)))
-
-(def char-control?
-  (rust "({0}).is_control()" (fn (char) bool)))

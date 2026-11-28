@@ -60,16 +60,6 @@
   :width (option int)
   :target output-target)
 
-(defstruct pr-summary
-  :number int
-  :branch string
-  :head (option string))
-
-(defstruct running-item
-  :id string
-  :status running-status
-  :minutes int)
-
 (defstruct stage-entry
   :name string
   :state stage-state)
@@ -81,6 +71,11 @@
   :failed int
   :running (vec running-item)
   :rerun string)
+
+(defstruct running-item
+  :id string
+  :status running-status
+  :minutes int)
 
 (defenum log-status
   building
@@ -120,13 +115,6 @@
   merging
   reported)
 
-(defenum stage-state
-  active
-  done
-  waiting
-  sent-back
-  failed)
-
 (defenum sub-line
   (error string)
   (exit int string)
@@ -143,9 +131,21 @@
   (running running-item)
   (rerun string))
 
+(defstruct pr-summary
+  :number int
+  :branch string
+  :head (option string))
+
 (defenum track
   (build-track stage-state stage-state stage-state)
   (write-track stage-state stage-state))
+
+(defenum stage-state
+  active
+  done
+  waiting
+  sent-back
+  failed)
 
 (defenum track-form
   full
