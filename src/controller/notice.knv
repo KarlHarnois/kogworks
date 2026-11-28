@@ -131,17 +131,11 @@
   (/ (- (:now clock) (:seen-at sent))
      seconds-per-minute))
 
-(type subject-prefix
-  (fn ((ref waiting-action)) string))
-
 (defn subject-prefix (action)
   (str (action-kind->text (:kind action))
        ": "
        (subject-id (:subject action))
        ": "))
-
-(type read-hint
-  (fn ((ref waiting-action)) string))
 
 (defn read-hint (action)
   (str ". Read `" (show-text (:subject action)) "`."))
