@@ -8,7 +8,7 @@
   "roles": {
     "worker": {
       "agent": "opencode",
-      "skill": "writing-knave",
+      "skill": "building-features-opencode",
       "brief": ".kogworks/briefs/worker.md"
     },
     "reviewer": {

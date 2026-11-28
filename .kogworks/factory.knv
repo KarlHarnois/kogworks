@@ -4,7 +4,7 @@
   :max-active 6
   :merge gh-auto
   (roles (worker :agent "opencode"
-                 :skill "writing-knave"
+                 :skill "building-features-opencode"
                  :brief ".kogworks/briefs/worker.md")
          (reviewer :agent "opencode"
                    :skill "reviewing-prs"
