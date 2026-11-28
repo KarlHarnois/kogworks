@@ -140,7 +140,13 @@
     "    exit [NEW_EXIT]\n" "  fi\n"
     "elif [ \"$1\" = \"send\" ]; then\n"
     "  printf 'ringleader send %s %s\\n' \"$2\" \"$3\" >> \"$root/sequence\"\n"
-    "fi\n" "exit 0\n"))
+    "  sends=0\n"
+    "  if [ -f \"$root/send-count\" ]; then sends=$(cat \"$root/send-count\"); fi\n"
+    "  sends=$((sends + 1))\n"
+    "  printf '%s' \"$sends\" > \"$root/send-count\"\n"
+    "  if [ \"$sends\" -le [SEND_FAILURES] ]; then\n"
+    "    printf 'the agent is not at its prompt\\n' >&2\n"
+    "    exit 3\n" "  fi\n" "fi\n" "exit 0\n"))
 
 (def git-script
   (str "#!/bin/sh\n"
@@ -283,6 +289,7 @@
   :review-error string
   :new-exit int
   :new-error string
+  :send-failures int
   :merge-exit int
   :merge-error string
   :merge-signal string
@@ -339,6 +346,7 @@
                    :review-error (str)
                    :new-exit 0
                    :new-error (str)
+                   :send-failures 0
                    :merge-exit 0
                    :merge-error (str)
                    :merge-signal (str)
@@ -421,6 +429,8 @@
       (replace-token (str "[NEW_EXIT]")
                      (str (:new-exit settings)))
       (replace-token (str "[NEW_ERROR]") (:new-error settings))
+      (replace-token (str "[SEND_FAILURES]")
+                     (str (:send-failures settings)))
       (replace-token (str "[MERGE_EXIT]")
                      (str (:merge-exit settings)))
       (replace-token (str "[MERGE_ERROR]")

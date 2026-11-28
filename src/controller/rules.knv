@@ -7,11 +7,15 @@
 (export action-kind action-kind->text actor first-build
         first-controller-action item-action item-kind
         next-action next-line parse-next-response
-        parse-ready-response ready-item)
+        parse-ready-response ready-item subject)
 
 (defstruct next-line
-  :item string
+  :subject subject
   :actions (vec next-action))
+
+(defenum subject
+  (item string)
+  (decision string))
 
 (defstruct next-action
   :kind action-kind
@@ -58,6 +62,11 @@
   (failure string)
   done)
 
+(defenum line-step
+  (found item-action)
+  absent
+  done)
+
 (defenum controller-action-step
   (found action-kind)
   absent
@@ -90,10 +99,8 @@
 
 (defn first-controller-action (lines)
   (loop (index 0)
-    (match (controller-action-step-at lines index)
-      ((found kind)
-       (some (->item-action :item (clone (:item (at lines index)))
-                            :kind kind)))
+    (match (line-step-at lines index)
+      ((found action) (some action))
       (absent (recur (inc index)))
       (done none))))
 
@@ -130,10 +137,23 @@
     ((err failure) (next-line-step/failure failure))))
 
 (defn parse-next-line (value)
-  (let-try (item (required-text value "item")
+  (let-try (subject (required-subject value)
             action-values (required-array value "actions")
             actions (parse-next-actions action-values))
-    (ok (->next-line :item item :actions actions))))
+    (ok (->next-line :subject subject :actions actions))))
+
+(defn required-subject (value)
+  (match (json-field value "decision")
+    ((some found) (decision-subject found))
+    (none (item-subject value))))
+
+(defn decision-subject (found)
+  (let-try (id (field-text found "decision"))
+    (ok (subject/decision id))))
+
+(defn item-subject (value)
+  (let-try (id (required-text value "item"))
+    (ok (subject/item id))))
 
 (defn required-array (value key)
   (let-try (found (required-field-value value key))
@@ -209,15 +229,24 @@
     ((= text (str "user")) actor/user)
     (else (actor/other text))))
 
-(defn controller-action-step-at (lines index)
+(defn line-step-at (lines index)
   (if (>= index (len lines))
-    controller-action-step/done
-    (controller-action-step-of (controller-action-in (at lines index)))))
+    line-step/done
+    (line-step-of (at lines index))))
 
-(defn controller-action-step-of (found)
+(type line-step-of
+  (fn ((ref next-line)) line-step))
+
+(defn line-step-of (line)
+  (match (:subject line)
+    ((item id) (item-step id (controller-action-in line)))
+    ((decision _) line-step/absent)))
+
+(defn item-step (id found)
   (match found
-    ((some kind) (controller-action-step/found kind))
-    (none controller-action-step/absent)))
+    ((some kind)
+     (line-step/found (->item-action :item (clone id) :kind kind)))
+    (none line-step/absent)))
 
 (defn controller-action-in (line)
   (loop (index 0)

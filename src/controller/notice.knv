@@ -1,0 +1,117 @@
+(module
+  "Plans one notice for each action that waits on the manager or the user.")
+
+(use controller/rules action-kind action-kind->text actor
+                      next-line subject)
+
+(export ->notice ->waiting-action delivery notice
+        notice-message notice-step owner plan-notices
+        waiting-action waiting-actions)
+
+(defstruct notice
+  :action waiting-action
+  :delivery delivery)
+
+(defenum delivery
+  delivered
+  undelivered)
+
+(defenum notice-step
+  (announce waiting-action)
+  (resend waiting-action)
+  (keep waiting-action))
+
+(defstruct waiting-action
+  :subject subject
+  :kind action-kind
+  :owner owner)
+
+(defenum owner
+  manager
+  user)
+
+(type waiting-actions
+  (fn ((ref (vec next-line)))
+    (vec waiting-action)))
+
+(defn waiting-actions (lines)
+  (reduce lines (vec) with-line-actions))
+
+(type plan-notices
+  (fn ((ref (vec notice))
+       (ref (vec waiting-action)))
+    (vec notice-step)))
+
+(defn plan-notices (previous waiting)
+  (collect (map waiting
+             (fn (action) (step-for previous action)))))
+
+(type notice-message
+  (fn ((ref waiting-action)) string))
+
+(defn notice-message (action)
+  (str (action-kind->text (:kind action))
+       ": "
+       (subject-id (:subject action))
+       ": waiting for "
+       (owner->text (:owner action))
+       ". Read `"
+       (show-text (:subject action))
+       "`."))
+
+(defn with-line-actions (waiting line)
+  (reduce (:actions line) waiting
+    (fn (found action)
+      (with-owned-action found (:subject line) action))))
+
+(defn with-owned-action (waiting subject action)
+  (match (owner-of (:actor action))
+    ((some owner)
+     (with-action! waiting
+                   (->waiting-action :subject (clone subject)
+                                     :kind (clone (:kind action))
+                                     :owner owner)))
+    (none waiting)))
+
+(defn with-action! (waiting action)
+  (do (push! waiting action) waiting))
+
+(defn owner-of (actor-value)
+  (match actor-value
+    ((some actor/manager) (some owner/manager))
+    ((some actor/user) (some owner/user))
+    (_ none)))
+
+(type step-for
+  (fn ((ref (vec notice))
+       (ref waiting-action))
+    notice-step))
+
+(defn step-for (previous action)
+  (match (find previous
+           (fn (sent) (notice-of? sent action)))
+    ((some sent) (known-step sent))
+    (none (notice-step/announce (clone action)))))
+
+(defn notice-of? (sent action)
+  (= (:action sent) action))
+
+(defn known-step (sent)
+  (match (:delivery sent)
+    (delivered (notice-step/keep (clone (:action sent))))
+    (undelivered (notice-step/resend (clone (:action sent))))))
+
+(defn subject-id (subject)
+  (match subject
+    ((item id) (clone id))
+    ((decision id) (clone id))))
+
+(defn owner->text (owner)
+  (match owner
+    (owner/manager (str "the manager"))
+    (owner/user (str "the user"))))
+
+(defn show-text (subject)
+  (match subject
+    ((item id) (str "rmap item show " id))
+    ((decision id) (str "rmap decision show " id))))

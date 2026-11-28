@@ -17,6 +17,33 @@
        "{\"item\":\"rm-0003\",\"actions\":[{\"action\":\"dispatch\","
        "\"actor\":\"controller\"}]}" "]}"))
 
+(def waiting-next
+  (str "{\"next\":["
+       "{\"item\":\"rm-0002\",\"actions\":[{\"action\":\"send-fixes\","
+       "\"actor\":\"manager\",\"session\":\"build-rm-0002\"}]},"
+       "{\"item\":\"rm-0004\",\"actions\":[{\"action\":\"accept-report\","
+       "\"actor\":\"manager\"}]}" "]}"))
+
+(def decision-review-next
+  (str "{\"next\":["
+       "{\"decision\":\"rm-d1\",\"kind\":\"decision\",\"actions\":["
+       "{\"action\":\"await-decision\",\"actor\":\"user\"}]},"
+       "{\"item\":\"" review-item "\",\"actions\":["
+       "{\"action\":\"review\",\"actor\":\"controller\"}]}"
+       "]}"))
+
+(def send-fixes-notice
+  (str "send-fixes: rm-0002: waiting for the manager. "
+       "Read `rmap item show rm-0002`."))
+
+(def accept-report-notice
+  (str "accept-report: rm-0004: waiting for the manager. "
+       "Read `rmap item show rm-0004`."))
+
+(def decision-notice
+  (str "await-decision: rm-d1: waiting for the user. "
+       "Read `rmap decision show rm-d1`."))
+
 (def build-ready
   (str "{\"ready\":["
        "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
@@ -106,6 +133,7 @@
   (let (repo (absolute-repo-of root))
     (str
       (next-line (str "fake-roadmap"))
+      (send-line (clone send-fixes-notice))
       (ready-line (str "fake-roadmap"))
       "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
       "ringleader new --name build-rm-0001 --repo " repo
@@ -179,6 +207,7 @@
 (defn claim-refusal-sequence ()
   (str
     (next-line (str "fake-roadmap"))
+    (send-line (clone send-fixes-notice))
     (ready-line (str "fake-roadmap"))
     "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
     (send-line (str "dispatch: rm-0001: `rmap item claim rm-0001 "
@@ -191,12 +220,43 @@
        (next-line (str "fake-roadmap"))
        (ready-line (str "fake-roadmap"))
        (next-line (str "fake-roadmap"))
-       (send-line (str "next: -: `rmap next --roadmap fake-roadmap "
-                       "--taken-by controller --json` exited 7: poll limit"))))
+       (poll-limit-line)))
+
+(defn notice-once-sequence ()
+  (str (next-line (str "fake-roadmap"))
+       (send-line (clone send-fixes-notice))
+       (send-line (clone accept-report-notice))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (poll-limit-line)))
+
+(defn notice-retry-sequence ()
+  (str (next-line (str "fake-roadmap"))
+       (send-line (clone send-fixes-notice))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (send-line (clone send-fixes-notice))
+       (send-line (clone accept-report-notice))
+       (ready-line (str "fake-roadmap"))
+       (next-line (str "fake-roadmap"))
+       (poll-limit-line)))
+
+(defn decision-review-sequence (root)
+  (str (next-line (str "fake-roadmap"))
+       (send-line (clone decision-notice))
+       "rmap item show " review-item " --json\n"
+       "rmap review start " review-item " --session "
+       review-session "\n"
+       (reviewer-start-line root)))
+
+(defn poll-limit-line ()
+  (send-line (str "next: -: `rmap next --roadmap fake-roadmap --json` "
+                  "exited 7: poll limit")))
 
 (defn next-line (roadmap)
-  (str "rmap next --roadmap " roadmap
-       " --taken-by controller --json\n"))
+  (str "rmap next --roadmap " roadmap " --json\n"))
 
 (defn ready-line (roadmap)
   (str "rmap ready --roadmap " roadmap " --json\n"))
@@ -347,6 +407,38 @@
       (assert (= (sequence-text root) (poll-sequence)))
       (assert (not (contains? (sequence-text root) "ringleader new")))
       (assert (not (contains? (sequence-text root) "item claim"))))))
+
+(deftest notifies-the-manager-once-for-each-waiting-action
+  (let (root (unwrap-ok (setup "notice-once"
+                               (assoc (default-settings (clone waiting-next)
+                                                        (clone research-ready))
+                                      :stop-after 3))))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (notice-once-sequence)))
+      (assert (contains? (stderr-text output) (as-str send-fixes-notice)))
+      (assert (contains? (stderr-text output)
+                         (as-str accept-report-notice))))))
+
+(deftest sends-a-notice-again-on-the-pass-after-a-failed-send
+  (let (root (unwrap-ok (setup "notice-retry"
+                               (assoc (default-settings (clone waiting-next)
+                                                        (clone research-ready))
+                                      :stop-after 3
+                                      :send-failures 1))))
+    (let (output (unwrap-ok (run root
+                                 (vec (str "--poll") (str "0")))))
+      (assert (= (exit-code output) 1))
+      (assert (= (sequence-text root) (notice-retry-sequence))))))
+
+(deftest notifies-the-manager-about-a-decision-and-still-reviews
+  (let (root (unwrap-ok (setup "notice-decision"
+                               (review-settings (clone decision-review-next)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (stdout-text output) (str review-session "\n")))
+      (assert (= (sequence-text root) (decision-review-sequence root))))))
 
 (deftest help-states-the-restart-and-bootstrap-rules
   (let (root (unwrap-ok (setup "help"

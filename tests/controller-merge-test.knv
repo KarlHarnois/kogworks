@@ -232,7 +232,7 @@
        (auto-merge-line)))
 
 (defn next-line ()
-  (str "rmap next --roadmap fake-roadmap --taken-by controller --json\n"))
+  (str "rmap next --roadmap fake-roadmap --json\n"))
 
 (defn show-line ()
   (str "rmap item show " merge-item " --json\n"))

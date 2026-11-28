@@ -17,6 +17,8 @@
                       start-merge)
 
 (use controller/merge-commands send-command)
+(use controller/notice notice waiting-actions)
+(use controller/notice-delivery send-notices)
 
 (use controller/process ->command canonical-path command
                         command-detail execute successful?)
@@ -25,7 +27,8 @@
 
 (use controller/rules action-kind action-kind->text
                       first-build first-controller-action
-                      item-action parse-next-response
+                      item-action next-line
+                      parse-next-response
                       parse-ready-response)
 
 (export controller-and-exit)
@@ -33,6 +36,10 @@
 (defenum run-mode
   one-pass
   polling)
+
+(defstruct pass-progress
+  :outcome pass-outcome
+  :notices (vec notice))
 
 (defenum pass-outcome
   dispatched
@@ -74,11 +81,13 @@
       ((err report) (fail-stop repo report)))))
 
 (defn run-controller (repo settings mode)
-  (loop ()
-    (let (pass (run-pass repo settings))
+  (loop (notices (vec))
+    (let (pass (run-pass repo settings notices))
       (if (pass-complete? mode pass)
         (pass-result pass)
-        (do (wait-before-repeat settings pass) (recur))))))
+        (do
+          (wait-before-repeat settings pass)
+          (recur (sent-notices pass)))))))
 
 (defn pass-complete? (mode pass)
   (match pass
@@ -90,8 +99,18 @@
 
 (defn wait-before-repeat (settings pass)
   (match pass
-    ((ok idle) (sleep (seconds (:poll-seconds settings))))
+    ((ok progress) (wait-after settings (:outcome progress)))
+    ((err _) (do))))
+
+(defn wait-after (settings outcome)
+  (match outcome
+    (idle (sleep (seconds (:poll-seconds settings))))
     (_ (do))))
+
+(defn sent-notices (pass)
+  (match pass
+    ((ok progress) (clone (:notices progress)))
+    ((err _) (vec))))
 
 (defn pass-result (pass)
   (match pass
@@ -103,26 +122,43 @@
 (defn poll-seconds (poll)
   (the int (convert poll)))
 
-(defn run-pass (repo settings)
+(defn run-pass (repo settings notices)
   (match (read-factory repo)
     ((err failure)
      (err (->failure-report :manager (read-manager repo)
                             :error (controller-error/factory-failed failure))))
-    ((ok config) (run-pass-with repo config settings))))
+    ((ok config) (run-pass-with repo config settings notices))))
 
-(type run-pass-with
+(defn run-pass-with (repo config settings notices)
+  (match (poll-next repo config)
+    ((err failure)
+     (err (->failure-report :manager (some (clone (:manager config)))
+                            :error failure)))
+    ((ok lines)
+     (run-pass-from repo config settings notices lines))))
+
+(type run-pass-from
   (fn ((ref str)
        (ref factory-config)
-       (ref controller-settings))
-    (result pass-outcome failure-report)))
+       (ref controller-settings)
+       (ref (vec notice))
+       (ref (vec next-line)))
+    (result pass-progress failure-report)))
 
-(defn run-pass-with (repo config settings)
-  (let (manager (some (clone (:manager config))))
-    (match (poll-next repo config)
-      ((err failure)
-       (err (->failure-report :manager manager :error failure)))
-      ((ok pending)
-       (continue-from-next repo config manager settings pending)))))
+(defn run-pass-from (repo config settings notices lines)
+  (let (waiting (waiting-actions lines)
+        sent (send-notices repo (:manager config) notices waiting)
+        manager (some (clone (:manager config))))
+    (with-notices (continue-from-next repo config manager
+                                      settings
+                                      (first-controller-action lines))
+                  sent)))
+
+(defn with-notices (outcome notices)
+  (match outcome
+    ((ok done)
+     (ok (->pass-progress :outcome done :notices notices)))
+    ((err report) (err report))))
 
 (defn continue-from-next (repo config manager settings pending)
   (match pending
@@ -197,7 +233,7 @@
 
 (defn check-next-document (command document)
   (match (parse-next-response document)
-    ((ok lines) (ok (first-controller-action lines)))
+    ((ok lines) (ok lines))
     ((err reason)
      (err (output-failed (str "next") command reason)))))
 
@@ -267,11 +303,8 @@
              :args (vec (str "next")
                         (str "--roadmap")
                         (clone roadmap)
-                        (str "--taken-by")
-                        (str "controller")
                         (str "--json"))
-             :label (str "rmap next --roadmap " roadmap
-                         " --taken-by controller --json")))
+             :label (str "rmap next --roadmap " roadmap " --json")))
 
 (defn fail-stop (repo report)
   (let (message (error->message (:error report)))

@@ -16,7 +16,9 @@ Kogworks is a Knave 0.22.0 project. It synthesizes a factory file and runs a con
 
 ## Controller
 
-Run `./target/knave/kogworks/kogworks controller --repo <path>`. For `--repo <path>`, the controller reads `<path>/.kogworks/factory.json` for the roadmap, manager, merge method and roles. Each pass handles one action. It starts a reviewer for a review or verify action, or merges an approved pull request. With no such action, it starts the worker for the first startable build from `rmap ready`. The base branch is the default branch of the repository at `<path>`. The controller runs no model call and keeps no memory between passes. It needs `rmap`, `ringleader`, `gh` and `git` on `PATH`; each dispatch and review runs `git symbolic-ref` to read the default branch.
+Run `./target/knave/kogworks/kogworks controller --repo <path>`. For `--repo <path>`, the controller reads `<path>/.kogworks/factory.json` for the roadmap, manager, merge method and roles. Each pass handles one action. It starts a reviewer for a review or verify action, or merges an approved pull request. With no such action, it starts the worker for the first startable build from `rmap ready`. The base branch is the default branch of the repository at `<path>`. The controller runs no model call. Between passes, the controller remembers only the notices it sent. The controller needs `rmap`, `ringleader`, `gh` and `git` on `PATH`. Each dispatch and review runs `git symbolic-ref` to read the default branch.
+
+Each pass starts by reading every pending action from `rmap next`. For each action that waits on the manager or the user, the controller sends the manager one notice. The controller prints the notice to standard error and sends the notice with `ringleader send`. If the send fails, the controller sends the notice again on the next pass. After a restart, the controller sends a notice for every action that still waits.
 
 `--poll <seconds>` sets the interval between passes (default 30). `--merge-poll <seconds>` sets the merge poll interval. `--merge-timeout <seconds>` sets the merge timeout (default 3600). `--once` runs one pass and exits.
 
