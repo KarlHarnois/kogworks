@@ -6,18 +6,24 @@
 
 (use controller/failure ->action-failure ->failure-report
                         controller-error error->message
-                        failure-report)
+                        failure-report manager-message?)
 
 (use controller/factory factory-config read-factory
                         read-manager)
 
 (use controller/json json-error->message parse-json)
+(use controller/log-lines log-action)
+
+(use controller/log-report print-action print-banner
+                           print-failure print-merge-line
+                           print-stop read-log-item
+                           review-log-item)
 
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
 (use controller/merge-commands send-command)
-
+(use controller/merge-target ->merge-report ignore-report)
 (use controller/notice ->notice-clock notice
                        waiting-actions)
 
@@ -26,6 +32,7 @@
 (use controller/process ->command canonical-path command
                         command-detail execute successful?)
 
+(use controller/remote read-remote)
 (use controller/review review-mode start-review)
 
 (use controller/rules action-kind action-kind->text
@@ -57,52 +64,114 @@
   :poll-seconds int
   :stall-seconds int
   :started instant
-  :merge-wait merge-settings)
+  :merge-wait merge-settings
+  :remote (option string))
+
+(defstruct run-state
+  :notices (vec notice)
+  :merged int)
+
+(defstruct failed-run
+  :report failure-report
+  :merged int)
 
 (defn controller-and-exit (repo poll stall merge-poll
                                 merge-timeout retry-delay
-                                once)
+                                once rerun)
   (match (canonical-repo repo)
     ((ok absolute)
-     (run-controller-and-exit (as-str absolute)
-                              (build-controller-settings
-                                poll stall merge-poll
-                                merge-timeout retry-delay)
-                              once))
-    ((err failure) (eprintln (error->message failure)) (exit 1))))
+     (let (remote (read-remote (as-str absolute)))
+       (run-controller-and-exit
+         (as-str absolute)
+         (build-controller-settings
+           poll stall merge-poll merge-timeout retry-delay remote)
+         once rerun)))
+    ((err failure)
+     (do
+       (print-failure repo none none failure)
+       (print-stop none 0 1 rerun)
+       (exit 1)))))
 
 (defn build-controller-settings (poll stall merge-poll
                                       merge-timeout
-                                      retry-delay)
+                                      retry-delay remote)
   (let (pass-seconds (poll-seconds poll)
         merge-wait (->merge-settings
                      :poll-seconds (poll-seconds merge-poll)
                      :timeout-seconds (poll-seconds merge-timeout)
-                     :retry-delay-seconds (poll-seconds retry-delay)))
+                     :retry-delay-seconds (poll-seconds retry-delay)
+                     :report ignore-report
+                     :report-data (->merge-report :remote none :item (str))))
     (->controller-settings :poll-seconds pass-seconds
                            :stall-seconds (poll-seconds stall)
                            :started (now)
-                           :merge-wait merge-wait)))
+                           :merge-wait merge-wait
+                           :remote (clone remote))))
 
 (defn canonical-repo (repo)
   (map-err (canonical-path repo)
     (fn (reason)
       (controller-error/unreadable-repo (str repo) reason))))
 
-(defn run-controller-and-exit (repo settings once)
+(defn run-controller-and-exit (repo settings once rerun)
   (let (mode (match once (on run-mode/one-pass) (off run-mode/polling)))
     (match (run-controller repo settings mode)
       ((ok _) (do))
-      ((err report) (fail-stop repo report)))))
+      ((err failed)
+       (fail-stop repo
+                  (:report failed)
+                  (:merged failed)
+                  rerun settings)))))
+
+(type run-controller
+  (fn ((ref str) (ref controller-settings) run-mode)
+    (result unit failed-run)))
 
 (defn run-controller (repo settings mode)
-  (loop (notices (vec))
-    (let (pass (run-pass repo settings notices))
-      (if (pass-complete? mode pass)
-        (pass-result pass)
-        (do
-          (wait-before-repeat settings pass)
-          (recur (sent-notices pass)))))))
+  (match (read-factory repo)
+    ((err failure)
+     (err (->failed-run :report (->failure-report :manager (read-manager repo)
+                                                  :error (controller-error/factory-failed
+                                                           failure))
+                        :merged 0)))
+    ((ok config)
+     (do
+       (print-banner (:remote settings)
+                     (:roadmap config)
+                     (some (clone (:manager config)))
+                     (:poll-seconds settings))
+       (run-controller-loop repo config settings mode
+                            (->run-state :notices (vec) :merged 0))))))
+
+(type run-controller-loop
+  (fn ((ref str)
+       (ref factory-config)
+       (ref controller-settings)
+       run-mode run-state)
+    (result unit failed-run)))
+
+(defn run-controller-loop (repo config settings mode state)
+  (let (pass (run-pass repo settings (:notices state)))
+    (if (pass-complete? mode pass)
+      (pass-result pass state)
+      (do
+        (wait-before-repeat settings pass)
+        (recur repo config settings mode (next-state state pass))))))
+
+(type next-state
+  (fn (run-state (result pass-progress failure-report))
+    run-state))
+
+(defn next-state (state pass)
+  (match pass
+    ((ok progress)
+     (->run-state :notices (clone (:notices progress))
+                  :merged (+ (:merged state)
+                             (merged-increment (:outcome progress)))))
+    ((err _) state)))
+
+(defn merged-increment (outcome)
+  (match outcome (pass-outcome/merged 1) (_ 0)))
 
 (defn pass-complete? (mode pass)
   (match pass
@@ -122,15 +191,15 @@
     (idle (sleep (seconds (:poll-seconds settings))))
     (_ (do))))
 
-(defn sent-notices (pass)
-  (match pass
-    ((ok progress) (clone (:notices progress)))
-    ((err _) (vec))))
+(type pass-result
+  (fn ((result pass-progress failure-report) run-state)
+    (result unit failed-run)))
 
-(defn pass-result (pass)
+(defn pass-result (pass state)
   (match pass
     ((ok _) (ok (do)))
-    ((err report) (err report))))
+    ((err report)
+     (err (->failed-run :report report :merged (:merged state))))))
 
 (type poll-seconds (fn (u32) int))
 
@@ -186,7 +255,7 @@
   (match pending
     ((some action)
      (take-controller-action repo config manager settings action))
-    (none (run-ready repo config manager))))
+    (none (run-ready repo config manager settings))))
 
 (type take-controller-action
   (fn ((ref str)
@@ -198,45 +267,71 @@
 
 (defn take-controller-action (repo config manager settings action)
   (match (:kind action)
-    (review (start-review-report repo config manager action
+    (review (start-review-report repo config manager
+                                 settings action
                                  review-mode/review))
-    (verify (start-review-report repo config manager action
+    (verify (start-review-report repo config manager
+                                 settings action
                                  review-mode/verify))
     (merge (start-merge-report repo config manager settings action))
     (_ (out-of-scope-report config manager action))))
 
 (defn start-merge-report (repo config manager settings action)
-  (match (start-merge repo config
-                      (clone (:merge-wait settings))
-                      (:item action))
-    ((ok _) (ok pass-outcome/merged))
+  (let (merge-wait (assoc (clone (:merge-wait settings))
+                          :report print-merge-line
+                          :report-data (->merge-report :remote (clone (:remote settings))
+                                                       :item (clone (:item action)))))
+    (match (start-merge repo config merge-wait (:item action))
+      ((ok _) (ok pass-outcome/merged))
+      ((err failure)
+       (err (->failure-report :manager manager :error failure))))))
+
+(defn start-review-report (repo config manager settings action mode)
+  (match (start-review repo config (:item action) mode)
+    ((ok result)
+     (do
+       (print-action (:remote settings)
+                     (review-log-item (clone (:item action))
+                                      (clone (:title (:detail result)))
+                                      (clone (:kind (:detail result)))
+                                      (clone (:branch (:detail result)))
+                                      (clone (:pr (:detail result)))
+                                      (clone (:head (:detail result))))
+                     (review-log-action mode))
+       (ok pass-outcome/dispatched)))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
 
-(defn start-review-report (repo config manager action mode)
-  (match (start-review repo config (:item action) mode)
-    ((ok _) (ok pass-outcome/dispatched))
-    ((err failure)
-     (err (->failure-report :manager manager :error failure)))))
+(defn review-log-action (mode)
+  (match mode
+    (review-mode/review log-action/review)
+    (review-mode/verify log-action/verify)))
 
 (defn out-of-scope-report (config manager action)
   (err (->failure-report :manager manager
                          :error (out-of-scope-error config action))))
 
-(defn run-ready (repo config manager)
+(defn run-ready (repo config manager settings)
   (match (poll-ready repo config)
     ((err failure)
      (err (->failure-report :manager manager :error failure)))
-    ((ok items) (dispatch-first repo config manager items))))
+    ((ok items)
+     (dispatch-first repo config manager settings items))))
 
-(defn dispatch-first (repo config manager items)
+(defn dispatch-first (repo config manager settings items)
   (match (first-build items)
     (none (ok pass-outcome/idle))
-    ((some item) (dispatch-ready repo config manager item))))
+    ((some item)
+     (dispatch-ready repo config manager settings item))))
 
-(defn dispatch-ready (repo config manager item)
+(defn dispatch-ready (repo config manager settings item)
   (match (dispatch repo config item)
-    ((ok _) (ok pass-outcome/dispatched))
+    ((ok _)
+     (do
+       (print-action (:remote settings)
+                     (read-log-item repo (:id item))
+                     log-action/dispatch)
+       (ok pass-outcome/dispatched)))
     ((err failure)
      (err (->failure-report :manager manager :error failure)))))
 
@@ -328,18 +423,23 @@
                         (str "--json"))
              :label (str "rmap next --roadmap " roadmap " --json")))
 
-(defn fail-stop (repo report)
-  (let (message (error->message (:error report)))
+(defn fail-stop (repo report merged rerun settings)
+  (let (message (error->message (:error report))
+        manager (messaged-manager report))
     (if (manager-message? (:error report))
       (send-to-manager repo (:manager report) message)
       (do))
-    (eprintln message)
+    (print-failure repo
+                   (:remote settings)
+                   manager
+                   (:error report))
+    (print-stop (:remote settings) merged 1 rerun)
     (exit 1)))
 
-(defn manager-message? (failure)
-  (match failure
-    ((signal-stop _) false)
-    (_ true)))
+(defn messaged-manager (report)
+  (if (manager-message? (:error report))
+    (clone (:manager report))
+    none))
 
 (defn send-to-manager (repo manager message)
   (match manager

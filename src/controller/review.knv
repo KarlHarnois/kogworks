@@ -5,9 +5,10 @@
                       reviewer-brief)
 
 (use controller/failure ->action-failure controller-error)
+(use controller/factory factory-config)
 
-(use controller/item criteria->text item-error->message
-                     parse-item-detail)
+(use controller/item criteria->text item-detail
+                     item-error->message parse-item-detail)
 
 (use controller/json json-error->message parse-json)
 
@@ -17,11 +18,16 @@
 (use controller/repo default-branch)
 (use controller/session abandon-command failed-start-detail)
 
-(export review-mode review-mode->text start-review)
+(export review-mode review-mode->text start-review
+        started-review)
 
 (defenum review-mode
   review
   verify)
+
+(defstruct started-review
+  :session string
+  :detail item-detail)
 
 (defn review-mode->text (mode)
   (match mode
@@ -61,9 +67,19 @@
     ((err failure) (err failure))
     ((ok base) (begin-review repo config item mode detail base))))
 
+(type begin-review
+  (fn ((ref str)
+       (ref factory-config)
+       (ref string)
+       review-mode item-detail
+       (ref string))
+    (result started-review controller-error)))
+
 (defn begin-review (repo config item mode detail base)
-  (let (session (reviewer-session item (:head detail)))
-    (match (reviewer-prompt repo config item mode detail session base)
+  (let (session (reviewer-session item (clone (:head detail))))
+    (match (reviewer-prompt repo config item mode
+                            (clone detail)
+                            session base)
       ((err failure) (err failure))
       ((ok prompt)
        (start-review-session repo config item mode detail
@@ -82,6 +98,15 @@
   (join (collect (map (take (chars head) 7)
                    (fn (character) (str character))))
         ""))
+
+(type reviewer-prompt
+  (fn ((ref str)
+       (ref factory-config)
+       (ref string)
+       review-mode item-detail
+       (ref string)
+       (ref string))
+    (result string controller-error)))
 
 (defn reviewer-prompt (repo config item mode detail session base)
   (let (path (join-path repo
@@ -111,26 +136,45 @@
        "`rmap item verify` verdict before `rmap pr review`.\n\n"
        prompt))
 
+(type start-review-session
+  (fn ((ref str)
+       (ref factory-config)
+       (ref string)
+       review-mode item-detail
+       (ref string)
+       (ref string))
+    (result started-review controller-error)))
+
 (defn start-review-session (repo config item mode detail session prompt)
   (let (start (review-start-command item session))
     (let (outcome (execute repo start))
       (if (successful? outcome)
-        (start-reviewer repo config item mode detail session prompt)
+        (start-reviewer repo config item mode
+                        (clone detail)
+                        session prompt)
         (err (command-failure mode item start outcome))))))
+
+(type start-reviewer
+  (fn ((ref str)
+       (ref factory-config)
+       (ref string)
+       review-mode item-detail
+       (ref string)
+       (ref string))
+    (result started-review controller-error)))
 
 (defn start-reviewer (repo config item mode detail session prompt)
   (let (start (reviewer-start-command repo config session
-                                      (:branch detail)
+                                      (clone (:branch detail))
                                       prompt))
     (let (outcome (execute repo start))
       (if (successful? outcome)
-        (reviewer-started session)
+        (reviewer-started session detail)
         (abandon-and-fail repo item mode session start outcome)))))
 
-(defn reviewer-started (session)
-  (do
-    (println session)
-    (ok (clone session))))
+(defn reviewer-started (session detail)
+  (ok (->started-review :session (clone session)
+                        :detail (clone detail))))
 
 (defn abandon-and-fail (repo item mode session start outcome)
   (let (abandon (abandon-command session))

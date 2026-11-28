@@ -1,0 +1,43 @@
+(module
+  "Reads the repository remote that controller log links point at.")
+
+(use controller/process ->command execute successful?)
+
+(export parse-github-remote read-remote)
+
+(def parse-github-remote
+  (rust "{{
+    let text = {0}.trim();
+    let rest = if let Some(rest) = text.strip_prefix(\"https://github.com/\") {{
+      rest
+    }} else if let Some(rest) = text.strip_prefix(\"http://github.com/\") {{
+      rest
+    }} else if let Some(rest) = text.strip_prefix(\"git@github.com:\") {{
+      rest
+    }} else if let Some(rest) = text.strip_prefix(\"ssh://git@github.com/\") {{
+      rest
+    }} else {{
+      return None;
+    }};
+    let rest = rest.trim_end_matches('/');
+    let rest = rest.strip_suffix(\".git\").unwrap_or(rest);
+    if rest.is_empty() {{
+      None
+    }} else {{
+      Some(format!(\"https://github.com/{{}}\", rest))
+    }}
+  }}"
+    (fn ((ref str)) (option string))))
+
+(defn read-remote (repo)
+  (let (outcome (execute repo (remote-command)))
+    (if (successful? outcome)
+      (parse-github-remote (trim (as-str (:stdout outcome))))
+      none)))
+
+(defn remote-command ()
+  (->command :program (str "git")
+             :args (vec (str "remote")
+                        (str "get-url")
+                        (str "origin"))
+             :label (str "git remote get-url origin")))

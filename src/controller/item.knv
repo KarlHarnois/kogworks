@@ -5,7 +5,7 @@
                        required-field required-number
                        required-object required-text)
 
-(use controller/json json json-array json-text)
+(use controller/json json json-array json-field json-text)
 
 (export ->item-detail criteria->text item-detail item-error
         item-error->message parse-item-detail)
@@ -14,7 +14,9 @@
   :pr string
   :head string
   :branch string
-  :criteria (vec string))
+  :criteria (vec string)
+  :title string
+  :kind string)
 
 (defenum item-error
   (field field-error)
@@ -46,7 +48,9 @@
     (ok (->item-detail :pr pr
                        :head head
                        :branch branch
-                       :criteria criteria))))
+                       :criteria criteria
+                       :title (optional-text item "title" "")
+                       :kind (optional-text item "kind" "build")))))
 
 (type criteria->text
   (fn ((ref (vec string))) string))
@@ -69,6 +73,11 @@
     (match (json-array found)
       ((some items) (criterion-texts items 0 (vec)))
       (none (err (item-error/non-array-criteria (str "item.criteria")))))))
+
+(defn optional-text (value key default)
+  (match (json-field value key)
+    (none (str default))
+    ((some found) (unwrap-or (json-text found) (str default)))))
 
 (defn criterion-texts (items index texts)
   (if (>= index (len items))

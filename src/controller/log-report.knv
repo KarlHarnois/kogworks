@@ -1,0 +1,216 @@
+(module
+  "Prints the controller log lines to standard error.")
+
+(use controller/json json json-field json-text parse-json)
+
+(use controller/log ->log-settings ->pr-summary
+                    output-target render-banner
+                    render-controller-failure render-item
+                    render-stop)
+
+(use controller/log-lines ->log-item action-line banner-of
+                          controller-failure-of
+                          failure-item-id failure-line
+                          merge-event-action short-head
+                          stop-of)
+
+(use controller/log-lines log-item)
+
+(use controller/merge-target merge-event merge-report
+                             merge-target)
+
+(use controller/process ->command execute successful?)
+(use controller/rules item-kind item-kind-of)
+
+(use controller/surroundings local-time local-time->text
+                             read-color-mode
+                             stderr-terminal? stderr-width)
+
+(export print-action print-banner print-failure
+        print-merge-line print-stop read-log-item
+        review-log-item)
+
+(defn print-banner (remote roadmap manager poll-seconds)
+  (let (settings (settings-for remote)
+        line (banner-of (time-text) roadmap manager poll-seconds))
+    (print-lines (render-banner settings line))))
+
+(type print-merge-line
+  (fn (merge-event (ref merge-target) (ref merge-report))
+    unit))
+
+(defn print-merge-line (event target data)
+  (let (log (merge-log-item (clone (:item data)) target))
+    (print-action (:remote data) log (merge-event-action event))))
+
+(defn print-action (remote log-item action)
+  (let (settings (settings-for remote)
+        line (action-line (time-text) log-item action))
+    (print-lines (render-item settings line))))
+
+(defn print-failure (repo remote manager failure)
+  (match (failure-item-id failure)
+    ((some item)
+     (let (log (read-log-item repo item)
+           line (failure-line (time-text) log manager failure))
+       (print-lines (render-item (settings-for remote) line))))
+    (none (let (line (controller-failure-of (time-text) manager failure))
+            (print-lines (render-controller-failure (settings-for remote)
+                                                    line))))))
+
+(defn print-stop (remote merged failed rerun)
+  (let (line (stop-of (time-text) merged failed rerun))
+    (print-lines (render-stop (settings-for remote) line))))
+
+(defn review-log-item (id title kind branch pull-request head)
+  (->log-item :id (str id)
+              :kind (item-kind-of kind)
+              :title (str title)
+              :branch (some (str branch))
+              :pull-request (review-pr (str pull-request)
+                                       (str branch)
+                                       (str head))))
+
+(type read-log-item
+  (fn ((ref str) (ref string)) log-item))
+
+(defn read-log-item (repo item)
+  (match (show-log-item repo item)
+    ((ok log-item) log-item)
+    ((err _) (fallback-log-item (str item)))))
+
+(type merge-log-item
+  (fn (string (ref merge-target)) log-item))
+
+(defn merge-log-item (item target)
+  (->log-item :id (str item)
+              :kind (item-kind-of (clone (:kind target)))
+              :title (str (:title target))
+              :branch (clone (:branch target))
+              :pull-request (target-pr target)))
+
+(defn target-pr (target)
+  (match (parse-int-text (clone (:pull-request target)))
+    ((ok number)
+     (some (->pr-summary :number number
+                         :branch (unwrap-or (clone (:branch target))
+                                            (str))
+                         :head (some (short-head (:head target))))))
+    ((err _) none)))
+
+(defn review-pr (pull-request branch head)
+  (match (parse-int-text pull-request)
+    ((ok number)
+     (some (->pr-summary :number number
+                         :branch (str branch)
+                         :head (some (short-head head)))))
+    ((err _) none)))
+
+(defn show-log-item (repo item)
+  (let (outcome (execute repo (show-command item)))
+    (if (successful? outcome)
+      (parse-log-item item (:stdout outcome))
+      (err (str)))))
+
+(defn parse-log-item (item text)
+  (match (parse-json (as-str text))
+    ((ok document)
+     (ok (log-item-of-document (str item) document)))
+    ((err _) (err (str)))))
+
+(defn log-item-of-document (item document)
+  (match (json-field document "item")
+    (none (fallback-log-item item))
+    ((some record) (log-item-of-record item record))))
+
+(defn log-item-of-record (item record)
+  (->log-item :id (str item)
+              :kind (item-kind-of (optional-text record "kind" "build"))
+              :title (optional-text record "title" item)
+              :branch (session-branch record)
+              :pull-request (pull-summary record)))
+
+(defn fallback-log-item (item)
+  (->log-item :id (str item)
+              :kind item-kind/build
+              :title (str item)
+              :branch none
+              :pull-request none))
+
+(defn session-branch (item)
+  (match (json-field item "session")
+    (none none)
+    ((some session) (optional-text-option session "branch"))))
+
+(defn pull-summary (item)
+  (match (json-field item "pull_request")
+    (none none)
+    ((some pull) (pull-summary-of item pull))))
+
+(defn pull-summary-of (item pull)
+  (match (optional-number-text pull "number")
+    (none none)
+    ((some number-text)
+     (match (parse-int-text (str number-text))
+       ((ok number)
+        (some (->pr-summary :number number
+                            :branch (unwrap-or (session-branch item) (str))
+                            :head (head-option pull))))
+       ((err _) none)))))
+
+(defn head-option (pull)
+  (match (optional-text-option pull "head")
+    (none none)
+    ((some head) (some (short-head head)))))
+
+(defn optional-text (value key default)
+  (match (json-field value key)
+    (none (str default))
+    ((some found) (unwrap-or (json-text found) (str default)))))
+
+(defn optional-text-option (value key)
+  (match (json-field value key)
+    (none none)
+    ((some found) (json-text found))))
+
+(defn optional-number-text (value key)
+  (match (json-field value key)
+    (none none)
+    ((some found) (number-text-found found))))
+
+(defn number-text-found (found)
+  (match found
+    ((number text) (some (clone text)))
+    (_ none)))
+
+(defn parse-int-text (text)
+  (the (result int parse-int-error)
+       (parse (as-str text))))
+
+(defn show-command (item)
+  (->command :program (str "rmap")
+             :args (vec (str "item")
+                        (str "show")
+                        (str item)
+                        (str "--json"))
+             :label (str "rmap item show " item " --json")))
+
+(defn settings-for (remote)
+  (->log-settings :colors (read-color-mode)
+                  :width (stderr-width)
+                  :target (target-of (stderr-terminal?))
+                  :remote (clone remote)))
+
+(defn target-of (terminal)
+  (if terminal output-target/terminal output-target/stream))
+
+(defn time-text ()
+  (local-time->text (local-time)))
+
+(defn print-lines (lines)
+  (loop (index 0)
+    (if (>= index (len lines))
+      (do)
+      (do
+        (eprintln (at lines index))
+        (recur (inc index))))))

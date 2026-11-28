@@ -274,6 +274,11 @@
   (rust "String::from_utf8_lossy({0}.stderr.as_slice()).into_owned()"
     (fn ((ref process-output)) string)))
 
+(def dispatch-item-json
+  (str "{\"item\":{\"id\":\"rm-0001\","
+       "\"title\":\"Build the first ready item\","
+       "\"kind\":\"build\"}}"))
+
 (defstruct fake-settings
   :next-json string
   :next-signal string
@@ -335,7 +340,7 @@
   (->fake-settings :next-json next-json
                    :next-signal (str)
                    :ready-json ready-json
-                   :item-json (str "{}")
+                   :item-json (clone dispatch-item-json)
                    :item-later-json (str)
                    :stop-after 0
                    :claim-exit 0

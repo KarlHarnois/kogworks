@@ -7,8 +7,9 @@
 (export ->action-failure ->failure-report
         ->signal-stop-report action-failure controller-error
         disarm-status error->message factory-error
-        factory-error->message failure-report merge-error
-        merge-error->message signal-stop-report)
+        factory-error->message failure-report
+        manager-message? merge-error merge-error->message
+        signal-stop->log-text signal-stop-report)
 
 (defstruct failure-report
   :manager (option string)
@@ -54,6 +55,11 @@
   :command string
   :code int
   :detail string)
+
+(defn manager-message? (failure)
+  (match failure
+    ((signal-stop _) false)
+    (_ true)))
 
 (defn error->message (failure)
   (match failure
@@ -111,6 +117,15 @@
     ((timed-out item pull-request seconds)
      (str "merge: " item ": PR " pull-request
           " did not merge within " seconds " seconds"))))
+
+(defn signal-stop->log-text (report)
+  (str "PR "
+       (:pull-request-number report)
+       " stopped on "
+       (stop-signal->text (:signal report))
+       "; auto-merge "
+       (disarm-status->text (:pull-request-number report)
+                            (:disarm report))))
 
 (defn signal-stop->message (report)
   (str "merge: "

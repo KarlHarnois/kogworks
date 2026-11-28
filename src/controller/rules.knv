@@ -6,8 +6,9 @@
 
 (export action-kind action-kind->text actor first-build
         first-controller-action item-action item-kind
-        next-action next-line parse-next-response
-        parse-ready-response ready-item subject)
+        item-kind-of next-action next-line
+        parse-next-response parse-ready-response ready-item
+        subject)
 
 (defstruct next-line
   :subject subject
@@ -114,6 +115,13 @@
       ((found item) (some item))
       (absent (recur (inc index)))
       (done none))))
+
+(defn item-kind-of (text)
+  (cond
+    ((= text (str "build")) item-kind/build)
+    ((= text (str "research")) item-kind/research)
+    ((= text (str "design")) item-kind/design)
+    (else (item-kind/other text))))
 
 (defn parse-next-lines (items)
   (loop (index 0
@@ -309,13 +317,6 @@
   (let-try (id (required-text value "id")
             kind-text (required-text value "kind"))
     (ok (->ready-item :id id :kind (item-kind-of kind-text)))))
-
-(defn item-kind-of (text)
-  (cond
-    ((= text (str "build")) item-kind/build)
-    ((= text (str "research")) item-kind/research)
-    ((= text (str "design")) item-kind/design)
-    (else (item-kind/other text))))
 
 (defn required-text (value key)
   (let-try (found (required-field-value value key))

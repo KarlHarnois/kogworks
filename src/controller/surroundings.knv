@@ -1,6 +1,8 @@
 (module
   "Reads the terminal, the color settings and the local time for the controller log.")
 
+(use controller/log color-mode)
+
 (export ->clock-time ->color-settings clock-time
         clock-time->text color-mode color-settings
         color-settings->color-mode colorterm env-flag
@@ -163,11 +165,6 @@
   bit-24
   other)
 
-(defenum color-mode
-  no-color
-  colors-256
-  true-color)
-
 (defstruct clock-time
   :hours int
   :minutes int
@@ -217,8 +214,8 @@
 
 (defn colorterm-mode (setting)
   (match setting
-    (truecolor color-mode/true-color)
-    (bit-24 color-mode/true-color)
+    (truecolor color-mode/truecolor)
+    (bit-24 color-mode/truecolor)
     (_ color-mode/colors-256)))
 
 (defn stderr-stream ()
