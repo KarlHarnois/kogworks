@@ -94,6 +94,7 @@
     "          ╰─ reviewer     review-rm-9a01-4be21c0, behavior review"
     "15:31:18  rm-35cb  build ✓ review ○ merge ○  abandoned    Add kogworks check and remove the module and format commands"
     "          ╰─ session      review-rm-35cb-9f1c2ab ended with no verdict"
+    "15:31:48  rm-35cb  build ✓ review ▸ merge ○  reviewing    Add kogworks check and remove the module and format commands"
     "15:40:09  rm-77c0  build ▸ review ○ merge ○  fixing (2)   Print the stop summary when the controller exits"
     "          ╰─ moved        in_review to fixing with no review verdict"))
 
@@ -206,6 +207,7 @@
                      (render-item (settings-118) (print-merging))
                      (render-item (settings-118) (heartbeat-changes))
                      (render-item (settings-118) (cb-abandoned))
+                     (render-item (settings-118) (cb-reviewing-after-abandoned))
                      (render-item (settings-118) (print-fixing-moved)))))
 
 (defn settings-256 ()
@@ -356,6 +358,15 @@
                 log-status/abandoned
                 (clone add-title)
                 (vec (sub-line/session (str "review-rm-35cb-9f1c2ab ended with no verdict")))))
+
+(defn cb-reviewing-after-abandoned ()
+  (item-line-of "15:31:48" "rm-35cb"
+                (build-stages stage-state/done
+                              stage-state/active
+                              stage-state/waiting)
+                log-status/reviewing
+                (clone add-title)
+                (vec)))
 
 (defn cb-building ()
   (item-line-of "14:02:13" "rm-35cb"
