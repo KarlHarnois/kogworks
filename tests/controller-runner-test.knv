@@ -2,7 +2,9 @@
 
 (use controller/runner-adapter agents-from-output
                                command-for message-command
-                               runner-error->message)
+                               runner-error->message
+                               runner-name?
+                               runner-names->text)
 
 (use controller/runner ->send-request ->start-request
                        runner-error runner-request)
@@ -77,7 +79,7 @@
                             :label (str "ringleader send build-rm-0001"))))))
 
 (deftest a-list-agents-request-builds-the-agent-list-command
-  (assert (= (command-for runner-request/list-agents)
+  (assert (= (command-for (runner-request/list-agents (str "ringleader")))
              (ok (->command :program (str "ringleader")
                             :args (vec (str "agent")
                                        (str "list")
@@ -99,3 +101,9 @@
 (deftest the-message-command-names-the-manager
   (assert (= (message-command (str "kw-manager"))
              (str "ringleader send kw-manager"))))
+
+(deftest the-adapter-knows-its-runner-names
+  (assert (runner-name? (str "ringleader")))
+  (assert (not (runner-name? (str "docker"))))
+  (assert (contains? (runner-names->text)
+                     (as-str (str "ringleader")))))

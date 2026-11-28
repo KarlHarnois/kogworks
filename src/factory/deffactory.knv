@@ -5,9 +5,12 @@
           list? nth rest string symbol symbol-name symbol?
           value-eq)
 
+(use controller/runner-adapter known-runner-name?
+                               known-runner-names-text)
+
 (use factory/json factory->json)
 (use factory/roles roles)
-(use factory/types ->factory merge-method runner)
+(use factory/types ->factory merge-method)
 (use prelude/macros header-shape template)
 
 (export deffactory)
@@ -20,15 +23,16 @@
               (export (unquote (symbol name "factory-json"))
                       (unquote (symbol name "factory-value")))
               (def (unquote (symbol name "factory-value"))
-                (->factory
-                  :schema 0
-                  :name (str (unquote (symbol-name name)))
-                  :manager (str (unquote (setting parts "manager")))
-                  :roadmap (str (unquote (setting parts "roadmap")))
-                  :max-active (unquote (setting parts "max-active"))
-                  :merge (unquote (merge->symbol (setting parts "merge")))
-                  :roles (unquote (roles-form parts))
-                  :runner (unquote (runner->symbol (setting parts "runner")))))
+                (->factory :schema 0
+                           :name (str (unquote (symbol-name name)))
+                           :manager (str (unquote (setting parts "manager")))
+                           :roadmap (str (unquote (setting parts "roadmap")))
+                           :max-active (unquote (setting parts "max-active"))
+                           :merge (unquote (merge->symbol (setting parts
+                                                                   "merge")))
+                           :roles (unquote (roles-form parts))
+                           :runner (str (unquote (checked-runner-name
+                                                   (setting parts "runner"))))))
               (defn (unquote (symbol name "factory-json")) ()
                 (factory->json (unquote (symbol name "factory-value")))))))
 
@@ -83,16 +87,17 @@
           "merge-method/"
           (symbol-name merge)))
 
-(defn runner->symbol (runner)
+(defn checked-runner-name (runner)
   (cond
     ((bool-not (symbol? runner)) (unknown-runner runner))
-    ((value-eq (symbol-name runner) "ringleader")
-     (symbol (quote runner) "runner/" (symbol-name runner)))
+    ((known-runner-name? (symbol-name runner))
+     (symbol-name runner))
     (else (unknown-runner runner))))
 
 (defn unknown-runner (runner)
-  (fail "deffactory needs `:runner ringleader`"
+  (fail (string "deffactory needs `:runner` set to "
+                known-runner-names-text)
     runner
-    "write `:runner ringleader`; `ringleader` is the only known runner"))
+    (string "write " known-runner-names-text " after `:runner`")))
 
 (header-shape (deffactory name))

@@ -2,7 +2,6 @@
   "Checks that each factory role names an agent the session runner knows.")
 
 (use controller/failure ->action-failure controller-error)
-(use controller/factory runner)
 (use controller/process command-detail execute successful?)
 
 (use controller/runner-adapter agents-from-output
@@ -22,8 +21,7 @@
     (fn (failure) (controller-error/runner-failed failure))))
 
 (defn agents-request (config)
-  (match (:runner config)
-    (ringleader runner-request/list-agents)))
+  (runner-request/list-agents (clone (:runner config))))
 
 (defn run-agent-check (repo config command)
   (let (outcome (execute repo command))

@@ -7,7 +7,7 @@
 (defenum runner-request
   (start start-request)
   (send send-request)
-  list-agents)
+  (list-agents string))
 
 (defstruct start-request
   :session string

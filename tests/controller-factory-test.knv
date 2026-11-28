@@ -1,4 +1,4 @@
-(use controller/factory merge-method read-factory runner)
+(use controller/factory merge-method read-factory)
 (use controller/fields field-error)
 
 (use controller/failure factory-error
@@ -15,7 +15,7 @@
        (assert (= (:manager config) (str "fake-manager")))
        (assert (= (:roadmap config) (str "fake-roadmap")))
        (assert (= (:merge config) merge-method/gh-auto))
-       (assert (= (:runner config) runner/ringleader))
+       (assert (= (:runner config) (str "ringleader")))
        (assert (= (:agent (:worker config))
                   (str "fake-agent")))
        (assert (= (:skill (:worker config))

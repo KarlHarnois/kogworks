@@ -1,5 +1,4 @@
-(use factory/types ->factory ->role merge-method role-name
-                   runner)
+(use factory/types ->factory ->role merge-method role-name)
 
 (export fake-factory)
 
@@ -10,7 +9,7 @@
              :roadmap (str "fake-roadmap")
              :max-active 1
              :merge merge-method/gh-auto
-             :runner runner/ringleader
+             :runner (str "ringleader")
              :roles (vec (->role :name role-name/worker
                                  :agent (str "fake-worker-agent")
                                  :skill (str "fake:worker-skill")

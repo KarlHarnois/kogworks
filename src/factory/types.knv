@@ -1,5 +1,5 @@
 (export ->factory ->role factory merge-method role role-name
-        role-name->text runner runner->text)
+        role-name->text runner->text)
 
 (defstruct factory
   :schema int
@@ -8,12 +8,10 @@
   :roadmap string
   :max-active int
   :merge merge-method
-  :runner runner
+  :runner string
   :roles (vec role))
 
 (defenum merge-method gh-auto)
-
-(defenum runner ringleader)
 
 (defstruct role
   :name role-name
@@ -30,5 +28,4 @@
     (worker (str "worker"))
     (reviewer (str "reviewer"))))
 
-(defn runner->text (runner)
-  (match runner (ringleader (str "ringleader"))))
+(defn runner->text (runner) (str runner))

@@ -4,14 +4,26 @@
 (use controller/json json-array json-error->message
                      json-field json-text parse-json)
 
+(use code string value-eq)
 (use controller/process ->command command)
 
 (use controller/runner ->send-request ->start-request
                        runner-error runner-request
                        send-request start-request)
 
-(export agents-from-output command-for message-command
-        runner-error->message send-command start-command)
+(export agents-from-output command-for known-runner-name?
+        known-runner-names-text message-command
+        runner-error->message runner-name? runner-names
+        runner-names->text send-command start-command)
+
+(def runner-names (vec "ringleader"))
+
+(def known-runner-name (string "ringleader"))
+
+(def known-runner-names-text (string "`ringleader`"))
+
+(defn known-runner-name? (name)
+  (value-eq name known-runner-name))
 
 (type command-for
   (fn (runner-request) (result command runner-error)))
@@ -20,7 +32,7 @@
   (match request
     ((start start) (start-command start))
     ((send send) (ok (send-command send)))
-    (list-agents (ok (agents-command)))))
+    ((list-agents _) (ok (agents-command)))))
 
 (defn agents-from-output (text)
   (match (parse-json text)
@@ -30,6 +42,17 @@
 
 (defn message-command (session)
   (str "ringleader send " session))
+
+(defn runner-name? (name)
+  (any? runner-names
+    (fn (known) (= (str known) (str name)))))
+
+(defn runner-names->text ()
+  (str "`"
+       (join (collect (map runner-names
+                        (fn (name) (str name))))
+             "`, `")
+       "`"))
 
 (defn runner-error->message (failure)
   (match failure

@@ -178,8 +178,9 @@
                                      "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
     (let (reason (failure-reason (synth-factory (as-str dir)))
           output (unwrap-ok (run-synth (as-str dir))))
-      (assert (contains? reason "deffactory needs `:runner ringleader`"))
-      (assert (contains? reason "only known runner"))
+      (assert (contains? reason
+                         "deffactory needs `:runner` set to `ringleader`"))
+      (assert (contains? reason "ringleader"))
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
-                         "deffactory needs `:runner ringleader`")))))
+                         "deffactory needs `:runner` set to `ringleader`")))))

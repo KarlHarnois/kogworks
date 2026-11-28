@@ -1,0 +1,38 @@
+(def modules-naming-the-runner
+  (rust "(|| -> Result<Vec<String>, String> {{
+    fn walk(dir: &std::path::Path, out: &mut Vec<String>) {{
+      if let Ok(entries) = std::fs::read_dir(dir) {{
+        for entry in entries.flatten() {{
+          let path = entry.path();
+          if path.is_dir() {{
+            walk(&path, out);
+          }} else if path.extension().map(|ext| ext == \"knv\").unwrap_or(false) {{
+            out.push(path.to_string_lossy().into_owned());
+          }}
+        }}
+      }}
+    }}
+    let mut paths = Vec::new();
+    walk(std::path::Path::new({0}), &mut paths);
+    let mut offenders = Vec::new();
+    for path in paths {{
+      if path.as_str() == {1} {{
+        continue;
+      }}
+      let text = std::fs::read_to_string(&path)
+        .map_err(|error| error.to_string())?;
+      if text.contains({2}) {{
+        offenders.push(path);
+      }}
+    }}
+    Ok(offenders)
+  }})()"
+    (fn ((ref str) (ref str) (ref str))
+      (result (vec string) string))))
+
+(deftest only-the-adapter-names-the-runner
+  (match (modules-naming-the-runner (as-str (str "src"))
+                                    (as-str (str "src/controller/runner-adapter.knv"))
+                                    (as-str (str "ringleader")))
+    ((ok offenders) (assert (empty? offenders)))
+    ((err _) (assert false))))

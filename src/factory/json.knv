@@ -77,7 +77,9 @@
   (str "    "
        (text->json (role-name->text (:name role)))
        ": "
-       (role->json role)))
+       (role->json (clone role))))
+
+(type role->json (fn (role) string))
 
 (defn role->json (role)
   (str "{\n      \"agent\": "

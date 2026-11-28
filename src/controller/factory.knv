@@ -10,22 +10,21 @@
                      json-text parse-json)
 
 (use controller/process join-path read-text-file text-file?)
+(use controller/runner-adapter runner-name?)
 
 (export ->factory-config ->role factory-config factory-path
         merge-method read-factory read-factory-document
-        read-manager role runner)
+        read-manager role)
 
 (defstruct factory-config
   :manager string
   :roadmap string
   :merge merge-method
-  :runner runner
+  :runner string
   :worker role
   :reviewer role)
 
 (defenum merge-method gh-auto)
-
-(defenum runner ringleader)
 
 (defstruct role
   :agent string
@@ -96,9 +95,9 @@
     (none (err (factory-error/field (field-error/non-text-field (str "runner")))))))
 
 (defn runner-of (text)
-  (cond
-    ((= text (str "ringleader")) (ok runner/ringleader))
-    (else (err (factory-error/unsupported-runner (clone text))))))
+  (if (runner-name? text)
+    (ok (clone text))
+    (err (factory-error/unsupported-runner (clone text)))))
 
 (defn merge-method-of (text)
   (cond
