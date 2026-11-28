@@ -16,7 +16,12 @@
        "{\"item\":\"rm-0002\",\"actions\":[{\"action\":\"send-fixes\","
        "\"actor\":\"manager\"}]},"
        "{\"item\":\"rm-0003\",\"actions\":[{\"action\":\"dispatch\","
-       "\"actor\":\"controller\"}]}" "]}"))
+       "\"actor\":\"controller\"}]},"
+       "{\"item\":\"rm-research\",\"kind\":\"research\",\"actions\":["
+       "{\"action\":\"dispatch\",\"actor\":\"controller\"}]},"
+       "{\"item\":\"rm-design\",\"kind\":\"design\",\"actions\":["
+       "{\"action\":\"dispatch\",\"actor\":\"controller\"}]}"
+       "]}"))
 
 (def waiting-next
   (str "{\"next\":["
@@ -55,7 +60,6 @@
 
 (def build-ready
   (str "{\"ready\":["
-       "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
        "{\"id\":\"rm-0001\",\"kind\":\"build\",\"weight\":1.5},"
        "{\"id\":\"rm-0002\",\"kind\":\"build\"}" "]}"))
 
@@ -67,6 +71,11 @@
   (str "{\"ready\":["
        "{\"id\":\"rm-research\",\"kind\":\"research\",\"score\":1e3},"
        "{\"id\":\"rm-design\",\"kind\":\"design\"}" "]}"))
+
+(def design-ready
+  (str "{\"ready\":[{\"id\":\"rm-design\",\"kind\":\"design\"}]}"))
+
+(def empty-ready (str "{\"ready\":[]}"))
 
 (def review-item (str "rm-0009"))
 
@@ -150,18 +159,28 @@
          (str "rmap item show rm-0001 --json\n"))))
 
 (defn dispatch-sequence (root)
-  (str (dispatch-actions root)
-       "rmap item show rm-0001 --json\n"))
+  (dispatch-sequence-for root
+                         (str "rm-0001")
+                         (str "build-rm-0001")))
+
+(defn dispatch-sequence-for (root id session)
+  (str (dispatch-actions-for root id session)
+       "rmap item show " id " --json\n"))
 
 (defn dispatch-actions (root)
+  (dispatch-actions-for root
+                        (str "rm-0001")
+                        (str "build-rm-0001")))
+
+(defn dispatch-actions-for (root id session)
   (let (repo (absolute-repo-of root))
-    (str
-      (next-line (str "fake-roadmap"))
-      (send-line (clone send-fixes-notice))
-      (ready-line (str "fake-roadmap"))
-      "rmap item claim rm-0001 --session build-rm-0001 --branch build-rm-0001\n"
-      "ringleader new --name build-rm-0001 --repo " repo
-      " --agent fake-agent --prompt <filled>\n")))
+    (str (next-line (str "fake-roadmap"))
+         (send-line (clone send-fixes-notice))
+         (ready-line (str "fake-roadmap"))
+         "rmap item claim " id " --session " session
+         " --branch " session "\n" "ringleader new --name "
+         session " --repo " repo
+         " --agent fake-agent --prompt <filled>\n")))
 
 (defn review-settings (next-json)
   (assoc (default-settings next-json (clone build-ready))
@@ -334,6 +353,38 @@
                       "session=build-rm-0001 branch=build-rm-0001 "
                       "base=main skill=fake-skill\n"))))))
 
+(deftest dispatches-a-research-item
+  (let (root (unwrap-ok (setup "dispatch-research"
+                               (default-settings (clone ignored-next)
+                                                 (clone research-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (dispatch-sequence-for root
+                                        (str "rm-research")
+                                        (str "research-rm-research"))))
+      (assert (= (prompt-text root)
+                 (str "item=rm-research roadmap=fake-roadmap "
+                      "session=research-rm-research "
+                      "branch=research-rm-research "
+                      "base=main skill=fake-skill\n"))))))
+
+(deftest dispatches-a-design-item
+  (let (root (unwrap-ok (setup "dispatch-design"
+                               (default-settings (clone ignored-next)
+                                                 (clone design-ready)))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 0))
+      (assert (= (sequence-text root)
+                 (dispatch-sequence-for root
+                                        (str "rm-design")
+                                        (str "design-rm-design"))))
+      (assert (= (prompt-text root)
+                 (str "item=rm-design roadmap=fake-roadmap "
+                      "session=design-rm-design "
+                      "branch=design-rm-design "
+                      "base=main skill=fake-skill\n"))))))
+
 (deftest ends-the-session-when-ringleader-new-fails
   (let (root (unwrap-ok (setup "new-fails"
                                (assoc (default-settings (clone ignored-next)
@@ -468,7 +519,7 @@
 (deftest polls-when-no-action-exists
   (let (root (unwrap-ok (setup "poll"
                                (assoc (default-settings (clone wait-next)
-                                                        (clone research-ready))
+                                                        (clone empty-ready))
                                       :stop-after 3))))
     (let (output (unwrap-ok (run root
                                  (vec (str "--poll") (str "0")))))
@@ -480,7 +531,7 @@
 (deftest notifies-the-manager-once-for-each-waiting-action
   (let (root (unwrap-ok (setup "notice-once"
                                (assoc (default-settings (clone waiting-next)
-                                                        (clone research-ready))
+                                                        (clone empty-ready))
                                       :stop-after 3))))
     (let (output (unwrap-ok (run root
                                  (vec (str "--poll") (str "0")))))
@@ -493,7 +544,7 @@
 (deftest sends-a-notice-again-when-the-stall-time-has-passed
   (let (root (unwrap-ok (setup "notice-repeat"
                                (assoc (default-settings (clone waiting-next)
-                                                        (clone research-ready))
+                                                        (clone empty-ready))
                                       :stop-after 3))))
     (let (output (unwrap-ok (run root
                                  (vec (str "--poll")
@@ -507,7 +558,7 @@
 (deftest sends-a-notice-again-on-the-pass-after-a-failed-send
   (let (root (unwrap-ok (setup "notice-retry"
                                (assoc (default-settings (clone waiting-next)
-                                                        (clone research-ready))
+                                                        (clone empty-ready))
                                       :stop-after 3
                                       :send-failures 1))))
     (let (output (unwrap-ok (run root
