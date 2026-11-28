@@ -309,3 +309,22 @@
         (let (second (unwrap-ok (first-controller-run root (clone repo))))
           (assert (= (exit-code second) 0))
           (assert (contains? (sequence-text root) "gh pr merge")))))))
+
+(deftest fails-the-review-stage-when-the-design-reviewer-cannot-start
+  (let (root (unwrap-ok (setup "design-new-fails"
+                               (assoc (design-settings)
+                                      :new-exit 4
+                                      :new-error (str
+                                                   "cannot start session")))))
+    (let (output (unwrap-ok (run root)))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (sequence-text root)
+                         (as-str (str "rmap session end "
+                                      design-session
+                                      " --reason abandoned"))))
+      (assert (contains? (stderr-text output) "cannot start session"))
+      (assert (contains? (stderr-text output) "build ✓ review ✗ merge ○"))
+      (assert (contains? (sequence-text root)
+                         "ringleader send fake-manager review:"))
+      (assert (not (contains? (sequence-text root)
+                              "ringleader send fake-manager design:"))))))
