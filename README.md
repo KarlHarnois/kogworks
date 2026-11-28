@@ -1,37 +1,38 @@
 # Kogworks
 
-Kogworks is a Knave 0.22.0 project. It synthesizes a factory file and runs a controller that advances a roadmap through rmap, ringleader and GitHub.
+Kogworks synthesizes a factory file for a repository. Its controller advances the roadmap of that repository through rmap, ringleader and GitHub.
 
-`knave build` builds the binary at `./target/knave/kogworks/kogworks`. The commands below run that binary by its path.
+## Install
 
-## Factory layout
+TBD
 
-| Path | Contents |
-| --- | --- |
-| `.kogworks/factory.knv` | The factory definition. It holds one `deffactory` form that names the manager, roadmap, `max_active`, merge method and the worker and reviewer roles. |
-| `.kogworks/factory.json` | The committed factory output. The controller reads this file. |
-| `.kogworks/briefs/` | The worker and reviewer briefs that the roles name, such as `worker.md` and `reviewer.md`. A brief path is relative to the repository. |
+## Usage
 
-`./target/knave/kogworks/kogworks synth <dir>` reads `<dir>/factory.knv` and writes `<dir>/factory.json`. For this repository, run `./target/knave/kogworks/kogworks synth .kogworks`. Never edit `.kogworks/factory.json` by hand: the gate fails when the output differs from the definition.
+```text
+Factory.
 
-## Controller
+Usage: kogworks [OPTIONS] <COMMAND>
 
-Run `./target/knave/kogworks/kogworks controller --repo <path>`. For `--repo <path>`, the controller reads `<path>/.kogworks/factory.json` for the roadmap, manager, merge method and roles. Each pass handles one action. It starts a reviewer for a review or verify action, or merges an approved pull request. With no such action, it starts the worker for the first startable build from `rmap ready`. The base branch is the default branch of the repository at `<path>`. The controller runs no model call. Between passes, the controller remembers only the notices it sent. The controller needs `rmap`, `ringleader`, `gh` and `git` on `PATH`. Each dispatch and review runs `git symbolic-ref` to read the default branch.
+Commands:
+  synth       Writes <dir>/factory.json.
+  check       Checks <dir>/factory.knv without writing <dir>/factory.json.
+  controller  Runs the controller loop against a governed repository. It polls
+              rmap and starts the worker for the first startable build, and
+              starts one behavior reviewer when rmap marks a build for review or
+              verify. It sends the manager one notice for each action that waits
+              on the manager or the user, and sends it again after each --stall
+              seconds while the action still waits. It exits 1 on the first
+              failure. A person reads the manager message and restarts it. The
+              controller can merge pull requests that change the controller
+              itself; the running binary stays at the version it was built from,
+              and a person rebuilds and restarts it after such a merge. It has
+              no automatic restart, supervisor or backoff loop. The pilot pins
+              rmap to a build that predates the design approval requirement, so
+              a behavior approve alone merges and the controller starts no
+              design reviewer.
+  apply       Sets a governed repository's roadmap max active from its factory.
+  help        Print the help of a command
 
-Each pass starts by reading every pending action from `rmap next`. For each action that waits on the manager or the user, the controller sends the manager one notice. The controller prints the notice to standard error and sends the notice with `ringleader send`. If the send fails, the controller sends the notice again on the next pass. If the action still waits after `--stall` seconds, the controller prints a stall line and sends the notice again. After a restart, the controller sends a notice for every action that still waits.
-
-`--poll <seconds>` sets the interval between passes (default 30). `--stall <seconds>` sets how long an action waits before the controller sends its notice again (default 900). `--merge-poll <seconds>` sets the merge poll interval. `--merge-timeout <seconds>` sets the merge timeout (default 3600). `--once` runs one pass and exits.
-
-The controller stops on the first failure. It sends the manager one message and exits 1. A person reads the message, fixes the cause, and restarts the controller with the same command. The controller has no automatic restart, supervisor or backoff loop.
-
-The controller can merge pull requests that change the controller. The running binary stays at the version it was built from. After such a merge, a person rebuilds with `knave build` and restarts the controller.
-
-## Gate
-
-Run the gate in [`AGENTS.md`](AGENTS.md) before you push. If a command fails, fix the cause and rerun it at most twice. If it still fails, stop.
-
-The `Kogworks` workflow runs the gate on every push and pull request.
-
-## GitHub settings
-
-For KarlHarnois/kogworks, enable auto-merge and protect `main` with the `check` status from the `Knave` workflow as a required status check. The merge action checks that auto-merge is enabled and that `main` has at least one required status check. It exits 1 without merging when either check fails. The controller never changes repository settings.
+Options:
+  -h, --help  Print help
+```
