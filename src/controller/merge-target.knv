@@ -18,7 +18,8 @@
         merge-approval merge-command-failure merge-event
         merge-item-status merge-outcome merge-report
         merge-settings merge-target read-item-status
-        read-merge-target read-merging-items report-event)
+        read-merge-target read-merging-items
+        read-watched-items report-event)
 
 (defenum merge-event
   merging
@@ -57,6 +58,7 @@
 
 (defenum merge-item-status
   fixing
+  in-review
   merging
   other)
 
@@ -67,16 +69,13 @@
   (read-item-document repo item item-status-field))
 
 (defn read-merging-items (repo roadmap)
-  (let (command (list-command roadmap))
-    (let (outcome (execute repo command))
-      (if (successful? outcome)
-        (map-err (merging-ids (str (trim (:stdout outcome))))
-          (fn (reason)
-            (invalid-output (str "-")
-                            command
-                            (str "invalid item list JSON")
-                            reason)))
-        (err (merge-command-failure (str "-") command outcome))))))
+  (read-item-ids repo roadmap (vec (str "merging"))))
+
+(defn read-watched-items (repo roadmap)
+  (read-item-ids repo roadmap
+                 (vec (str "merging")
+                      (str "fixing")
+                      (str "in_review"))))
 
 (defn invalid-item-output (item command reason)
   (invalid-output item command
@@ -163,6 +162,7 @@
 (defn text->item-status (text)
   (cond
     ((= text (str "fixing")) merge-item-status/fixing)
+    ((= text (str "in_review")) merge-item-status/in-review)
     ((= text (str "merging")) merge-item-status/merging)
     (else merge-item-status/other)))
 
@@ -170,27 +170,40 @@
   (if approved
     merge-approval/approved merge-approval/not-approved))
 
-(defn merging-ids (text)
+(defn read-item-ids (repo roadmap statuses)
+  (let (command (list-command roadmap))
+    (let (outcome (execute repo command))
+      (if (successful? outcome)
+        (map-err (item-ids (str (trim (:stdout outcome)))
+                           statuses)
+                 (fn (reason)
+                   (invalid-output (str "-")
+                                   command
+                                   (str "invalid item list JSON")
+                                   reason)))
+        (err (merge-command-failure (str "-") command outcome))))))
+
+(defn item-ids (text statuses)
   (match (parse-json (as-str text))
-    ((ok document) (document-merging-ids document))
+    ((ok document) (document-item-ids document statuses))
     ((err failure) (err (json-error->message failure)))))
 
-(defn document-merging-ids (document)
+(defn document-item-ids (document statuses)
   (match (json-field document "items")
     (none (err (str "`items` is missing")))
-    ((some value) (merging-items-of value))))
+    ((some value) (items-of value statuses))))
 
-(defn merging-items-of (value)
+(defn items-of (value statuses)
   (match (json-array value)
     (none (err (str "`items` is not an array")))
-    ((some items) (collect-merging-ids items))))
+    ((some items) (collect-item-ids items statuses))))
 
-(defn collect-merging-ids (items)
+(defn collect-item-ids (items statuses)
   (loop (index 0
          ids (vec))
     (if (>= index (len items))
       (ok ids)
-      (match (merging-id (at items index))
+      (match (item-id (at items index) statuses)
         ((ok none) (recur (inc index) ids))
         ((ok (some id)) (recur (inc index) (push-id! ids id)))
         ((err reason) (err reason))))))
@@ -198,15 +211,14 @@
 (defn push-id! (ids id)
   (do (push! ids id) ids))
 
-(defn merging-id (item)
-  (map-err (merging-id-fields item) field-error->message))
+(defn item-id (item statuses)
+  (map-err (item-id-fields item statuses)
+           field-error->message))
 
-(defn merging-id-fields (item)
+(defn item-id-fields (item statuses)
   (let-try (id (required-text item "id" "items[].id")
             status (required-text item "status" "items[].status"))
-    (ok (merging-option id status))))
+    (ok (watched-option id status statuses))))
 
-(defn merging-option (id status)
-  (if (= status (str "merging"))
-    (some id)
-    none))
+(defn watched-option (id status statuses)
+  (if (contains? statuses status) (some id) none))

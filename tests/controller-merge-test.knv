@@ -34,6 +34,12 @@
   (str "{\"state\":\"OPEN\",\"headRefOid\":\"" moved-head
        "\"," "\"autoMergeRequest\":null}"))
 
+(def moved-armed-view
+  (str "{\"state\":\"OPEN\",\"headRefOid\":\"" moved-head
+       "\","
+       "\"autoMergeRequest\":{\"enabledAt\":\"2026-11-26T00:00:00Z\","
+       "\"mergeMethod\":\"MERGE\"}}"))
+
 (def review-next
   (str "{\"next\":[{\"item\":\"" review-item
        "\",\"actions\":["
@@ -272,6 +278,15 @@
        (join (collect (map (iter ids)
                         (fn (id)
                           (str "{\"id\":\"" id "\",\"status\":\"merging\"}"))))
+             ",")
+       "]}"))
+
+(defn status-items (ids status)
+  (str "{\"items\":["
+       (join (collect
+               (map (iter ids)
+                 (fn (id)
+                   (str "{\"id\":\"" id "\",\"status\":\"" status "\"}"))))
              ",")
        "]}"))
 
@@ -539,18 +554,21 @@
 (deftest disarms-when-the-item-returns-to-fixing
   (let (root (unwrap-ok (setup-merging "merge-fixing"
                                        (assoc (merge-settings)
-                                              :items-json (merging-items (vec (clone
-                                                                                merge-item))))
+                                              :items-json (status-items (vec (clone
+                                                                               merge-item))
+                                                                        (str "fixing"))
+                                              :view-json (clone armed-view))
                                        (clone fixing-item-json)))
         output (unwrap-ok (run root)))
     (assert (= (exit-code output) 1))
     (assert (contains? (sequence-text root)
                        (as-str (show-line merge-item))))
     (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
                        (as-str (disarm-line merge-pr))))
     (assert (stderr-has? output
-                         (str "the item is fixing, so auto-merge on PR 12 is disarmed")))
-    (assert (not (contains? (sequence-text root) "pr view")))))
+                         (str "the item is fixing, so auto-merge on PR 12 is disarmed")))))
 
 (deftest disarms-when-the-approval-is-gone
   (let (root (unwrap-ok (setup-merging "merge-unapproved"
@@ -720,3 +738,34 @@
     (assert (not (contains? (sequence-text root) "--disable-auto")))
     (assert (not (stderr-has? output (str "disarmed"))))
     (assert (stderr-has? output (str "show refused")))))
+
+(deftest disarms-an-in-review-build-with-a-moved-head
+  (let (root (unwrap-ok (setup-merging "merge-in-review-moved"
+                                       (assoc
+                                         (merge-settings)
+                                         :items-json (status-items (vec (clone merge-item))
+                                                                   (str "in_review"))
+                                         :view-json (clone moved-armed-view))
+                                       (clone approved-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 1))
+    (assert (contains? (sequence-text root)
+                       (as-str (show-line merge-item))))
+    (assert (contains? (sequence-text root)
+                       (as-str (resume-view-line merge-pr))))
+    (assert (contains? (sequence-text root)
+                       (as-str (disarm-line merge-pr))))
+    (assert (stderr-has? output (str "not the approved")))))
+
+(deftest ignores-an-unarmed-fixing-build
+  (let (root (unwrap-ok (setup-merging "merge-fixing-unarmed"
+                                       (assoc (merge-settings)
+                                              :items-json (status-items (vec (clone
+                                                                               merge-item))
+                                                                        (str "fixing"))
+                                              :view-json (clone open-view))
+                                       (clone fixing-item-json)))
+        output (unwrap-ok (run root)))
+    (assert (= (exit-code output) 0))
+    (assert (not (contains? (sequence-text root) "--disable-auto")))
+    (assert (not (stderr-has? output (str "is fixing"))))))

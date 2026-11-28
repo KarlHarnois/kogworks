@@ -38,6 +38,7 @@
                              merge-outcome merge-settings
                              merge-target read-merge-target
                              read-merging-items
+                             read-watched-items
                              report-event)
 
 (use controller/merge-time merge-timed-out?)
@@ -75,7 +76,7 @@
      (guard-merge-target repo config settings item target))))
 
 (defn check-merges (repo config settings roadmap)
-  (match (read-merging-items repo roadmap)
+  (match (read-watched-items repo roadmap)
     ((err failure) (err failure))
     ((ok ids)
      (check-item-ids repo config settings ids
@@ -205,9 +206,50 @@
 
 (defn check-target-status (repo config settings item target)
   (match (:item-status target)
-    (fixing (disarm-and-stop repo settings item target
-                             (item-fixing-error item target)))
+    (fixing (check-fixing-merge repo settings item target))
+    (in-review (check-in-review-merge repo settings item target))
     (_ (check-target-approval repo config settings item target))))
+
+(defn check-fixing-merge (repo settings item target)
+  (match (read-resume-state repo settings item target)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok state)
+     (check-fixing-armed repo settings item target state))))
+
+(defn check-fixing-armed (repo settings item target state)
+  (match (:auto-merge state)
+    (auto-merge-state/armed (disarm-and-stop repo settings
+                                             item target
+                                             (item-fixing-error item target)))
+    (auto-merge-state/not-armed (ok merge-outcome/waiting))))
+
+(defn check-in-review-merge (repo settings item target)
+  (match (read-resume-state repo settings item target)
+    ((err failure)
+     (disarm-and-stop repo settings item target failure))
+    ((ok state)
+     (check-in-review-armed repo settings item target state))))
+
+(defn check-in-review-armed (repo settings item target state)
+  (match (:auto-merge state)
+    (auto-merge-state/armed
+      (check-in-review-moved repo settings item target state))
+    (auto-merge-state/not-armed (ok merge-outcome/waiting))))
+
+(type check-in-review-moved
+  (fn ((ref str)
+       (ref merge-settings)
+       (ref string)
+       (ref merge-target)
+       (ref merge-state))
+    (result merge-outcome controller-error)))
+
+(defn check-in-review-moved (repo settings item target state)
+  (if (= (:head state) (:head target))
+    (ok merge-outcome/waiting)
+    (disarm-and-stop repo settings item target
+                     (head-change-error item target state))))
 
 (defn check-target-approval (repo config settings item target)
   (match (:approval target)
