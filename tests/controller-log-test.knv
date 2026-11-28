@@ -205,6 +205,24 @@
     (assert (contains? (as-str text)
                        (as-str (str "build-rm-0001"))))))
 
+(deftest links-a-wrapped-pull-request-sub-line-when-color-is-on
+  (let (settings (->log-settings :colors color-mode/truecolor
+                                 :width (some 50)
+                                 :target output-target/terminal
+                                 :remote (some (str "https://github.com/KarlHarnois/kogworks")))
+        sub-lines (vec (sub-line/pr (->pr-summary :number 12
+                                                  :branch (str "build-rm-0009")
+                                                  :head (some (str
+                                                                "abcdef0")))))
+        lines (render-sub-lines settings (str "rm-0009") sub-lines)
+        text (join lines "\n"))
+    (assert (> (len lines) 1))
+    (assert (contains? (as-str text)
+                       (as-str (str "\u{1b}]8;;https://github.com/KarlHarnois/kogworks/pull/12"
+                                    "\u{1b}\\"))))
+    (assert (contains? (as-str text)
+                       (as-str (str "#12"))))))
+
 (deftest shows-no-manager-when-none-is-configured
   (let (banner (->banner-line :time (str "14:02:11")
                               :roadmap (str "factory-mvp")

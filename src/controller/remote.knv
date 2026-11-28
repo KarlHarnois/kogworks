@@ -3,7 +3,7 @@
 
 (use controller/process ->command execute successful?)
 
-(export parse-github-remote read-remote)
+(export github-remote-url parse-github-remote read-remote)
 
 (def parse-github-remote
   (rust "{{
@@ -28,6 +28,8 @@
     }}
   }}"
     (fn ((ref str)) (option string))))
+
+(defn github-remote-url (text) (parse-github-remote text))
 
 (defn read-remote (repo)
   (let (outcome (execute repo (remote-command)))

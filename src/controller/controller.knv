@@ -23,8 +23,10 @@
                       start-merge)
 
 (use controller/merge-commands send-command)
+
 (use controller/merge-target ->merge-report ignore-report
                              merge-outcome)
+
 (use controller/notice ->notice-clock notice
                        waiting-actions)
 
@@ -83,11 +85,12 @@
   (match (canonical-repo repo)
     ((ok absolute)
      (let (remote (read-remote (as-str absolute)))
-       (run-controller-and-exit
-         (as-str absolute)
-         (build-controller-settings
-           poll stall merge-poll merge-timeout retry-delay remote)
-         once rerun)))
+       (run-controller-and-exit (as-str absolute)
+                                (build-controller-settings
+                                  poll stall merge-poll
+                                  merge-timeout retry-delay
+                                  remote)
+                                once rerun)))
     ((err failure)
      (do
        (print-failure repo none none failure)

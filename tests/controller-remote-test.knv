@@ -1,0 +1,10 @@
+(use controller/remote github-remote-url)
+
+(deftest parses-github-remotes
+  (assert (= (github-remote-url "git@github.com:KarlHarnois/kogworks.git")
+             (some (str "https://github.com/KarlHarnois/kogworks"))))
+  (assert (= (github-remote-url "https://github.com/KarlHarnois/kogworks.git")
+             (some (str "https://github.com/KarlHarnois/kogworks"))))
+  (assert (= (github-remote-url "ssh://git@github.com/KarlHarnois/kogworks")
+             (some (str "https://github.com/KarlHarnois/kogworks"))))
+  (assert (none? (github-remote-url "origin/main"))))

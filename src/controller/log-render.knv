@@ -8,7 +8,8 @@
                           stage-entry stage-state sub-line
                           track track-form tree-branch)
 
-(use controller/log-palette color-mode style-open text-style)
+(use controller/log-palette color-mode style-open
+                            text-style)
 
 (use controller/log-width append-lines! display-width
                           fitted-title push-line! spaces
@@ -123,8 +124,8 @@
 
 (defn item-prefix-width (item form)
   (let (status-width (max status-column-width
-                          (display-width
-                            (as-str (status-plain-text (:status item))))))
+                          (display-width (as-str (status-plain-text (:status
+                                                                      item))))))
     (+ (display-width (as-str (:time item)))
        2
        (display-width (as-str (:id item)))
@@ -134,7 +135,8 @@
 
 (defn status-cell (settings status)
   (let (plain (status-plain-text status))
-    (str (styled settings (status-style status)
+    (str (styled settings
+                 (status-style status)
                  (as-str (status-text settings status)))
          (spaces (max 0
                       (- status-column-width
@@ -228,7 +230,8 @@
 
 (defn status-text (settings status)
   (match status
-    ((merged number) (str "merged " (pr-number-text settings number)))
+    ((merged number)
+     (str "merged " (pr-number-text settings number)))
     (_ (status-plain-text status))))
 
 (defn status-plain-text (status)
@@ -403,7 +406,8 @@
   (str "\u{1b}]8;;" url "\u{1b}\\" text "\u{1b}]8;;\u{1b}\\"))
 
 (type pr-value
-  (fn ((ref log-settings) (ref pr-summary)) string))
+  (fn ((ref log-settings) (ref pr-summary))
+    string))
 
 (defn pr-value (settings summary)
   (match (:head summary)

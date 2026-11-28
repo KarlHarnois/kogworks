@@ -2,9 +2,10 @@
                                  absolute-path
                                  default-settings exit-code
                                  prepare-repo read-text
-                                 run-controller stderr-text
-                                 stdout-text write-fakes
-                                 write-text)
+                                 run-controller
+                                 run-controller-colored
+                                 stderr-text stdout-text
+                                 write-fakes write-text)
 
 (def ignored-next
   (str "{\"next\":["
@@ -123,6 +124,11 @@
   (run-controller (as-str (str root "/bin"))
                   (as-str (str root "/repo"))
                   args))
+
+(defn run-colored (root args)
+  (run-controller-colored (as-str (str root "/bin"))
+                          (as-str (str root "/repo"))
+                          args))
 
 (defn sequence-text (root)
   (unwrap-ok (read-text (as-str (str root "/sequence")))))
@@ -365,6 +371,20 @@
       (assert (not (contains? (prompt-text root)
                               (as-str substituted-criterion))))
       (assert (contains? (prompt-text root) "manager=fake-manager")))))
+
+(deftest links-a-pull-request-in-the-controller-log-when-color-is-on
+  (let (root (unwrap-ok (setup "colored-link"
+                               (assoc (review-settings (next-with (str "review")
+                                                                  review-item))
+                                      :new-exit 4
+                                      :new-error (str
+                                                   "cannot start session")))))
+    (let (output (unwrap-ok (run-colored root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (stderr-has? output
+                           (str "\u{1b}]8;;https://github.com/fake-owner/fake-repo/pull/12"
+                                "\u{1b}\\")))
+      (assert (stderr-has? output (str "#12"))))))
 
 (deftest reports-a-reviewer-placeholder-failure-with-its-pr-line
   (let (root (unwrap-ok (setup "review-placeholder"
