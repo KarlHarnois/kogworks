@@ -27,7 +27,7 @@
 
 (def glyph-track-width 3)
 
-(def narrow-track-width 110)
+(def narrow-track-threshold 110)
 
 (defn render-alive (settings alive)
   (let (full (full-alive-text alive))
@@ -257,7 +257,7 @@
     ((some width) (track-form-of-width width))))
 
 (defn track-form-of-width (width)
-  (if (< width narrow-track-width)
+  (if (< width narrow-track-threshold)
     track-form/glyphs track-form/full))
 
 (defn track-padding (form stages)
