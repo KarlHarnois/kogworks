@@ -1,0 +1,67 @@
+(module
+  "Prints each new notice and sends the notices to the manager session.")
+
+(use controller/merge-commands send-command)
+
+(use controller/notice ->notice delivery notice
+                       notice-message notice-step
+                       plan-notices waiting-action)
+
+(use controller/process execute successful?)
+
+(export send-notices)
+
+(type send-notices
+  (fn ((ref str)
+       (ref string)
+       (ref (vec notice))
+       (ref (vec waiting-action)))
+    (vec notice)))
+
+(defn send-notices (repo manager previous waiting)
+  (let (steps (plan-notices previous waiting))
+    (loop (index 0
+           sent (vec))
+      (if (>= index (len steps))
+        sent
+        (recur (inc index)
+               (with-step! repo manager sent (at steps index)))))))
+
+(defn with-step! (repo manager sent step)
+  (let (taken (take-step repo manager sent step))
+    (push! sent taken)
+    sent))
+
+(defn take-step (repo manager sent step)
+  (match step
+    ((keep action)
+     (->notice :action (clone action)
+               :delivery delivery/delivered))
+    ((resend action) (deliver repo manager sent action))
+    ((announce action) (announce repo manager sent action))))
+
+(defn announce (repo manager sent action)
+  (eprintln (notice-message action))
+  (deliver repo manager sent action))
+
+(defn deliver (repo manager sent action)
+  (->notice :action (clone action)
+            :delivery (delivery-of repo manager sent action)))
+
+(defn delivery-of (repo manager sent action)
+  (if (earlier-send-failed? sent)
+    delivery/undelivered
+    (send-notice repo manager action)))
+
+(type earlier-send-failed?
+  (fn ((ref (vec notice))) bool))
+
+(defn earlier-send-failed? (sent)
+  (any? sent
+    (fn (notice)
+      (= (:delivery notice) delivery/undelivered))))
+
+(defn send-notice (repo manager action)
+  (let (command (send-command manager (notice-message action)))
+    (if (successful? (execute repo command))
+      delivery/delivered delivery/undelivered)))

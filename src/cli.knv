@@ -7,7 +7,7 @@
 (defcommand check "Checks <dir>/factory.knv without writing <dir>/factory.json."
   (dir string))
 
-(defcommand controller "Runs the controller loop against a governed repository. It polls rmap and starts the worker for the first startable build, and starts one behavior reviewer when rmap marks a build for review or verify. It exits 1 on the first failure. A person reads the manager message and restarts it. The controller can merge pull requests that change the controller itself; the running binary stays at the version it was built from, and a person rebuilds and restarts it after such a merge. It has no automatic restart, supervisor or backoff loop. The pilot pins rmap to a build that predates the design approval requirement, so a behavior approve alone merges and the controller starts no design reviewer."
+(defcommand controller "Runs the controller loop against a governed repository. It polls rmap and starts the worker for the first startable build, and starts one behavior reviewer when rmap marks a build for review or verify. It sends the manager one notice for each action that waits on the manager or the user. It exits 1 on the first failure. A person reads the manager message and restarts it. The controller can merge pull requests that change the controller itself; the running binary stays at the version it was built from, and a person rebuilds and restarts it after such a merge. It has no automatic restart, supervisor or backoff loop. The pilot pins rmap to a build that predates the design approval requirement, so a behavior approve alone merges and the controller starts no design reviewer."
   (:repo string
          :required true
          :value-name path

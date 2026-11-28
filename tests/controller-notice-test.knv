@@ -1,0 +1,84 @@
+(use controller/json parse-json)
+
+(use controller/notice ->notice ->waiting-action delivery
+                       notice-message notice-step owner
+                       plan-notices waiting-actions)
+
+(use controller/rules action-kind parse-next-response
+                      subject)
+
+(defn mixed-next ()
+  (str "{\"next\":["
+       "{\"item\":\"rm-1\",\"actions\":[{\"action\":\"review\","
+       "\"actor\":\"worker\",\"session\":\"review-rm-1\"}]},"
+       "{\"item\":\"rm-2\",\"actions\":[{\"action\":\"wait\","
+       "\"actor\":\"controller\"}]},"
+       "{\"item\":\"rm-3\",\"actions\":[{\"action\":\"send-fixes\","
+       "\"actor\":\"manager\",\"session\":\"build-rm-3\"}]},"
+       "{\"decision\":\"rm-d1\",\"kind\":\"decision\",\"actions\":["
+       "{\"action\":\"await-decision\",\"actor\":\"user\"}]}"
+       "]}"))
+
+(defn unowned-next ()
+  (str "{\"next\":["
+       "{\"item\":\"rm-1\",\"actions\":[{\"action\":\"fix\","
+       "\"actor\":\"worker\",\"session\":\"build-rm-1\"}]},"
+       "{\"item\":\"rm-2\",\"actions\":[{\"action\":\"merge\","
+       "\"actor\":\"controller\"}]}" "]}"))
+
+(defn waiting-from (text)
+  (let (document (unwrap-ok (parse-json (as-str text)))
+        lines (unwrap-ok (parse-next-response document)))
+    (waiting-actions lines)))
+
+(defn steps-for (delivery)
+  (let (previous (vec (->notice :action (send-fixes-action) :delivery delivery))
+        waiting (vec (send-fixes-action)))
+    (plan-notices previous waiting)))
+
+(defn send-fixes-action ()
+  (->waiting-action :subject (subject/item (str "rm-3"))
+                    :kind action-kind/send-fixes
+                    :owner owner/manager))
+
+(defn decision-action ()
+  (->waiting-action :subject (subject/decision (str "rm-d1"))
+                    :kind (action-kind/other (str "await-decision"))
+                    :owner owner/user))
+
+(deftest waiting-actions-keeps-the-manager-and-user-actions
+  (assert (= (waiting-from (mixed-next))
+             (vec (send-fixes-action) (decision-action)))))
+
+(deftest waiting-actions-skips-the-worker-and-controller-actions
+  (assert (empty? (waiting-from (unowned-next)))))
+
+(deftest plan-notices-announces-a-new-action
+  (let (previous (vec)
+        waiting (vec (send-fixes-action)))
+    (assert (= (plan-notices previous waiting)
+               (vec (notice-step/announce (send-fixes-action)))))))
+
+(deftest plan-notices-keeps-a-delivered-notice
+  (assert (= (steps-for delivery/delivered)
+             (vec (notice-step/keep (send-fixes-action))))))
+
+(deftest plan-notices-resends-an-undelivered-notice
+  (assert (= (steps-for delivery/undelivered)
+             (vec (notice-step/resend (send-fixes-action))))))
+
+(deftest plan-notices-drops-an-action-that-no-longer-waits
+  (let (previous (vec (->notice :action (send-fixes-action)
+                                :delivery delivery/delivered))
+        waiting (vec))
+    (assert (empty? (plan-notices previous waiting)))))
+
+(deftest notice-message-names-an-item-and-the-manager
+  (assert (= (notice-message (send-fixes-action))
+             (str "send-fixes: rm-3: waiting for the manager. "
+                  "Read `rmap item show rm-3`."))))
+
+(deftest notice-message-names-a-decision-and-the-user
+  (assert (= (notice-message (decision-action))
+             (str "await-decision: rm-d1: waiting for the user. "
+                  "Read `rmap decision show rm-d1`."))))
