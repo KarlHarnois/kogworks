@@ -10,6 +10,29 @@
 
 (def flake-revision-marker "Revision = \"")
 
+(def reordered-project-text
+  (str "(defproject sample\n" "  :knave \"0.22.0\"\n"
+       "  (libraries\n"
+       "    (ledelint :git \"https://github.com/KarlHarnois/ledelint\"\n"
+       "              :rev \"67d735e0d9c632fc04508b53d4c42dcd1102e95b\")\n"
+       "    (knave-commandant :git \"https://github.com/KarlHarnois/knave-commandant\"\n"
+       "                      :rev \"811d6dc4558cfdabd10d895e26d3087df1ad03e5\")))\n"))
+
+(def matching-flake-text
+  (str
+    "knaveVersion = \"0.22.0\";\n"
+    "knaveCommandantRevision = \"811d6dc4558cfdabd10d895e26d3087df1ad03e5\";\n"
+    "ledelintRevision = \"67d735e0d9c632fc04508b53d4c42dcd1102e95b\";\n"))
+
+(defn library-revisions-match? (project-text flake-text)
+  (= (sorted-values-after flake-text flake-revision-marker)
+     (sorted-values-after project-text project-revision-marker)))
+
+(defn sorted-values-after (text marker)
+  (let (values (quoted-values-after text marker))
+    (sort! values)
+    values))
+
 (defn quoted-values-after (text marker)
   (let (segments (collect (split (as-str text) marker)))
     (-> (range 1 (len segments))
@@ -29,5 +52,13 @@
 (deftest flake-library-revisions-match-project
   (let (project (unwrap-ok (slurp project-path))
         flake (unwrap-ok (slurp flake-path)))
-    (assert (= (quoted-values-after flake flake-revision-marker)
-               (quoted-values-after project project-revision-marker)))))
+    (assert (library-revisions-match? project flake))))
+
+(deftest flake-library-revisions-ignore-a-project-reorder
+  (assert (library-revisions-match? reordered-project-text
+                                    matching-flake-text)))
+
+(deftest flake-library-revisions-differ-when-a-revision-drifts
+  (assert (not (library-revisions-match? reordered-project-text
+                                         (str matching-flake-text
+                                              "extraRevision = \"unexpected\";\n")))))
