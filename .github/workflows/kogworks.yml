@@ -30,6 +30,13 @@ jobs:
         run: knave lint
       - name: Build
         run: knave build
+      - name: Keep the README's `kogworks --help` in sync with the CLI
+        run: |
+          knave task sync-readme-help
+          if ! git diff --exit-code README.md; then
+            echo "The Usage section of README.md no longer matches \`kogworks --help\`. Run \`knave task sync-readme-help\` and commit README.md."
+            exit 1
+          fi
       - name: Check the factory
         run: ./target/knave/kogworks/kogworks check .kogworks
       - name: Test

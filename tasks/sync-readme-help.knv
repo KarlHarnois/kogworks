@@ -1,0 +1,117 @@
+(module
+  "Writes the output of `kogworks --help` into the code block of the README's Usage section.")
+
+(use controller/process ->command execute successful?)
+
+(def readme-path "README.md")
+
+(def usage-heading "## Usage")
+
+(def block-start "```text")
+
+(def block-end "```")
+
+(def kogworks-path "./target/knave/kogworks/kogworks")
+
+(def help-width "COLUMNS=80")
+
+(def write-file
+  (rust "std::fs::write({0}, {1}).map_err(|failure| failure.to_string())"
+    (fn ((ref str) (ref str))
+      (result unit string))))
+
+(defstruct transition
+  :from readme-part
+  :marker string
+  :to readme-part)
+
+(defenum readme-part
+  before-use
+  in-use
+  in-block
+  after-block)
+
+(deftask sync-readme-help ()
+  (match (sync)
+    ((ok _) (println (str "wrote " readme-path)))
+    ((err failure) (eprintln failure) (exit 1))))
+
+(defn sync ()
+  (let-try (help (kogworks-help)
+            readme (map-err (slurp readme-path)
+                     (fn (failure) (str failure)))
+            synced (with-help (as-str readme) (as-str help)))
+    (write-file readme-path (as-str synced))))
+
+(defn with-help (readme help)
+  (loop (rest (collect (map (lines readme) str))
+         index 0
+         part readme-part/before-use
+         kept (vec))
+    (if (< index (len rest))
+      (let (line (at rest index)
+            next (next-part part line))
+        (recur rest
+               (inc index)
+               next
+               (with-line kept part next line help)))
+      (finished kept part))))
+
+(defn next-part (part line)
+  (unwrap-or (map-some (find (iter (transitions))
+                         (fn (transition)
+                           (and (= (:from transition) part)
+                                (= (:marker transition) (str line)))))
+                       (fn (transition) (:to transition)))
+             part))
+
+(defn transitions ()
+  (vec (->transition :from readme-part/before-use
+                     :marker (str usage-heading)
+                     :to readme-part/in-use)
+       (->transition :from readme-part/in-use
+                     :marker (str block-start)
+                     :to readme-part/in-block)
+       (->transition :from readme-part/in-block
+                     :marker (str block-end)
+                     :to readme-part/after-block)))
+
+(defn with-line (kept part next line help)
+  (cond
+    ((block-opens? part next)
+     (appended-all (appended kept (str line)) help))
+    ((= part next readme-part/in-block) kept)
+    (else (appended kept (str line)))))
+
+(defn block-opens? (part next)
+  (and (= part readme-part/in-use)
+       (= next readme-part/in-block)))
+
+(defn finished (kept part)
+  (if (= part readme-part/after-block)
+    (ok (str (join kept "\n") "\n"))
+    (err (str readme-path " has no " block-start
+              " block under " usage-heading))))
+
+(defn appended (items extra)
+  (let (all items) (push! all extra) all))
+
+(defn appended-all (items text)
+  (let (all items)
+    (for-each (lines text)
+      (fn (line) (push! all (str line))))
+    all))
+
+(defn kogworks-help ()
+  (let (outcome (execute "." (help-command)))
+    (if (successful? outcome)
+      (ok (clone (:stdout outcome)))
+      (err (str "cannot run " kogworks-path " --help: "
+                (:stderr outcome))))))
+
+(defn help-command ()
+  (->command :program (str "env")
+             :args (vec (str help-width)
+                        (str kogworks-path)
+                        (str "--help"))
+             :label (str kogworks-path " --help")))

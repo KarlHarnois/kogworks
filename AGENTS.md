@@ -17,9 +17,12 @@ knave check
 knave fmt --check
 knave lint
 knave build
+knave task sync-readme-help
 knave task ledelint
 ./target/knave/kogworks/kogworks check .kogworks
 knave test
 ```
 
 `knave check`, `knave fmt` and `knave lint` do not reach `.kogworks` on their own, and the factory file alone cannot resolve `deffactory`. `kogworks check .kogworks` writes the two import layouts to a temporary directory outside the repository, lints, checks and format-checks them there, then evaluates the factory and fails when the committed `.kogworks/factory.json` is stale. It writes nothing to the repository and removes the temporary directory on success or failure.
+
+**After `knave build`, `knave task sync-readme-help` rewrites the Usage section of `README.md` from `kogworks --help`.** If the task changes `README.md`, commit `README.md` with your change. NEVER edit the Usage section by hand: the `Kogworks` workflow fails when the section differs from the help output.
