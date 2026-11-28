@@ -7,7 +7,7 @@
 
 (use factory/json factory->json)
 (use factory/roles roles)
-(use factory/types ->factory merge-method)
+(use factory/types ->factory merge-method runner)
 (use prelude/macros header-shape template)
 
 (export deffactory)
@@ -20,14 +20,15 @@
               (export (unquote (symbol name "factory-json"))
                       (unquote (symbol name "factory-value")))
               (def (unquote (symbol name "factory-value"))
-                (->factory :schema 0
-                           :name (str (unquote (symbol-name name)))
-                           :manager (str (unquote (setting parts "manager")))
-                           :roadmap (str (unquote (setting parts "roadmap")))
-                           :max-active (unquote (setting parts "max-active"))
-                           :merge (unquote (merge->symbol (setting parts
-                                                                   "merge")))
-                           :roles (unquote (roles-form parts))))
+                (->factory
+                  :schema 0
+                  :name (str (unquote (symbol-name name)))
+                  :manager (str (unquote (setting parts "manager")))
+                  :roadmap (str (unquote (setting parts "roadmap")))
+                  :max-active (unquote (setting parts "max-active"))
+                  :merge (unquote (merge->symbol (setting parts "merge")))
+                  :roles (unquote (roles-form parts))
+                  :runner (unquote (runner->symbol (setting parts "runner")))))
               (defn (unquote (symbol name "factory-json")) ()
                 (factory->json (unquote (symbol name "factory-value")))))))
 
@@ -81,5 +82,17 @@
   (symbol (quote merge-method)
           "merge-method/"
           (symbol-name merge)))
+
+(defn runner->symbol (runner)
+  (cond
+    ((bool-not (symbol? runner)) (unknown-runner runner))
+    ((value-eq (symbol-name runner) "ringleader")
+     (symbol (quote runner) "runner/" (symbol-name runner)))
+    (else (unknown-runner runner))))
+
+(defn unknown-runner (runner)
+  (fail "deffactory needs `:runner ringleader`"
+    runner
+    "write `:runner ringleader`; `ringleader` is the only known runner"))
 
 (header-shape (deffactory name))

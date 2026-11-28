@@ -2,6 +2,7 @@
   "Runs the controller loop.")
 
 (use knave-commandant switch-state)
+(use controller/agents check-agents)
 (use controller/cap read-cap set-command)
 (use controller/dispatch dispatch)
 
@@ -23,8 +24,6 @@
 (use controller/merge ->merge-settings merge-settings
                       start-merge)
 
-(use controller/merge-commands send-command)
-
 (use controller/merge-target ->merge-report ignore-report
                              merge-outcome)
 
@@ -37,12 +36,13 @@
                         command-detail execute successful?)
 
 (use controller/remote read-remote)
+(use controller/runner-adapter send-command)
+(use controller/runner ->send-request)
 (use controller/review review-mode start-review)
 
 (use controller/rules action-kind action-kind->text
                       first-controller-action first-dispatch
-                      item-action next-line
-                      parse-next-response
+                      item-action parse-next-response
                       parse-ready-response)
 
 (export controller-and-exit)
@@ -129,10 +129,6 @@
                   (:merged failed)
                   rerun settings)))))
 
-(type run-controller
-  (fn ((ref str) (ref controller-settings) run-mode)
-    (result unit failed-run)))
-
 (defn run-controller (repo settings mode)
   (match (read-factory repo)
     ((err failure)
@@ -141,13 +137,16 @@
                                                            failure))
                         :merged 0)))
     ((ok config)
-     (match (set-start-cap repo config)
-       ((err report) (err (->failed-run :report report :merged 0)))
-       ((ok _) (begin-run repo config settings mode))))))
-
-(type set-start-cap
-  (fn ((ref str) (ref factory-config))
-    (result unit failure-report)))
+     (match (check-agents repo config)
+       ((err failure)
+        (err (->failed-run :report (->failure-report :manager (some (clone (:manager
+                                                                             config)))
+                                                     :error failure)
+                           :merged 0)))
+       ((ok _)
+        (match (set-start-cap repo config)
+          ((err report) (err (->failed-run :report report :merged 0)))
+          ((ok _) (begin-run repo config settings mode))))))))
 
 (defn set-start-cap (repo config)
   (match (read-cap repo)
@@ -170,7 +169,8 @@
                                      :item (str "-")
                                      :command (clone (:label command))
                                      :code (:code outcome)
-                                     :detail (command-detail outcome))))
+                                     :detail (command-detail outcome)
+                                     :session none)))
 
 (type begin-run
   (fn ((ref str)
@@ -265,14 +265,6 @@
                             :error failure)))
     ((ok lines)
      (run-pass-from repo config settings notices lines))))
-
-(type run-pass-from
-  (fn ((ref str)
-       (ref factory-config)
-       (ref controller-settings)
-       (ref (vec notice))
-       (ref (vec next-line)))
-    (result pass-progress failure-report)))
 
 (defn run-pass-from (repo config settings notices lines)
   (let (waiting (waiting-actions lines)
@@ -435,7 +427,8 @@
                                      :item (str "-")
                                      :command (clone (:label command))
                                      :code 0
-                                     :detail (str "invalid JSON: " reason))))
+                                     :detail (str "invalid JSON: " reason)
+                                     :session none)))
 
 (defn command-failed (action item command outcome)
   (controller-error/command-failed (->action-failure
@@ -443,7 +436,8 @@
                                      :item item
                                      :command (clone (:label command))
                                      :code (:code outcome)
-                                     :detail (command-detail outcome))))
+                                     :detail (command-detail outcome)
+                                     :session none)))
 
 (defn ready-command (roadmap)
   (->command :program (str "rmap")
@@ -460,7 +454,8 @@
                                      :item (clone (:item action))
                                      :command (clone (:label command))
                                      :code 0
-                                     :detail (str)))))
+                                     :detail (str)
+                                     :session none))))
 
 (defn next-command (roadmap)
   (->command :program (str "rmap")
@@ -491,6 +486,8 @@
 (defn send-to-manager (repo manager message)
   (match manager
     ((some name)
-     (let (_outcome (execute repo (send-command name message)))
-       (do)))
+     (let (request (->send-request :session (clone name)
+                                   :message (clone message)))
+       (let (_outcome (execute repo (send-command request)))
+         (do))))
     (none (do))))

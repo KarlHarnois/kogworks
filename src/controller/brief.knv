@@ -40,7 +40,8 @@
   :criteria string
   :base string
   :skill string
-  :manager string)
+  :manager string
+  :message-manager string)
 
 (defstruct brief
   :item string
@@ -142,10 +143,6 @@
     ("<!-- /report -->" (line-marker/end worker-section/report))
     (_ (line-marker/content (clone line)))))
 
-(type worker-placeholders
-  (fn ((ref worker-values))
-    (vec placeholder)))
-
 (defn worker-placeholders (values)
   (vec (->placeholder :token (str "{{item}}")
                       :value (clone (:item values)))
@@ -182,7 +179,9 @@
        (->placeholder :token (str "{{skill}}")
                       :value (clone (:skill values)))
        (->placeholder :token (str "{{manager}}")
-                      :value (clone (:manager values)))))
+                      :value (clone (:manager values)))
+       (->placeholder :token (str "{{message-manager}}")
+                      :value (clone (:message-manager values)))))
 
 (defn fill (text placeholders)
   (let (characters (collect (chars text)))

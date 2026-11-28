@@ -1,12 +1,12 @@
 (module
   "Prints each new notice and each stall line, and sends them to the manager session.")
 
-(use controller/merge-commands send-command)
+(use controller/runner-adapter send-command)
+(use controller/runner ->send-request)
 
 (use controller/notice ->notice delivery notice notice-clock
                        notice-message notice-step
-                       plan-notices stall-message
-                       waiting-action)
+                       plan-notices stall-message)
 
 (use controller/process execute successful?)
 
@@ -16,12 +16,6 @@
   :repo string
   :manager string
   :clock notice-clock)
-
-(type send-notices
-  (fn ((ref notice-route)
-       (ref (vec notice))
-       (ref (vec waiting-action)))
-    (vec notice)))
 
 (defn send-notices (route previous waiting)
   (let (steps (plan-notices previous waiting (:clock route)))
@@ -86,7 +80,9 @@
       (= (:delivery notice) delivery/undelivered))))
 
 (defn send-message (route message)
-  (let (command (send-command (:manager route) message)
+  (let (request (->send-request :session (clone (:manager route))
+                                :message (clone message))
+        command (send-command request)
         outcome (execute (as-str (:repo route)) command))
     (if (successful? outcome)
       delivery/delivered delivery/undelivered)))

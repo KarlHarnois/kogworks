@@ -38,7 +38,8 @@
                                   :item (str "-")
                                   :command (clone (:label command))
                                   :code code
-                                  :detail (str detail)))
+                                  :detail (str detail)
+                                  :session none))
     (err (controller-error/command-failed failure))))
 
 (defn remote-stripped (branch)

@@ -1,5 +1,5 @@
 (module
-  "Builds the rmap, GitHub and ringleader commands that the controller runs.")
+  "Builds the rmap and GitHub commands that the controller runs.")
 
 (use controller/factory merge-method)
 (use controller/process ->command command)
@@ -8,8 +8,7 @@
         disarm-command fixing-command merge-command
         merge-mode record-head-command repo-view-command
         required-checks-command resume-view-command
-        send-command show-command update-branch-command
-        view-command)
+        show-command update-branch-command view-command)
 
 (defenum merge-mode
   auto
@@ -61,13 +60,6 @@
                         (clone pull-request)
                         (str "--disable-auto"))
              :label (str "gh pr merge " pull-request " --disable-auto")))
-
-(defn send-command (worker message)
-  (->command :program (str "ringleader")
-             :args (vec (str "send")
-                        (clone worker)
-                        (clone message))
-             :label (str "ringleader send " worker)))
 
 (defn update-branch-command (pull-request)
   (->command :program (str "gh")

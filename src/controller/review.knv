@@ -4,7 +4,9 @@
 (use controller/brief ->reviewer-values fill-brief
                       reviewer-brief)
 
-(use controller/failure ->action-failure controller-error)
+(use controller/failure ->action-failure controller-error
+                        runner-failure)
+
 (use controller/factory factory-config)
 
 (use controller/item criteria->text item-detail
@@ -15,7 +17,9 @@
 (use controller/process ->command command-detail execute
                         join-path successful?)
 
+(use controller/runner-adapter command-for message-command)
 (use controller/repo default-branch)
+(use controller/runner ->start-request runner-request)
 (use controller/session abandon-command failed-start-detail)
 
 (export review-mode review-mode->text start-review
@@ -120,7 +124,8 @@
                                                                 detail))
                                     :base (clone base)
                                     :skill (clone (:skill (:reviewer config)))
-                                    :manager (clone (:manager config))))
+                                    :manager (clone (:manager config))
+                                    :message-manager (message-command (:manager config))))
       (match (fill-brief (as-str path) (reviewer-brief values))
         ((err failure) (err failure))
         ((ok prompt) (ok (stressed-prompt mode prompt)))))))
@@ -164,13 +169,15 @@
     (result started-review controller-error)))
 
 (defn start-reviewer (repo config item mode detail session prompt)
-  (let (start (reviewer-start-command repo config session
-                                      (clone (:branch detail))
-                                      prompt))
-    (let (outcome (execute repo start))
-      (if (successful? outcome)
-        (reviewer-started session detail)
-        (abandon-and-fail repo item mode session start outcome)))))
+  (match (reviewer-start-command repo config session
+                                 (clone (:branch detail))
+                                 prompt)
+    ((err failure) (err failure))
+    ((ok start)
+     (let (outcome (execute repo start))
+       (if (successful? outcome)
+         (reviewer-started session detail)
+         (abandon-and-fail repo item mode session start outcome))))))
 
 (defn reviewer-started (session detail)
   (ok (->started-review :session (clone session)
@@ -179,15 +186,16 @@
 (defn abandon-and-fail (repo item mode session start outcome)
   (let (abandon (abandon-command session))
     (let (end-outcome (execute repo abandon))
-      (err (start-failure mode item start outcome end-outcome)))))
+      (err (start-failure mode item session start outcome end-outcome)))))
 
-(defn start-failure (mode item start outcome end-outcome)
+(defn start-failure (mode item session start outcome end-outcome)
   (controller-error/command-failed
     (->action-failure :action (review-mode->text mode)
                       :item (clone item)
                       :command (clone (:label start))
                       :code (:code outcome)
-                      :detail (failed-start-detail outcome end-outcome))))
+                      :detail (failed-start-detail outcome end-outcome)
+                      :session (some (clone session)))))
 
 (defn command-failure (mode item command outcome)
   (controller-error/command-failed (->action-failure
@@ -195,15 +203,17 @@
                                      :item (clone item)
                                      :command (clone (:label command))
                                      :code (:code outcome)
-                                     :detail (command-detail outcome))))
+                                     :detail (command-detail outcome)
+                                     :session none)))
 
 (defn invalid-item-output (mode item command reason)
-  (controller-error/command-failed
-    (->action-failure :action (review-mode->text mode)
-                      :item (clone item)
-                      :command (clone (:label command))
-                      :code 0
-                      :detail (str "invalid item JSON: " reason))))
+  (controller-error/command-failed (->action-failure
+                                     :action (review-mode->text mode)
+                                     :item (clone item)
+                                     :command (clone (:label command))
+                                     :code 0
+                                     :detail (str "invalid item JSON: " reason)
+                                     :session none)))
 
 (defn show-command (item)
   (->command :program (str "rmap")
@@ -224,19 +234,11 @@
 
 (defn reviewer-start-command (repo config session branch prompt)
   (let (agent (:agent (:reviewer config)))
-    (->command :program (str "ringleader")
-               :args (vec (str "new")
-                          (str "--name")
-                          (clone session)
-                          (str "--repo")
-                          (str repo)
-                          (str "--agent")
-                          (clone agent)
-                          (str "--base-branch")
-                          (clone branch)
-                          (str "--prompt")
-                          (clone prompt))
-               :label (str "ringleader new --name " session
-                           " --repo " repo " --agent " agent
-                           " --base-branch " branch
-                           " --prompt <filled brief>"))))
+    (let (request (->start-request :session (clone session)
+                                   :branch (clone session)
+                                   :base-branch (some (clone branch))
+                                   :agent (clone agent)
+                                   :repo (str repo)
+                                   :prompt (clone prompt)))
+      (map-err (command-for (runner-request/start request))
+               runner-failure))))

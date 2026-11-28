@@ -2,7 +2,9 @@
   "Reads the factory JSON that names the roadmap, manager, worker and reviewer roles.")
 
 (use controller/failure factory-error)
-(use controller/fields required-object required-text)
+
+(use controller/fields field-error required-object
+                       required-text)
 
 (use controller/json json-error->message json-field
                      json-text parse-json)
@@ -11,16 +13,19 @@
 
 (export ->factory-config ->role factory-config factory-path
         merge-method read-factory read-factory-document
-        read-manager role)
+        read-manager role runner)
 
 (defstruct factory-config
   :manager string
   :roadmap string
   :merge merge-method
+  :runner runner
   :worker role
   :reviewer role)
 
 (defenum merge-method gh-auto)
+
+(defenum runner ringleader)
 
 (defstruct role
   :agent string
@@ -70,12 +75,30 @@
             merge (merge-method-of merge-text)
             roles (factory-object document "roles" "roles")
             worker (required-role roles "worker" "roles.worker")
-            reviewer (required-role roles "reviewer" "roles.reviewer"))
+            reviewer (required-role roles "reviewer" "roles.reviewer")
+            runner-text (runner-field document)
+            runner (runner-of runner-text))
     (ok (->factory-config :manager manager
                           :roadmap roadmap
                           :merge merge
+                          :runner runner
                           :worker worker
                           :reviewer reviewer))))
+
+(defn runner-field (document)
+  (match (json-field document "runner")
+    (none (err factory-error/missing-runner))
+    ((some value) (factory-runner-text value))))
+
+(defn factory-runner-text (value)
+  (match (json-text value)
+    ((some text) (ok (clone text)))
+    (none (err (factory-error/field (field-error/non-text-field (str "runner")))))))
+
+(defn runner-of (text)
+  (cond
+    ((= text (str "ringleader")) (ok runner/ringleader))
+    (else (err (factory-error/unsupported-runner (clone text))))))
 
 (defn merge-method-of (text)
   (cond

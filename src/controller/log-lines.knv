@@ -3,7 +3,8 @@
 
 (use controller/failure brief-role controller-error
                         disarm-status factory-error->message
-                        merge-error signal-stop->log-text)
+                        merge-error signal-stop->log-text
+                        unknown-agent->text)
 
 (use controller/log ->banner-line ->controller-failure
                     ->item-line ->pr-summary ->stop-line
@@ -11,6 +12,7 @@
                     stage-state sub-line track)
 
 (use controller/merge-target merge-event)
+(use controller/runner-adapter runner-error->message)
 (use controller/rules item-kind)
 
 (export ->log-item action-line banner-of
@@ -372,27 +374,8 @@
 
 (defn cleanup-session (failure)
   (match failure
-    ((command-failed report)
-     (start-command-session (:command report)))
+    ((command-failed report) (clone (:session report)))
     (_ none)))
-
-(defn start-command-session (command)
-  (if (starts-with? (as-str command) "ringleader new")
-    (named-session (as-str command))
-    none))
-
-(defn named-session (command)
-  (let (parts (collect (map (split command " --name ")
-                         (fn (part) (str part)))))
-    (if (< (len parts) 2)
-      none
-      (some (first-part (as-str (at parts 1)) " --repo ")))))
-
-(defn first-part (text separator)
-  (let (parts (collect (split text separator)))
-    (match (first parts)
-      ((some part) (str part))
-      (none (str text)))))
 
 (defn failure-error-text (failure)
   (match failure
@@ -408,7 +391,10 @@
     ((unreadable-repo path reason)
      (str "cannot resolve the repository " path ": " reason))
     ((placeholder-left _ token _)
-     (str "the brief still holds `" token "` after filling"))))
+     (str "the brief still holds `" token "` after filling"))
+    ((runner-failed cause) (runner-error->message cause))
+    ((unknown-agent role agent known)
+     (unknown-agent->text role agent known))))
 
 (defn command-error-text (report)
   (if (empty? (:detail report))
@@ -478,6 +464,7 @@
     ((factory-failed _) (str "factory failed"))
     ((unreadable-repo _ _) (str "repository failed"))
     ((unreadable-brief _ _) (str "brief failed"))
+    ((unknown-agent _ _ _) (str "agent check failed"))
     (_ (str "controller failed"))))
 
 (defn controller-command-text (action)
@@ -510,6 +497,8 @@
      (str "check the --repo path, then rerun"))
     ((unreadable-brief _ _)
      (str "fix the brief path in .kogworks/factory.json, then rerun"))
+    ((unknown-agent _ _ _)
+     (str "check the role agents in .kogworks/factory.json, then rerun"))
     (_ (str "fix the error above, then rerun"))))
 
 (defn command-controller-next (report)

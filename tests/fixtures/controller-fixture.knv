@@ -10,7 +10,8 @@
         max-active-call-count max-active-command
         prepare-repo read-text reset-dir run-controller
         run-controller-colored stderr-text stdout-text
-        stored-max-active write-fakes write-text)
+        stored-max-active write-fakes write-script
+        write-text)
 
 (def controller-factory
   (assoc (clone fake-factory)
@@ -30,7 +31,7 @@
 (def reviewer-brief
   (str "item={{item}} roadmap={{roadmap}} session={{session}} "
        "pr={{pr}} head={{head}} criteria={{criteria}} base={{base}} "
-       "skill={{skill}} manager={{manager}}\n"))
+       "skill={{skill}} manager={{manager}} message-manager={{message-manager}}\n"))
 
 (def write-text
   (rust "std::fs::write({0}, {1}).map_err(|error| error.to_string())"
@@ -147,6 +148,10 @@
     "  if [ [NEW_EXIT] -ne 0 ]; then\n"
     "    printf '%s\\n' '[NEW_ERROR]' >&2\n"
     "    exit [NEW_EXIT]\n" "  fi\n"
+    "elif [ \"$1 $2\" = \"agent list\" ]; then\n"
+    "  printf '%s' '{\"schema_version\":1,\"result\":{\"agents\":"
+    "[{\"name\":\"fake-agent\"},"
+    "{\"name\":\"fake-reviewer-agent\"}]}}\n'\n"
     "elif [ \"$1\" = \"send\" ]; then\n"
     "  printf 'ringleader send %s %s\\n' \"$2\" \"$3\" >> \"$root/sequence\"\n"
     "  sends=0\n"
@@ -461,6 +466,10 @@
 (defn stored-max-active (root)
   (read-option (as-str (str root "/stored-max-active"))))
 
+(defn write-script (path text)
+  (let-try (_ (write-text (as-str path) (as-str text)))
+    (make-executable (as-str path))))
+
 (defn read-option (path)
   (match (read-text path)
     ((ok text) (some text))
@@ -570,10 +579,6 @@
       (split (as-str token))
       collect
       (join (as-str value))))
-
-(defn write-script (path text)
-  (let-try (_ (write-text (as-str path) (as-str text)))
-    (make-executable (as-str path))))
 
 (defn write-value-files (root settings)
   (let-try (_ (write-text (as-str (str root "/next.json"))

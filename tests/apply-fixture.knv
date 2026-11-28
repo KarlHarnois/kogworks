@@ -19,6 +19,7 @@
        " \"manager\": \"apply-manager\",\n"
        " \"roadmap\": \"factory-mvp\",\n"
        " \"max_active\": 3,\n" " \"merge\": \"gh-auto\",\n"
+       " \"runner\": \"ringleader\",\n"
        " \"roles\": {}}\n"))
 
 (def reset-dir

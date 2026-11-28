@@ -80,13 +80,14 @@
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
+                                     "  :runner ringleader\n"
                                      "  (roles (worker :agent \"a\" :skill \"s\")))\n")))
     (let (reason (failure-reason (synth-factory (as-str dir)))
           output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
-      (assert (contains? reason "factory.knv:6:"))
+      (assert (contains? reason "factory.knv:7:"))
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
@@ -99,13 +100,14 @@
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
+                                     "  :runner ringleader\n"
                                      "  (roles worker))\n")))
     (let (reason (failure-reason (synth-factory (as-str dir)))
           output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
-      (assert (contains? reason "factory.knv:6:"))
+      (assert (contains? reason "factory.knv:7:"))
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
@@ -118,13 +120,14 @@
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
+                                     "  :runner ringleader\n"
                                      "  (roles (\"worker\" :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
     (let (reason (failure-reason (synth-factory (as-str dir)))
           output (unwrap-ok (run-synth (as-str dir))))
       (assert (contains?
                 reason
                 "a role clause is `(name :agent ... :skill ... :brief ...)`"))
-      (assert (contains? reason "factory.knv:6:"))
+      (assert (contains? reason "factory.knv:7:"))
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
                          "a role clause is `(name :agent ... :skill ... :brief ...)`")))))
@@ -146,3 +149,37 @@
       (assert (= (exit-code output) 1))
       (assert (contains? (stderr-text output)
                          "deffactory needs `:manager`")))))
+
+(deftest missing-runner-reports-its-message
+  (let (dir (str "target/knave/test-factories/missing-runner"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "deffactory needs `:runner`"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "deffactory needs `:runner`")))))
+
+(deftest unknown-runner-reports-the-known-runner
+  (let (dir (str "target/knave/test-factories/unknown-runner"))
+    (unwrap-ok (prepare-factory dir
+                                (str "(deffactory sample\n"
+                                     "  :manager \"sample-manager\"\n"
+                                     "  :roadmap \"sample-roadmap\"\n"
+                                     "  :max-active 1\n"
+                                     "  :merge gh-auto\n"
+                                     "  :runner docker\n"
+                                     "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n")))
+    (let (reason (failure-reason (synth-factory (as-str dir)))
+          output (unwrap-ok (run-synth (as-str dir))))
+      (assert (contains? reason "deffactory needs `:runner ringleader`"))
+      (assert (contains? reason "only known runner"))
+      (assert (= (exit-code output) 1))
+      (assert (contains? (stderr-text output)
+                         "deffactory needs `:runner ringleader`")))))

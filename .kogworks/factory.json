@@ -5,6 +5,7 @@
   "roadmap": "factory-mvp",
   "max_active": 6,
   "merge": "gh-auto",
+  "runner": "ringleader",
   "roles": {
     "worker": {
       "agent": "opencode",

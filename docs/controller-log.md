@@ -2,6 +2,8 @@
 
 This document specifies what `kogworks controller` prints while it runs. The log is for the person who runs the controller in a terminal and looks at it from time to time.
 
+The controller starts and messages sessions through the session runner named by the factory's `runner` field. `ringleader` is the only runner today, so the command labels below start with `ringleader`.
+
 ## Principles
 
 1. Each item line shows one roadmap item and where it is in its lifecycle.

@@ -1,0 +1,101 @@
+(use controller/process ->command)
+
+(use controller/runner-adapter agents-from-output
+                               command-for message-command
+                               runner-error->message)
+
+(use controller/runner ->send-request ->start-request
+                       runner-error runner-request)
+
+(defn start-request (session branch base)
+  (->start-request :session (str session)
+                   :branch (str branch)
+                   :base-branch base
+                   :agent (str "opencode")
+                   :repo (str "repo")
+                   :prompt (str "brief")))
+
+(deftest a-start-request-builds-the-worker-command
+  (assert (= (command-for (runner-request/start (start-request (str "build-rm-0001")
+                                                               (str "build-rm-0001")
+                                                               none)))
+             (ok (->command :program (str "ringleader")
+                            :args (vec (str "new")
+                                       (str "--name")
+                                       (str "build-rm-0001")
+                                       (str "--repo")
+                                       (str "repo")
+                                       (str "--agent")
+                                       (str "opencode")
+                                       (str "--prompt")
+                                       (str "brief"))
+                            :label (str "ringleader new --name build-rm-0001"
+                                        " --repo repo --agent opencode"
+                                        " --prompt <filled brief>"))))))
+
+(deftest a-start-request-with-a-base-builds-the-reviewer-command
+  (assert (= (command-for (runner-request/start (start-request (str "review-rm-0001-abcdef0")
+                                                               (str "review-rm-0001-abcdef0")
+                                                               (some (str "build-rm-0001")))))
+             (ok (->command :program (str "ringleader")
+                            :args (vec (str "new")
+                                       (str "--name")
+                                       (str "review-rm-0001-abcdef0")
+                                       (str "--repo")
+                                       (str "repo")
+                                       (str "--agent")
+                                       (str "opencode")
+                                       (str "--base-branch")
+                                       (str "build-rm-0001")
+                                       (str "--prompt")
+                                       (str "brief"))
+                            :label (str "ringleader new --name review-rm-0001-abcdef0"
+                                        " --repo repo --agent opencode"
+                                        " --base-branch build-rm-0001"
+                                        " --prompt <filled brief>"))))))
+
+(deftest a-start-request-whose-branch-differs-fails
+  (let (request (start-request (str "build-rm-0001")
+                               (str "other-branch")
+                               none)
+        failure (runner-error/branch-name-differs (str "build-rm-0001")
+                                                  (str "other-branch")))
+    (assert (= (command-for (runner-request/start request))
+               (err (clone failure))))
+    (assert (contains? (runner-error->message failure)
+                       (as-str (str "build-rm-0001"))))
+    (assert (contains? (runner-error->message failure)
+                       (as-str (str "other-branch"))))))
+
+(deftest a-send-request-builds-the-send-command
+  (assert (= (command-for (runner-request/send (->send-request :session (str "build-rm-0001")
+                                                               :message (str "hello"))))
+             (ok (->command :program (str "ringleader")
+                            :args (vec (str "send")
+                                       (str "build-rm-0001")
+                                       (str "hello"))
+                            :label (str "ringleader send build-rm-0001"))))))
+
+(deftest a-list-agents-request-builds-the-agent-list-command
+  (assert (= (command-for runner-request/list-agents)
+             (ok (->command :program (str "ringleader")
+                            :args (vec (str "agent")
+                                       (str "list")
+                                       (str "--json"))
+                            :label (str "ringleader agent list --json"))))))
+
+(deftest the-agent-list-output-becomes-agent-names
+  (assert (= (agents-from-output (as-str (str "{\"result\":{\"agents\":["
+                                              "{\"name\":\"claude\"},"
+                                              "{\"name\":\"opencode\"}]}}")))
+             (ok (vec (str "claude") (str "opencode"))))))
+
+(deftest an-agent-list-without-agents-fails
+  (match (agents-from-output (as-str (str "{}")))
+    ((err (invalid-agents-output reason))
+     (assert (contains? reason "result")))
+    (_ (assert false))))
+
+(deftest the-message-command-names-the-manager
+  (assert (= (message-command (str "kw-manager"))
+             (str "ringleader send kw-manager"))))

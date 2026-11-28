@@ -7,7 +7,8 @@
                                  prepare-repo read-text
                                  run-controller stderr-text
                                  stored-max-active
-                                 write-fakes write-text)
+                                 write-fakes write-script
+                                 write-text)
 
 (def wait-next
   (str "{\"next\":[{\"item\":\"rm-0001\",\"actions\":["
@@ -18,7 +19,7 @@
 (def real-factory
   (str "{\"schema\":0,\"name\":\"cap\",\"manager\":\"fake-manager\","
        "\"roadmap\":\"real-roadmap\",\"max_active\":3,"
-       "\"merge\":\"gh-auto\",\"roles\":{"
+       "\"merge\":\"gh-auto\",\"runner\":\"ringleader\",\"roles\":{"
        "\"worker\":{\"agent\":\"fake-agent\",\"skill\":\"fake-skill\","
        "\"brief\":\".kogworks/briefs/worker.md\"},"
        "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
@@ -29,7 +30,7 @@
   (str "{\"schema\":0,\"name\":\"cap\",\"manager\":\"fake-manager\","
        "\"roadmap\":\"fake-roadmap\",\"max_active\":"
        max-active-text ","
-       "\"merge\":\"gh-auto\",\"roles\":{"
+       "\"merge\":\"gh-auto\",\"runner\":\"ringleader\",\"roles\":{"
        "\"worker\":{\"agent\":\"fake-agent\",\"skill\":\"fake-skill\","
        "\"brief\":\".kogworks/briefs/worker.md\"},"
        "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
@@ -53,6 +54,13 @@
 (defn write-factory (root text)
   (write-text (as-str (str root "/repo/.kogworks/factory.json"))
               (as-str text)))
+
+(defn write-fake-ringleader (root)
+  (write-script (str root "/bin/ringleader")
+                (str "#!/bin/sh\n"
+                     "printf '%s' '{\"result\":{\"agents\":"
+                     "[{\"name\":\"fake-agent\"},"
+                     "{\"name\":\"fake-reviewer-agent\"}]}}'\n")))
 
 (defn sequence-text (root)
   (match (read-text (as-str (str root "/sequence")))
@@ -110,7 +118,7 @@
                               (str "{\"schema\":0,\"name\":\"cap\","
                                    "\"manager\":\"fake-manager\","
                                    "\"roadmap\":\"fake-roadmap\","
-                                   "\"merge\":\"gh-auto\",\"roles\":{"
+                                   "\"merge\":\"gh-auto\",\"runner\":\"ringleader\",\"roles\":{"
                                    "\"worker\":{\"agent\":\"fake-agent\","
                                    "\"skill\":\"fake-skill\","
                                    "\"brief\":\".kogworks/briefs/worker.md\"},"
@@ -149,6 +157,7 @@
        (unwrap-ok (prepare-real-repo (as-str root)
                                      (as-str real-factory)
                                      "real-roadmap"))
+       (unwrap-ok (write-fake-ringleader (as-str root)))
        (let (output (unwrap-ok (run root (vec (str "--once")))))
          (assert (= (exit-code output) 0))
          (let (document (unwrap-ok (export-document (as-str root))))

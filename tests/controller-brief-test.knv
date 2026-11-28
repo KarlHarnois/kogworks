@@ -30,7 +30,8 @@
                      :criteria (str "(1) a criterion")
                      :base (str "main")
                      :skill (str "fake-reviewer-skill")
-                     :manager (str "fake-manager")))
+                     :manager (str "fake-manager")
+                     :message-manager (str "ringleader send fake-manager")))
 
 (defn rendered-worker-brief (kind session)
   (let (values (assoc (clone worker-values)

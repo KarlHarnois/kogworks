@@ -1,4 +1,4 @@
-(use controller/factory merge-method read-factory)
+(use controller/factory merge-method read-factory runner)
 (use controller/fields field-error)
 
 (use controller/failure factory-error
@@ -15,6 +15,7 @@
        (assert (= (:manager config) (str "fake-manager")))
        (assert (= (:roadmap config) (str "fake-roadmap")))
        (assert (= (:merge config) merge-method/gh-auto))
+       (assert (= (:runner config) runner/ringleader))
        (assert (= (:agent (:worker config))
                   (str "fake-agent")))
        (assert (= (:skill (:worker config))
@@ -64,3 +65,26 @@
   (assert (= (factory-error->message (factory-error/field (field-error/non-number-field
                                                             (str "worker.weight"))))
              (str "the factory field `worker.weight` is not a number"))))
+
+(deftest read-factory-reports-a-missing-runner
+  (let (root (str "target/knave/controller-tests/factory-missing-runner"))
+    (unwrap-ok (prepare-repo (as-str root)))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{\"manager\":\"fake-manager\","
+                                        "\"roadmap\":\"fake-roadmap\","
+                                        "\"max_active\":1,"
+                                        "\"merge\":\"gh-auto\","
+                                        "\"roles\":{"
+                                        "\"worker\":{\"agent\":\"fake-agent\","
+                                        "\"skill\":\"fake-skill\","
+                                        "\"brief\":\".kogworks/briefs/worker.md\"},"
+                                        "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
+                                        "\"skill\":\"fake-reviewer-skill\","
+                                        "\"brief\":\".kogworks/briefs/reviewer.md\"}}}"))))
+    (match (read-factory (as-str (str root "/repo")))
+      ((err missing-runner)
+       (assert (contains? (factory-error->message factory-error/missing-runner)
+                          (as-str (str "runner"))))
+       (assert (contains? (factory-error->message factory-error/missing-runner)
+                          (as-str (str "kogworks synth")))))
+      (_ (assert false)))))

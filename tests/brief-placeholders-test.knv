@@ -33,6 +33,9 @@
                       :briefs (vec brief-kind/reviewer))
        (->placeholder :token (str "{{manager}}")
                       :sample (str "sample-manager")
+                      :briefs (vec brief-kind/reviewer))
+       (->placeholder :token (str "{{message-manager}}")
+                      :sample (str "ringleader send sample-manager")
                       :briefs (vec brief-kind/reviewer))))
 
 (defstruct placeholder
@@ -86,7 +89,7 @@
     (assert (not (contains? brief "gh pr checkout")))
     (assert (contains? brief "git fetch origin"))
     (assert (contains? brief "git diff origin/{{base}}...HEAD"))
-    (assert (contains? brief "ringleader send {{manager}}"))
+    (assert (contains? brief "{{message-manager}}"))
     (assert (contains? brief "writing-clean-code"))))
 
 (deftest reviewer-brief-sends-no-report-to-rmap
@@ -120,7 +123,7 @@
                        "A nitpick does not force the verdict `changes`."))
     (assert (contains? brief
                        (as-str (str "When only nitpicks remain, record the verdict `approve` and list "
-                                    "the nitpicks in one `ringleader send {{manager}}` message."))))))
+                                    "the nitpicks in one `{{message-manager}}` message."))))))
 
 (deftest reviewer-brief-keeps-no-changed-line-minor-rule
   (let (brief (unwrap-ok (slurp reviewer-brief-path)))
@@ -135,7 +138,7 @@
                        "A finding about code the pull request did not touch is a follow-up suggestion."))
     (assert (contains? brief
                        (as-str (str "Send the follow-up suggestion to the manager with one "
-                                    "`ringleader send {{manager}}` before the review verdict."))))
+                                    "`{{message-manager}}` before the review verdict."))))
     (assert (contains? brief
                        "A follow-up suggestion does not change the verdict."))))
 

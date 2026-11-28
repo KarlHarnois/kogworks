@@ -3,6 +3,7 @@
   :roadmap "factory-mvp"
   :max-active 6
   :merge gh-auto
+  :runner ringleader
   (roles (worker :agent "opencode"
                  :skill "writing-knave"
                  :brief ".kogworks/briefs/worker.md")

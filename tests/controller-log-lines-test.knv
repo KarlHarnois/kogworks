@@ -79,16 +79,17 @@
     ((error text) (str text))
     (_ (str))))
 
-(defn command-failure-of (action command code detail)
-  (controller-error/command-failed
-    (action-failure-of action command code detail)))
+(defn start-failure-of (action command code detail session)
+  (assoc (action-failure-of action command code detail)
+         :session (some (str session))))
 
 (defn action-failure-of (action command code detail)
   (->action-failure :action (str action)
                     :item (str "rm-0001")
                     :command (str command)
                     :code code
-                    :detail (str detail)))
+                    :detail (str detail)
+                    :session none))
 
 (defn signal-stop-of ()
   (->signal-stop-report :item (str "rm-0001")
@@ -137,10 +138,12 @@
     (assert (= (:rerun stop) (str "kogworks controller")))))
 
 (deftest command-failures-carry-the-failure-sub-lines
-  (let (failure (command-failure-of (str "dispatch")
-                                    (str "ringleader new --name build-rm-0001 --repo . --agent a --prompt <filled brief>")
-                                    4
-                                    (str "cannot start session"))
+  (let (failure (controller-error/command-failed (start-failure-of (str
+                                                                     "dispatch")
+                                                                   (str "ringleader new --name build-rm-0001 --repo . --agent a --prompt <filled brief>")
+                                                                   4
+                                                                   (str "cannot start session")
+                                                                   (str "build-rm-0001")))
         line (failure-line-of failure)
         labels (labels-of (:sub-lines line)))
     (assert (= (:status line) log-status/failed))
@@ -156,10 +159,12 @@
     (assert (= (last-label labels) (str "next")))))
 
 (deftest review-command-failures-carry-the-pr-sub-line
-  (let (failure (command-failure-of (str "review")
-                                    (str "ringleader new --name review-rm-0001 --repo . --agent a --prompt <filled brief>")
-                                    1
-                                    (str "a session named review-rm-0001 already exists"))
+  (let (failure (controller-error/command-failed (start-failure-of (str
+                                                                     "review")
+                                                                   (str "ringleader new --name review-rm-0001 --repo . --agent a --prompt <filled brief>")
+                                                                   1
+                                                                   (str "a session named review-rm-0001 already exists")
+                                                                   (str "review-rm-0001")))
         line (failure-line-of failure))
     (assert (= (labels-of (:sub-lines line))
                (vec (str "error")
@@ -334,7 +339,8 @@
                                                    :item (str "-")
                                                    :command (str "rmap next --roadmap r --json")
                                                    :code 1
-                                                   :detail (str "roadmap \"r\" not found")))
+                                                   :detail (str "roadmap \"r\" not found")
+                                                   :session none))
         line (controller-failure-of (str "14:00:00")
                                     (some (str "mgr"))
                                     failure)

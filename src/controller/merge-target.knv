@@ -75,7 +75,8 @@
                                      :item (clone item)
                                      :command (clone (:label command))
                                      :code 0
-                                     :detail (str description ": " reason))))
+                                     :detail (str description ": " reason)
+                                     :session none)))
 
 (defn merge-command-failure (item command outcome)
   (controller-error/command-failed (->action-failure
@@ -83,7 +84,8 @@
                                      :item (clone item)
                                      :command (clone (:label command))
                                      :code (:code outcome)
-                                     :detail (command-detail outcome))))
+                                     :detail (command-detail outcome)
+                                     :session none)))
 
 (defn report-event (settings event target)
   (let (report (:report settings))

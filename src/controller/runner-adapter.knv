@@ -1,0 +1,152 @@
+(module
+  "Turns a session runner request into a ringleader command, and reads the output of the agent list.")
+
+(use controller/json json-array json-error->message
+                     json-field json-text parse-json)
+
+(use controller/process ->command command)
+
+(use controller/runner ->send-request ->start-request
+                       runner-error runner-request
+                       send-request start-request)
+
+(export agents-from-output command-for message-command
+        runner-error->message send-command start-command)
+
+(type command-for
+  (fn (runner-request) (result command runner-error)))
+
+(defn command-for (request)
+  (match request
+    ((start start) (start-command start))
+    ((send send) (ok (send-command send)))
+    (list-agents (ok (agents-command)))))
+
+(defn agents-from-output (text)
+  (match (parse-json text)
+    ((ok document) (agents-from-document document))
+    ((err failure)
+     (err (runner-error/invalid-agents-output (json-error->message failure))))))
+
+(defn message-command (session)
+  (str "ringleader send " session))
+
+(defn runner-error->message (failure)
+  (match failure
+    ((branch-name-differs session branch)
+     (str "the session name `" session "` and the branch `"
+          branch
+          "` differ; ringleader starts a session on a branch named after the session"))
+    ((invalid-agents-output reason)
+     (str "cannot read the agent list: " reason))))
+
+(type send-command
+  (fn ((ref send-request)) command))
+
+(defn send-command (request)
+  (->command :program (str "ringleader")
+             :args (vec (str "send")
+                        (clone (:session request))
+                        (clone (:message request)))
+             :label (str "ringleader send " (:session request))))
+
+(type start-command
+  (fn ((ref start-request))
+    (result command runner-error)))
+
+(defn start-command (request)
+  (if (= (as-str (:session request))
+         (as-str (:branch request)))
+    (ok (start-command-for request))
+    (err (runner-error/branch-name-differs (clone (:session request))
+                                           (clone (:branch request))))))
+
+(defn agents-command ()
+  (->command :program (str "ringleader")
+             :args (vec (str "agent")
+                        (str "list")
+                        (str "--json"))
+             :label (str "ringleader agent list --json")))
+
+(type start-command-for
+  (fn ((ref start-request)) command))
+
+(defn start-command-for (request)
+  (let (session (clone (:session request))
+        repo (clone (:repo request))
+        agent (clone (:agent request))
+        prompt (clone (:prompt request))
+        base (clone (:base-branch request)))
+    (match base
+      (none (start-command-without-base session repo agent prompt))
+      ((some base)
+       (start-command-with-base session repo agent base prompt)))))
+
+(defn start-command-without-base (session repo agent prompt)
+  (->command :program (str "ringleader")
+             :args (vec (str "new")
+                        (str "--name")
+                        (clone session)
+                        (str "--repo")
+                        (clone repo)
+                        (str "--agent")
+                        (clone agent)
+                        (str "--prompt")
+                        (clone prompt))
+             :label (str "ringleader new --name " session
+                         " --repo " repo " --agent " agent
+                         " --prompt <filled brief>")))
+
+(defn start-command-with-base (session repo agent base prompt)
+  (->command :program (str "ringleader")
+             :args (vec (str "new")
+                        (str "--name")
+                        (clone session)
+                        (str "--repo")
+                        (clone repo)
+                        (str "--agent")
+                        (clone agent)
+                        (str "--base-branch")
+                        (clone base)
+                        (str "--prompt")
+                        (clone prompt))
+             :label (str "ringleader new --name " session
+                         " --repo " repo " --agent " agent
+                         " --base-branch " base
+                         " --prompt <filled brief>")))
+
+(defn agents-from-document (document)
+  (match (json-field document "result")
+    (none (err (invalid-agents "the output has no `result` object")))
+    ((some result) (agents-from-result result))))
+
+(defn agents-from-result (result)
+  (match (json-field result "agents")
+    (none (err (invalid-agents "the output has no `result.agents`")))
+    ((some agents) (agent-list agents))))
+
+(defn agent-list (agents)
+  (match (json-array agents)
+    (none (err (invalid-agents "`result.agents` is not an array")))
+    ((some items) (agent-names items 0 (vec)))))
+
+(defn agent-names (items index names)
+  (if (>= index (len items))
+    (ok names)
+    (agent-name-from items index names)))
+
+(defn agent-name-from (items index names)
+  (match (agent-name (at items index))
+    ((some name)
+     (do
+       (push! names name)
+       (agent-names items (inc index) names)))
+    (none (err (invalid-agents "an agent has no `name` text")))))
+
+(defn agent-name (agent)
+  (match (json-field agent "name")
+    (none none)
+    ((some value) (json-text value))))
+
+(defn invalid-agents (reason)
+  (runner-error/invalid-agents-output (str reason)))

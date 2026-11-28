@@ -2,6 +2,8 @@
   "Names the failures the controller reports to its manager.")
 
 (use controller/fields field-error field-error->message)
+(use controller/runner-adapter runner-error->message)
+(use controller/runner runner-error)
 (use controller/signal stop-signal stop-signal->text)
 
 (export ->action-failure ->disarmed-command-failure
@@ -10,7 +12,8 @@
         disarmed-command-failure error->message
         factory-error factory-error->message failure-report
         manager-message? merge-error merge-error->message
-        signal-stop->log-text signal-stop-report)
+        runner-failure signal-stop->log-text
+        signal-stop-report unknown-agent->text)
 
 (defstruct failure-report
   :manager (option string)
@@ -25,7 +28,9 @@
   (signal-stop signal-stop-report)
   (unreadable-brief string string)
   (unreadable-repo string string)
-  (placeholder-left string string brief-role))
+  (placeholder-left string string brief-role)
+  (runner-failed runner-error)
+  (unknown-agent string string (vec string)))
 
 (defenum brief-role
   worker
@@ -46,7 +51,9 @@
   (unreadable-factory string string)
   (malformed-factory string string)
   (field field-error)
-  (unsupported-merge-method string))
+  (missing-runner)
+  (unsupported-merge-method string)
+  (unsupported-runner string))
 
 (defenum merge-error
   (settings-refused string string)
@@ -60,7 +67,8 @@
   :item string
   :command string
   :code int
-  :detail string)
+  :detail string
+  :session (option string))
 
 (defstruct disarmed-command-failure
   :failure action-failure
@@ -97,7 +105,11 @@
           ": " reason))
     ((placeholder-left item token _)
      (str "controller: " item ": the brief still holds `"
-          token "` after filling"))))
+          token "` after filling"))
+    ((runner-failed cause)
+     (str "controller: " (runner-error->message cause)))
+    ((unknown-agent role agent known)
+     (str "controller: " (unknown-agent->text role agent known)))))
 
 (defn factory-error->message (failure)
   (match failure
@@ -108,9 +120,22 @@
      (str "cannot parse " path ": " reason))
     ((field cause)
      (str "the factory field " (field-error->message cause)))
+    ((missing-runner)
+     (str "the factory JSON has no `runner` field; run `kogworks synth .kogworks`"))
     ((unsupported-merge-method method)
      (str "the factory merge method `" method
-          "` is not supported"))))
+          "` is not supported"))
+    ((unsupported-runner runner)
+     (str "the factory runner `" runner
+          "` is not supported; run `kogworks synth .kogworks`"))))
+
+(defn runner-failure (failure)
+  (controller-error/runner-failed failure))
+
+(defn unknown-agent->text (role agent known)
+  (str "the " role " role names the agent `" agent
+       "`, but the session runner knows "
+       (known-agents->text known)))
 
 (defn merge-error->message (failure)
   (match failure
@@ -181,3 +206,14 @@
            "` exited "
            (:code failure)
            ": " detail))))
+
+(type known-agents->text
+  (fn ((ref (vec string))) string))
+
+(defn known-agents->text (agents)
+  (if (empty? agents)
+    (str "no agents")
+    (str "`"
+         (join (collect (map agents (fn (agent) (str agent))))
+               "`, `")
+         "`")))

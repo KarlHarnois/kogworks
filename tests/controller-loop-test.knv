@@ -191,7 +191,8 @@
        "session=" review-session " pr=12 head=" review-head
        " criteria=(1) the controller starts one reviewer; "
        "(2) the brief names the head base=main "
-       "skill=fake-reviewer-skill manager=fake-manager\n"))
+       "skill=fake-reviewer-skill manager=fake-manager "
+       "message-manager=ringleader send fake-manager\n"))
 
 (defn verify-stress ()
   (str "Verify action: the head is approved, but at least one acceptance "
@@ -608,3 +609,27 @@
                       "controller: the factory field `roles` is missing\n")))
       (assert (contains? (stderr-text output)
                          "the factory field `roles` is missing")))))
+
+(deftest stops-when-a-role-names-an-agent-the-runner-does-not-know
+  (let (root (unwrap-ok (setup "unknown-agent"
+                               (default-settings (clone wait-next)
+                                                 (clone empty-ready)))))
+    (unwrap-ok (write-text (as-str (str root "/repo/.kogworks/factory.json"))
+                           (as-str (str "{\"manager\":\"fake-manager\","
+                                        "\"roadmap\":\"fake-roadmap\","
+                                        "\"max_active\":1,"
+                                        "\"merge\":\"gh-auto\","
+                                        "\"runner\":\"ringleader\","
+                                        "\"roles\":{"
+                                        "\"worker\":{\"agent\":\"stranger\","
+                                        "\"skill\":\"fake-skill\","
+                                        "\"brief\":\".kogworks/briefs/worker.md\"},"
+                                        "\"reviewer\":{\"agent\":\"fake-reviewer-agent\","
+                                        "\"skill\":\"fake-reviewer-skill\","
+                                        "\"brief\":\".kogworks/briefs/reviewer.md\"}}}"))))
+    (let (output (unwrap-ok (run root (vec (str "--once")))))
+      (assert (= (exit-code output) 1))
+      (assert (stderr-has? output (str "worker")))
+      (assert (stderr-has? output (str "stranger")))
+      (assert (stderr-has? output (str "fake-agent")))
+      (assert (not (contains? (sequence-text root) "rmap next"))))))

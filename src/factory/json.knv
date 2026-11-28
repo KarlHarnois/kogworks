@@ -1,4 +1,5 @@
-(use factory/types merge-method role role-name)
+(use factory/types merge-method role role-name->text
+                   runner->text)
 
 (export factory->json)
 
@@ -56,6 +57,8 @@
        (:max-active factory)
        ",\n  \"merge\": "
        (text->json (merge-method->text (:merge factory)))
+       ",\n  \"runner\": "
+       (text->json (runner->text (:runner factory)))
        ",\n  \"roles\": "
        (roles->json (:roles factory))
        "\n}\n"))
@@ -87,11 +90,6 @@
 
 (defn merge-method->text (method)
   (match method (gh-auto (str "gh-auto"))))
-
-(defn role-name->text (name)
-  (match name
-    (worker (str "worker"))
-    (reviewer (str "reviewer"))))
 
 (defn text->json (text)
   (str "\""

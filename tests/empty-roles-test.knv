@@ -9,6 +9,7 @@
                                      "  :roadmap \"sample-roadmap\"\n"
                                      "  :max-active 1\n"
                                      "  :merge gh-auto\n"
+                                     "  :runner ringleader\n"
                                      "  (roles))\n")))
     (unwrap-ok (synth-factory (as-str dir)))
     (assert (= (unwrap-ok (slurp (as-str (str dir "/factory.json"))))
@@ -18,4 +19,5 @@
                     "  \"roadmap\": \"sample-roadmap\",\n"
                     "  \"max_active\": 1,\n"
                     "  \"merge\": \"gh-auto\",\n"
+                    "  \"runner\": \"ringleader\",\n"
                     "  \"roles\": {}\n" "}\n")))))

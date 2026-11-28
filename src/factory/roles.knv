@@ -12,7 +12,8 @@
 
 (defmacro roles (clause ...)
   "Builds a vector of roles from role clauses, as in
-  `(roles (worker :agent \"opencode\" :skill \"writing-knave\" :brief \"brief.md\"))`."
+  `(roles (worker :agent \"opencode\" :skill \"writing-knave\" :brief \"brief.md\"))`.
+  The `:agent` value is the runner's name for an agent."
   (template (vec (splice (role-forms clause)))))
 
 (defn role-forms (clauses)

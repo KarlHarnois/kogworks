@@ -6,6 +6,7 @@
        "  :manager \"checked-manager\"\n"
        "  :roadmap \"checked-roadmap\"\n"
        "  :max-active 2\n" "  :merge gh-auto\n"
+       "  :runner ringleader\n"
        "  (roles (worker :agent \"opencode\"\n"
        "                 :skill \"writing-knave\"\n"
        "                 :brief \".kogworks/briefs/worker.md\")\n"
@@ -17,7 +18,7 @@
   (str "(deffactory lint-failure\n"
        "  :manager \"lint-manager\"\n"
        "  :roadmap \"lint-roadmap\"\n" "  :max-active 1\n"
-       "  :merge gh-auto\n"
+       "  :merge gh-auto\n" "  :runner ringleader\n"
        "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"
        "\n" "(defn unused-helper ()\n" "  42)\n"))
 
@@ -26,13 +27,14 @@
        "  :manager \"check-manager\"\n"
        "  :roadmap \"check-roadmap\"\n"
        "  :max-active \"three\"\n" "  :merge gh-auto\n"
+       "  :runner ringleader\n"
        "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"))
 
 (def format-failure-factory
   (str "(deffactory format-failure\n"
        "        :manager \"format-manager\"\n"
        "  :roadmap \"format-roadmap\"\n" "  :max-active 1\n"
-       "  :merge gh-auto\n"
+       "  :merge gh-auto\n" "  :runner ringleader\n"
        "  (roles (worker :agent \"a\" :skill \"s\" :brief \"b\")))\n"))
 
 (def create-directory

@@ -50,9 +50,9 @@ rmap item verify {{item}} <position> --failed --head {{head}} --reviewer {{sessi
 - a broken repository rule
 - a wrong test or no test for a criterion
 
-**A nitpick is a style, wording or naming issue that does not break the work.** A nitpick does not force the verdict `changes`. When only nitpicks remain, record the verdict `approve` and list the nitpicks in one `ringleader send {{manager}}` message.
+**A nitpick is a style, wording or naming issue that does not break the work.** A nitpick does not force the verdict `changes`. When only nitpicks remain, record the verdict `approve` and list the nitpicks in one `{{message-manager}}` message.
 
-**A finding about code the pull request did not touch is a follow-up suggestion.** Send the follow-up suggestion to the manager with one `ringleader send {{manager}}` before the review verdict. A follow-up suggestion does not change the verdict. If `ringleader send` exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
+**A finding about code the pull request did not touch is a follow-up suggestion.** Send the follow-up suggestion to the manager with one `{{message-manager}}` before the review verdict. A follow-up suggestion does not change the verdict. If the send exits nonzero, retry it once. If it still fails, re-run the last criterion verdict with the same `--met` or `--failed`. Put the findings and the send failure in the re-run's `--note`. Record the review verdict either way.
 
 **Anything that makes the code or the brief under review not work as intended is blocking.** A blocking finding stands even when no acceptance criterion names it. NEVER notice a defect and approve anyway.
 
@@ -83,6 +83,6 @@ rmap pr review {{item}} --verdict <approve|changes> --kind behavior --head {{hea
 - NEVER decide an open question.
 - NEVER ask the user a question.
 
-**Contact the manager with one `ringleader send {{manager}}` for a question or a block.** Send one message and stop. If `ringleader send` exits nonzero, retry it once. If it still fails, stop.
+**Contact the manager with one `{{message-manager}}` for a question or a block.** Send one message and stop. If the send exits nonzero, retry it once. If it still fails, stop.
 
 **When you finish, send no chat message.** The controller reads rmap.

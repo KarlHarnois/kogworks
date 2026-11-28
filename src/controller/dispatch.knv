@@ -4,12 +4,15 @@
 (use controller/brief ->worker-values fill-brief
                       worker-brief)
 
-(use controller/failure ->action-failure controller-error)
+(use controller/failure ->action-failure controller-error
+                        runner-failure)
 
 (use controller/process ->command command-detail execute
                         join-path successful?)
 
+(use controller/runner-adapter command-for)
 (use controller/repo default-branch)
+(use controller/runner ->start-request runner-request)
 (use controller/rules item-kind)
 (use controller/session abandon-command failed-start-detail)
 
@@ -80,13 +83,15 @@
                          branch)))
 
 (defn start-session (repo config item session prompt)
-  (let (start (start-command repo config session prompt))
-    (let (outcome (execute repo start))
-      (if (successful? outcome)
-        (ok (clone session))
-        (abandon-and-fail repo
-                          (clone (:id item))
-                          session start outcome)))))
+  (match (start-command repo config session prompt)
+    ((err failure) (err failure))
+    ((ok start)
+     (let (outcome (execute repo start))
+       (if (successful? outcome)
+         (ok (clone session))
+         (abandon-and-fail repo
+                           (clone (:id item))
+                           session start outcome))))))
 
 (defn abandon-and-fail (repo item session start outcome)
   (let (abandon (abandon-command session))
@@ -96,24 +101,19 @@
                                :item (clone item)
                                :command (clone (:label start))
                                :code (:code outcome)
-                               :detail (failed-start-detail outcome
-                                                            end-outcome)))))))
+                               :detail (failed-start-detail outcome end-outcome)
+                               :session (some (clone session))))))))
 
 (defn start-command (repo config session prompt)
   (let (agent (:agent (:worker config)))
-    (->command :program (str "ringleader")
-               :args (vec (str "new")
-                          (str "--name")
-                          (clone session)
-                          (str "--repo")
-                          (str repo)
-                          (str "--agent")
-                          (clone agent)
-                          (str "--prompt")
-                          (clone prompt))
-               :label (str "ringleader new --name " session
-                           " --repo " repo " --agent " agent
-                           " --prompt <filled brief>"))))
+    (let (request (->start-request :session (clone session)
+                                   :branch (clone session)
+                                   :base-branch none
+                                   :agent (clone agent)
+                                   :repo (str repo)
+                                   :prompt (clone prompt)))
+      (map-err (command-for (runner-request/start request))
+               runner-failure))))
 
 (defn command-failed (action item command outcome)
   (controller-error/command-failed (->action-failure
@@ -121,4 +121,5 @@
                                      :item item
                                      :command (clone (:label command))
                                      :code (:code outcome)
-                                     :detail (command-detail outcome))))
+                                     :detail (command-detail outcome)
+                                     :session none)))

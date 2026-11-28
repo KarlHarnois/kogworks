@@ -1,0 +1,77 @@
+(module
+  "Checks that each factory role names an agent the session runner knows.")
+
+(use controller/failure ->action-failure controller-error)
+(use controller/factory runner)
+(use controller/process command-detail execute successful?)
+
+(use controller/runner-adapter agents-from-output
+                               command-for)
+
+(use controller/runner runner-request)
+
+(export check-agents)
+
+(defn check-agents (repo config)
+  (match (agents-command config)
+    ((err failure) (err failure))
+    ((ok command) (run-agent-check repo config command))))
+
+(defn agents-command (config)
+  (map-err (command-for (agents-request config))
+    (fn (failure) (controller-error/runner-failed failure))))
+
+(defn agents-request (config)
+  (match (:runner config)
+    (ringleader runner-request/list-agents)))
+
+(defn run-agent-check (repo config command)
+  (let (outcome (execute repo command))
+    (if (successful? outcome)
+      (check-agent-output config (:stdout outcome))
+      (err (agent-command-failure command outcome)))))
+
+(defn agent-command-failure (command outcome)
+  (controller-error/command-failed (->action-failure
+                                     :action (str "agents")
+                                     :item (str "-")
+                                     :command (clone (:label command))
+                                     :code (:code outcome)
+                                     :detail (command-detail outcome)
+                                     :session none)))
+
+(defn check-agent-output (config text)
+  (match (agents-from-output (as-str text))
+    ((err failure)
+     (err (controller-error/runner-failed failure)))
+    ((ok agents) (check-roles config agents))))
+
+(defn check-roles (config agents)
+  (match (check-role (str "worker")
+                     (:agent (:worker config))
+                     agents)
+    ((err failure) (err failure))
+    ((ok _)
+     (check-role (str "reviewer")
+                 (:agent (:reviewer config))
+                 agents))))
+
+(type check-role
+  (fn ((ref string)
+       (ref string)
+       (ref (vec string)))
+    (result unit controller-error)))
+
+(defn check-role (role agent agents)
+  (if (agent-known? agent agents)
+    (ok (do))
+    (err (controller-error/unknown-agent (clone role)
+                                         (clone agent)
+                                         (clone agents)))))
+
+(type agent-known?
+  (fn ((ref str) (ref (vec string))) bool))
+
+(defn agent-known? (agent agents)
+  (any? agents
+    (fn (known) (= (str known) (str agent)))))

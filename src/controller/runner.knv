@@ -1,0 +1,26 @@
+(module
+  "Names the requests the controller makes of its session runner.")
+
+(export ->send-request ->start-request runner-error
+        runner-request send-request start-request)
+
+(defenum runner-request
+  (start start-request)
+  (send send-request)
+  list-agents)
+
+(defstruct start-request
+  :session string
+  :branch string
+  :base-branch (option string)
+  :agent string
+  :repo string
+  :prompt string)
+
+(defstruct send-request
+  :session string
+  :message string)
+
+(defenum runner-error
+  (branch-name-differs string string)
+  (invalid-agents-output string))

@@ -13,7 +13,7 @@
                                record-head-command
                                repo-view-command
                                required-checks-command
-                               send-command show-command
+                               show-command
                                update-branch-command)
 
 (use controller/merge-poll auto-merge-state close-item
@@ -24,6 +24,8 @@
                            stop-on-signal)
 
 (use controller/merge-retry execute-github)
+(use controller/runner-adapter send-command)
+(use controller/runner ->send-request)
 
 (use controller/merge-target ->merge-settings
                              invalid-item-output
@@ -346,7 +348,9 @@
      (send-rebase-message repo item target name outcome))))
 
 (defn send-rebase-message (repo item target worker outcome)
-  (let (command (send-command worker (rebase-message item target outcome))
+  (let (request (->send-request :session (clone worker)
+                                :message (rebase-message item target outcome))
+        command (send-command request)
         outcome (execute repo command))
     (if (successful? outcome)
       (ok merge-outcome/handed-back)
