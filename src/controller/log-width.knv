@@ -1,7 +1,7 @@
 (module
   "Measures, cuts and wraps controller log text, and accumulates its lines.")
 
-(export append-lines display-width fitted-title push-line!
+(export append-lines! display-width fitted-title push-line!
         spaces wrap-value)
 
 (def stream-title-width 120)
@@ -110,7 +110,7 @@
 (defn push-line! (lines line)
   (do (push! lines line) lines))
 
-(defn append-lines (left right)
+(defn append-lines! (left right)
   (loop (index 0
          lines left)
     (if (>= index (len right))

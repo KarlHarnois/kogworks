@@ -4,7 +4,7 @@
 (use controller/log-palette color-mode style-open
                             text-style)
 
-(use controller/log-width append-lines display-width
+(use controller/log-width append-lines! display-width
                           fitted-title push-line! spaces
                           wrap-value)
 
@@ -200,10 +200,10 @@
     (if (>= index (len sub-lines))
       lines
       (recur (inc index)
-             (append-lines lines
-                           (render-sub-line settings owner
-                                            (branch-at sub-lines index)
-                                            (at sub-lines index)))))))
+             (append-lines! lines
+                            (render-sub-line settings owner
+                                             (branch-at sub-lines index)
+                                             (at sub-lines index)))))))
 
 (defn alive-full? (settings alive text)
   (if (empty? (:running alive))
@@ -294,7 +294,7 @@
          (track-padding form stages))))
 
 (defn with-first-line (line lines)
-  (append-lines (vec line) lines))
+  (append-lines! (vec line) lines))
 
 (defn branch-at (lines index)
   (if (= index (dec (len lines)))
